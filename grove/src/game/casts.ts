@@ -44,7 +44,7 @@ import {
   toGrave,
   topReward,
 } from './flow.ts'
-import type { CardInst, Choice, Game, Pending, PlayerId } from './types.ts'
+import type { Attr, CardInst, Choice, Game, Pending, PlayerId } from './types.ts'
 import type { CastResume } from './types.ts'
 
 type Mode = Pending['mode']
@@ -186,6 +186,66 @@ function offerNyx(state: Game, resume: CastResume): Game | null {
   })
 }
 
+const ATTR_CHOICES: { id: string; label: string }[] = [
+  { id: 'attr:STR', label: 'Strength' },
+  { id: 'attr:AGI', label: 'Agility' },
+  { id: 'attr:INT', label: 'Intelligence' },
+  { id: 'attr:UNI', label: 'Universal' },
+]
+
+function pickedAttr(picked: string[]): Attr | null {
+  const raw = picked.find((id) => id.startsWith('attr:'))?.slice(5)
+  if (raw === 'STR' || raw === 'AGI' || raw === 'INT' || raw === 'UNI') return raw
+  return null
+}
+
+function askAttrHeroes(state: Game, resume: CastResume, controls: (id: PlayerId) => boolean): Ask {
+  const actor = resume.actor
+  const kind = sourceKind(resume.defId)
+  const attr = pickedAttr(resume.picked)
+  if (!attr) {
+    const choices = ATTR_CHOICES.filter((choice) => {
+      const wanted = pickedAttr([choice.id])
+      return !!wanted && allLocs(state).some((loc) => controls(loc.hero.controller) && attrsOf(state, loc.hero).includes(wanted) && canTargetHero(state, actor, loc.hero, kind))
+    })
+    return pose(actor, 'Choose an attribute.', choices)
+  }
+  const taken = new Set(heroIds(resume.picked))
+  for (const player of state.players) {
+    if (!controls(player.id)) continue
+    if ([...taken].some((uid) => findHero(state, uid)?.hero.controller === player.id)) continue
+    const options = allLocs(state)
+      .filter((loc) => loc.hero.controller === player.id && attrsOf(state, loc.hero).includes(attr) && canTargetHero(state, actor, loc.hero, kind))
+      .map((loc) => ({ id: `hero:${loc.hero.uid}`, label: display(loc.hero.defId).name, defId: loc.hero.defId }))
+    if (options.length === 0) continue
+    return pose(actor, `Choose one ${ATTR_CHOICES.find((choice) => choice.id === `attr:${attr}`)?.label ?? attr} hero they control.`, options)
+  }
+  return ready()
+}
+
+function askAttrByTeam(state: Game, resume: CastResume, enemy: PlayerId): Ask {
+  const actor = resume.actor
+  const kind = sourceKind(resume.defId)
+  const attr = pickedAttr(resume.picked)
+  if (!attr) {
+    const choices = ATTR_CHOICES.filter((choice) => {
+      const wanted = pickedAttr([choice.id])
+      return !!wanted && state.players[enemy].teams.some((team) => team.heroes.some((hero) => attrsOf(state, hero).includes(wanted) && canTargetHero(state, actor, hero, kind)))
+    })
+    return pose(actor, 'Choose an attribute.', choices)
+  }
+  const takenTeams = new Set(heroIds(resume.picked).map((uid) => findHero(state, uid)?.team.id).filter((id): id is string => !!id))
+  for (const team of state.players[enemy].teams) {
+    if (takenTeams.has(team.id)) continue
+    const options = team.heroes
+      .filter((hero) => attrsOf(state, hero).includes(attr) && canTargetHero(state, actor, hero, kind))
+      .map((hero) => ({ id: `hero:${hero.uid}`, label: display(hero.defId).name, defId: hero.defId }))
+    if (options.length === 0) continue
+    return pose(actor, `Choose one ${ATTR_CHOICES.find((choice) => choice.id === `attr:${attr}`)?.label ?? attr} hero in this team.`, options)
+  }
+  return ready()
+}
+
 function questions(state: Game, resume: CastResume): Ask {
   const at = step(resume)
   const actor = resume.actor
@@ -232,12 +292,6 @@ function questions(state: Game, resume: CastResume): Ask {
         return pose(actor, 'Choose an opponent.', [{ id: `player:${enemy}`, label: pname(state, enemy) }])
       }
       return pose(actor, 'Choose an enemy hero.', enemyHeroes(state, actor, kind))
-    case 'anti_mage':
-      if (at > 0) return ready()
-      return pose(actor, 'Choose an enemy Intelligence hero.', enemyHeroes(state, actor, kind, (uid) => {
-        const loc = findHero(state, uid)
-        return !!loc && attrsOf(state, loc.hero).includes('INT')
-      }))
     case 'phantom_assassin':
       if (at > 0) return ready()
       return pose(actor, 'Choose an enemy hero in a team of 1 or 5.', enemyHeroes(state, actor, kind, (uid) => {
@@ -320,17 +374,10 @@ function questions(state: Game, resume: CastResume): Ask {
       const max = home ? teamSize(home.team) : 1
       return pose(actor, `Destroy up to ${max} enemy heroes.`, enemyHeroes(state, actor, kind), 1, max)
     }
-    case 'spectre': {
-      const teams = state.players[enemy].teams
-      if (at >= teams.length) return ready()
-      const team = teams[at]
-      if (!team) return ready()
-      return pose(actor, `Choose a hero in team ${at + 1}.`, team.heroes.filter((hero) => canTargetHero(state, actor, hero, kind)).map((hero) => ({
-        id: `hero:${hero.uid}`,
-        label: display(hero.defId).name,
-        defId: hero.defId,
-      })))
-    }
+    case 'gyrocopter':
+      return askAttrHeroes(state, resume, (playerId) => playerId !== actor)
+    case 'spectre':
+      return askAttrByTeam(state, resume, enemy)
     case 'tiny':
     case 'lifestealer':
     case 'enchantress':
@@ -495,10 +542,14 @@ function questions(state: Game, resume: CastResume): Ask {
         return ready()
       }
       if (at > 0) return ready()
-      if (resume.defId === 'magnus') return pose(actor, 'Choose an opponent.', [{ id: `player:${enemy}`, label: pname(state, enemy) }])
       return pose(actor, 'Choose an opponent.', [{ id: `player:${enemy}`, label: pname(state, enemy) }])
     case 'magnus_keep':
       return ready()
+    case 'magnus': {
+      if (at > 0) return ready()
+      const pool = enemyHeroes(state, actor, kind)
+      return pose(actor, 'Choose up to 5 heroes to gather into a new team.', pool, 1, Math.min(5, pool.length))
+    }
     case 'rubick':
       if (at > 0) return ready()
       return pose(actor, 'Copy an enemy hero ability.', enemyHeroes(state, actor, kind, (uid) => {
@@ -589,10 +640,12 @@ function effect(state: Game, resume: CastResume): Game {
     case 'axe':
       return discardRandom(log(state, "Berserker's Call."), enemy, 2)
     case 'chaos_knight':
-    case 'gyrocopter':
     case 'natures_prophet':
     case 'snapfire':
       return spray(state, resume)
+    case 'gyrocopter':
+    case 'spectre':
+      return heroes.reduce((current, uid) => kill(current, uid, display(resume.defId).name), state)
     case 'clockwerk':
     case 'batrider':
       return pullIn(state, resume, heroes[0], resume.defId === 'batrider')
@@ -634,7 +687,6 @@ function effect(state: Game, resume: CastResume): Game {
       return exileBoard(state, resume.sourceUid)
     case 'primal_beast':
     case 'juggernaut':
-    case 'spectre':
       return heroes.reduce((current, uid) => kill(current, uid, display(resume.defId).name), state)
     case 'pudge':
       return hook(state, resume)
@@ -646,10 +698,12 @@ function effect(state: Game, resume: CastResume): Game {
       if (!recent) return log(state, 'No enemy hero has entered a team.')
       return kill(state, recent.uid, 'Charge of Darkness')
     }
-    case 'tidehunter':
+    case 'tidehunter': {
+      const kept = home?.team.id
       return allLocs(state)
-        .filter((loc) => loc.hero.controller !== actor)
+        .filter((loc) => loc.team.id !== kept && !loc.hero.token)
         .reduce((current, loc) => bounce(current, loc.hero.uid, 'Ravage'), log(state, 'Ravage.'))
+    }
     case 'timbersaw': {
       const found = teams[0] ? teamById(state, teams[0]) : null
       if (!found) return state
@@ -677,6 +731,9 @@ function effect(state: Game, resume: CastResume): Game {
     case 'lotus':
       return fromGrave(state, actor, cards[0])
     case 'anti_mage':
+      return allLocs(state)
+        .filter((loc) => attrsOf(state, loc.hero).includes('INT'))
+        .reduce((current, loc) => kill(current, loc.hero.uid, 'Mana Void'), log(state, 'Mana Void.'))
     case 'phantom_assassin':
     case 'sniper':
     case 'drow_ranger':
@@ -695,8 +752,14 @@ function effect(state: Game, resume: CastResume): Game {
       return brood(state, actor)
     case 'clinkz':
       return pact(state, resume, cards[0])
-    case 'faceless_void':
-      return log({ ...state, lockPlay: stamp }, 'Chronosphere. Enemies cannot play cards.')
+    case 'faceless_void': {
+      let next = state
+      for (const player of state.players) {
+        if (player.id === actor) continue
+        next = setPlayer(next, player.id, (current) => ({ ...current, skip: true }))
+      }
+      return log(next, 'Chronosphere. Enemies skip their next turn.')
+    }
     case 'hoodwink':
       return shoot(state, resume)
     case 'lone_druid':
@@ -744,8 +807,13 @@ function effect(state: Game, resume: CastResume): Game {
     case 'double_damage':
       if (resume.defId === 'double_damage' && state.active !== actor) return log(state, 'Double Damage only works on your turn.')
       return log(setPlayer(state, actor, (player) => ({ ...player, actions: player.actions + 2 })), `${pname(state, actor)} gains 2 actions.`)
-    case 'dark_willow':
-      return discardRandom(log(state, 'Terrorize.'), enemy, 1)
+    case 'dark_willow': {
+      let next = log(state, 'Terrorize.')
+      for (const id of [actor, enemy] as const) {
+        next = discardRandom(next, id, state.players[id].teams.length)
+      }
+      return next
+    }
     case 'grimstroke':
       if (heroes.length < 2) return state
       return log(
@@ -842,7 +910,7 @@ function effect(state: Game, resume: CastResume): Game {
     case 'io':
       return startIo(state, actor)
     case 'magnus':
-      return polarity(state, enemy, actor)
+      return polarity(state, enemy, heroes)
     case 'sand_king':
       if (!heroes[0]) return state
       return kill(state, heroes[0], 'Epicenter')
@@ -1161,14 +1229,6 @@ function spray(state: Game, resume: CastResume): Game {
     if (!hit) return log(next, 'Chaos Bolt finds no one.')
     return enqueue(next, hit.hero.uid, 'Chaos Bolt', false, true, actor)
   }
-  if (resume.defId === 'gyrocopter') {
-    let next = state
-    for (const team of state.players[foe(actor)].teams) {
-      const [rolled, hit] = randomFrom(next, team.heroes)
-      if (hit) next = enqueue(rolled, hit.uid, 'Call Down', false, true, actor)
-    }
-    return next
-  }
   if (resume.defId === 'snapfire') {
     const teamId = rawTeams(resume.picked)[0]
     const found = teamId ? teamById(state, teamId) : null
@@ -1359,29 +1419,26 @@ function splitTeam(state: Game, resume: CastResume): Game {
   return log(next, 'Primal Roar splits the team.')
 }
 
-function polarity(state: Game, enemy: PlayerId, actor: PlayerId): Game {
-  const heroes = allLocs(state).filter((loc) => loc.hero.controller === enemy).map((loc) => loc.hero)
-  if (heroes.length === 0) return log(state, 'Reverse Polarity finds no heroes.')
-  let next = state
-  let dest = teamById(next, state.players[enemy].teams[0]?.id ?? '')?.team.id
-  if (!dest) {
-    const created = newTeam(next, enemy)
-    next = created[0]
-    dest = created[1]
-  }
+function polarity(state: Game, enemy: PlayerId, uids: string[]): Game {
   const kept: string[] = []
   let weight = 0
-  for (const hero of heroes) {
-    const size = heroWeight(hero)
-    if (weight + size > 5) {
-      next = enqueue(next, hero.uid, 'Reverse Polarity', false, true, actor)
-    } else {
-      kept.push(hero.uid)
-      weight += size
-    }
+  for (const uid of uids) {
+    const loc = findHero(state, uid)
+    if (!loc || loc.hero.controller !== enemy) continue
+    const size = heroWeight(loc.hero)
+    if (weight + size > 5) continue
+    kept.push(uid)
+    weight += size
   }
-  for (const uid of kept) next = moveOnto(next, uid, enemy, dest)
-  return log(next, 'Reverse Polarity.')
+  const firstId = kept[0]
+  if (!firstId) return log(state, 'Reverse Polarity finds no heroes.')
+  const removed = extract(state, firstId)
+  if (!removed.hero) return state
+  const created = newTeam(removed.state, enemy)
+  let next = putOnTeam(created[0], enemy, created[1], { ...removed.hero, controller: enemy })
+  next = arrived(next, firstId).state
+  for (const uid of kept.slice(1)) next = moveOnto(next, uid, enemy, created[1])
+  return log(next, 'Reverse Polarity gathers a team.')
 }
 
 function mine(state: Game, teamId: string | undefined): Game {

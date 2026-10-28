@@ -15,7 +15,7 @@ export function Rules({ onClose }: { onClose: () => void }) {
         <section>
           <h3>Teams</h3>
           <p>Heroes score in teams of up to five. Meepo counts as two. One neutral may sit in a team. Neutrals have no ability and no attack type.</p>
-          <p>A team of one attribute scores 1, 3, 6, 10, 15 for one through five heroes. Universal counts toward every attribute. Three different attributes score 5. Four score 10. Only a mixed team adds +1 if every hero shares an attack type, or +2 when four attributes are present. Brewmaster alone is Strength, Agility, and Intelligence, and with Melee that is 6.</p>
+          <p>Each hero scores 1. A team of one attribute, Universal included, adds +1, +3, +6, or +10 for two through five heroes. That team does not take an attack bonus. Universal is its own attribute and does not fill in for another. A mixed team adds +0, +2, or +6 for two, three, or four different attributes. Three, four, or five heroes of the same attack type add +1, +2, or +3 on any team that is not a single attribute. Neutrals have no attack type and do not spoil that bonus. Meepo counts as two. Brewmaster is Strength, Agility, and Intelligence, so alone he scores 3. A hero with no attribute still scores 1.</p>
         </section>
         <section>
           <h3>Zones</h3>
@@ -32,7 +32,8 @@ export function Rules({ onClose }: { onClose: () => void }) {
             <li>Night Stalker steals two cards from the enemy.</li>
             <li>Lycan draws a card when an ally enters that team.</li>
             <li>Medusa’s gaze strips attributes from her team. Range stays.</li>
-            <li>Elder Titan strips attributes from enemy heroes.</li>
+            <li>Elder Titan strips attributes from enemy heroes. They keep 1 point each, and a shared attack type still scores.</li>
+            <li>Tidehunter returns every other hero to its owner’s hand. His own team stays.</li>
             <li>Gate merges two teams you own. Overflow returns to hand and does not fire again.</li>
           </ul>
         </section>

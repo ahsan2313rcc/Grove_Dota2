@@ -9,7 +9,9 @@ describe('scoring', () => {
     expect(scoreBodies([{ attrs: ['STR'], range: 'Melee', count: 1 }]).points).toBe(1)
     expect(scoreBodies([{ attrs: ['STR'], range: 'Melee', count: 2 }]).points).toBe(3)
     expect(scoreBodies([{ attrs: ['STR'], range: 'Melee', count: 3 }]).points).toBe(6)
+    expect(scoreBodies([{ attrs: ['STR'], range: 'Melee', count: 4 }]).points).toBe(10)
     expect(scoreBodies([{ attrs: ['STR'], range: 'Melee', count: 5 }]).points).toBe(15)
+    expect(scoreBodies([{ attrs: ['UNI'], range: 'Ranged', count: 5 }]).points).toBe(15)
     expect(scoreBodies([{ attrs: ['AGI'], range: 'Melee', count: 2 }]).points).toBe(3)
     const mixed = scoreBodies([
       { attrs: ['STR'], range: 'Melee', count: 1 },
@@ -24,8 +26,20 @@ describe('scoring', () => {
       { attrs: ['UNI'], range: 'Ranged', count: 1 },
     ])
     expect(four.points).toBe(12)
-    expect(scoreBodies([{ attrs: [], range: 'Melee', count: 4 }]).points).toBe(0)
-    expect(scoreBodies([{ attrs: ['STR', 'AGI', 'INT'], range: 'Melee', count: 1 }]).points).toBe(6)
+    const fullMix = scoreBodies([
+      { attrs: ['STR'], range: 'Melee', count: 2 },
+      { attrs: ['AGI'], range: 'Melee', count: 1 },
+      { attrs: ['INT'], range: 'Melee', count: 1 },
+      { attrs: ['UNI'], range: 'Melee', count: 1 },
+    ])
+    expect(fullMix.points).toBe(14)
+    expect(scoreBodies([
+      { attrs: ['STR'], range: 'Melee', count: 4 },
+      { attrs: ['UNI'], range: 'Melee', count: 1 },
+    ]).points).toBe(8)
+    expect(scoreBodies([{ attrs: [], range: 'Melee', count: 4 }]).points).toBe(6)
+    expect(scoreBodies([{ attrs: [], range: 'Melee', count: 5 }]).points).toBe(8)
+    expect(scoreBodies([{ attrs: ['STR', 'AGI', 'INT'], range: 'Melee', count: 1 }]).points).toBe(3)
   })
 })
 
@@ -105,6 +119,101 @@ describe('heroes', () => {
     game = apply(game, { type: 'play', uid: uid(game, 0, 'enigma'), team: 'new' })
     game = apply(game, { type: 'choose', ids: [`team:${team}`] })
     expect(game.players[1].teams.length).toBe(0)
+  })
+
+  it('keeps Tidehunter’s team and returns every other hero', () => {
+    let game = ready()
+    game = only(game, 0, ['sven', 'tidehunter'])
+    game = only(game, 1, ['riki', 'earthshaker'])
+    game = apply(game, { type: 'play', uid: uid(game, 0, 'sven'), team: 'new' })
+    game = apply(game, { type: 'end' })
+    game = apply(game, { type: 'ready' })
+    game = apply(game, { type: 'play', uid: uid(game, 1, 'riki'), team: 'new' })
+    game = apply(game, { type: 'play', uid: uid(game, 1, 'earthshaker'), team: 'new' })
+    game = apply(game, { type: 'end' })
+    game = apply(game, { type: 'ready' })
+    game = apply(game, { type: 'play', uid: uid(game, 0, 'tidehunter'), team: 'new' })
+    expect(game.players[0].teams.flatMap((team) => team.heroes.map((hero) => hero.defId))).toEqual(['tidehunter'])
+    expect(game.players[1].teams).toEqual([])
+    expect(game.players[0].hand.map((card) => card.defId)).toContain('sven')
+    expect(game.players[1].hand.map((card) => card.defId).sort()).toEqual(['earthshaker', 'riki'])
+  })
+
+  it('destroys every Intelligence hero with Mana Void', () => {
+    let game = ready()
+    game = only(game, 0, ['anti_mage'])
+    game = only(game, 1, ['crystal_maiden', 'riki'])
+    game = apply(game, { type: 'end' })
+    game = apply(game, { type: 'ready' })
+    game = apply(game, { type: 'play', uid: uid(game, 1, 'crystal_maiden'), team: 'new' })
+    game = apply(game, { type: 'play', uid: uid(game, 1, 'riki'), team: 'new' })
+    game = apply(game, { type: 'end' })
+    game = apply(game, { type: 'ready' })
+    game = apply(game, { type: 'play', uid: uid(game, 0, 'anti_mage'), team: 'new' })
+    if (game.pending?.prompt.includes('would be destroyed')) game = apply(game, { type: 'choose', ids: ['pass'] })
+    expect(game.players[1].teams.flatMap((team) => team.heroes.map((hero) => hero.defId))).toEqual(['riki'])
+    expect(game.grave.some((card) => card.defId === 'crystal_maiden')).toBe(true)
+  })
+
+  it('gathers a team with Reverse Polarity and leaves the rest', () => {
+    let game = ready()
+    game = only(game, 0, ['magnus'])
+    game = only(game, 1, ['earthshaker', 'sven', 'riki'])
+    game = apply(game, { type: 'end' })
+    game = apply(game, { type: 'ready' })
+    game = apply(game, { type: 'play', uid: uid(game, 1, 'earthshaker'), team: 'new' })
+    game = apply(game, { type: 'play', uid: uid(game, 1, 'sven'), team: 'new' })
+    game = apply(game, { type: 'end' })
+    game = apply(game, { type: 'ready' })
+    game = apply(game, { type: 'end' })
+    game = apply(game, { type: 'ready' })
+    game = apply(game, { type: 'play', uid: uid(game, 1, 'riki'), team: 'new' })
+    game = apply(game, { type: 'end' })
+    game = apply(game, { type: 'ready' })
+    const shaker = game.players[1].teams.flatMap((team) => team.heroes).find((hero) => hero.defId === 'earthshaker')?.uid ?? ''
+    const sven = game.players[1].teams.flatMap((team) => team.heroes).find((hero) => hero.defId === 'sven')?.uid ?? ''
+    game = apply(game, { type: 'play', uid: uid(game, 0, 'magnus'), team: 'new' })
+    game = apply(game, { type: 'choose', ids: [`hero:${shaker}`, `hero:${sven}`] })
+    const sizes = game.players[1].teams.map((team) => team.heroes.map((hero) => hero.defId).sort())
+    expect(sizes).toContainEqual(['riki'])
+    expect(sizes).toContainEqual(['earthshaker', 'sven'])
+    expect(game.grave.some((card) => card.defId === 'earthshaker' || card.defId === 'sven' || card.defId === 'riki')).toBe(false)
+  })
+
+  it('destroys one hero of the chosen attribute per opponent', () => {
+    let game = ready()
+    game = only(game, 0, ['gyrocopter'])
+    game = only(game, 1, ['sven', 'elder_titan', 'riki'])
+    game = apply(game, { type: 'end' })
+    game = apply(game, { type: 'ready' })
+    game = apply(game, { type: 'play', uid: uid(game, 1, 'sven'), team: 'new' })
+    const withSven = game.players[1].teams[0]?.id ?? ''
+    game = apply(game, { type: 'play', uid: uid(game, 1, 'riki'), team: withSven })
+    game = apply(game, { type: 'end' })
+    game = apply(game, { type: 'ready' })
+    game = apply(game, { type: 'end' })
+    game = apply(game, { type: 'ready' })
+    game = apply(game, { type: 'play', uid: uid(game, 1, 'elder_titan'), team: 'new' })
+    game = apply(game, { type: 'end' })
+    game = apply(game, { type: 'ready' })
+    const sven = game.players[1].teams.flatMap((team) => team.heroes).find((hero) => hero.defId === 'sven')?.uid ?? ''
+    game = apply(game, { type: 'play', uid: uid(game, 0, 'gyrocopter'), team: 'new' })
+    game = apply(game, { type: 'choose', ids: ['attr:STR'] })
+    game = apply(game, { type: 'choose', ids: [`hero:${sven}`] })
+    const left = game.players[1].teams.flatMap((team) => team.heroes.map((hero) => hero.defId)).sort()
+    expect(left).toEqual(['elder_titan', 'riki'])
+    expect(game.grave.some((card) => card.defId === 'sven')).toBe(true)
+  })
+
+  it('gives the caster another turn', () => {
+    let game = ready()
+    game = only(game, 0, ['faceless_void'])
+    game = apply(game, { type: 'play', uid: uid(game, 0, 'faceless_void'), team: 'new' })
+    game = apply(game, { type: 'end' })
+    game = apply(game, { type: 'ready' })
+    expect(game.active).toBe(0)
+    expect(game.players[1].skip).toBe(false)
+    expect(game.log.some((line) => line.includes('skips'))).toBe(true)
   })
 })
 

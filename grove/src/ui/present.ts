@@ -53,6 +53,8 @@ export function statusLines(game: Game, viewer: PlayerId): string[] {
   const lines: string[] = []
   const me = game.players[viewer]
   if (game.active === viewer && me.noHeroNow) lines.push('Doom: you cannot play heroes this turn.')
+  if (me.skip) lines.push('You skip your next turn.')
+  if (game.players[opponentOf(viewer)].skip) lines.push(`${game.players[opponentOf(viewer)].name} skips their next turn.`)
   if (game.lockPlay && game.lockPlay.caster !== viewer) lines.push('Chronosphere: you cannot play cards.')
   if (game.silence) lines.push('Global Silence: hero abilities do not fire.')
   if (game.naga) lines.push('Song of the Siren: heroes cannot be destroyed.')
