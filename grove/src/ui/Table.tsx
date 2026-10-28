@@ -57,6 +57,15 @@ export function Table({
   const lastLog = game.log[game.log.length - 1] ?? ''
 
   useEffect(() => {
+    document.querySelector('.side.mine')?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
+  }, [you.teams.length, you.combos.length])
+
+  useEffect(() => {
+    const logNode = document.querySelector('.log')
+    if (logNode) logNode.scrollTop = logNode.scrollHeight
+  }, [game.log.length])
+
+  useEffect(() => {
     function onKey(event: KeyboardEvent) {
       if (event.key !== 'Escape') return
       setPile(null)

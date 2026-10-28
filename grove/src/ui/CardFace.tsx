@@ -57,9 +57,9 @@ export function CardFace({
         </span>
       ) : shownRange ? (
         <span className="pills"><span className="pill range">{shownRange}</span></span>
-      ) : (
+      ) : info.kind === 'hero' || info.kind === 'neutral' ? (
         <span className="pills"><span className="pill muted">No attribute</span></span>
-      )}
+      ) : null}
       <span className="card-name">{info.name}</span>
       {!compact && info.spell ? <span className="card-spell">{info.spell}</span> : null}
       {!compact ? <span className="card-text">{info.text}</span> : null}

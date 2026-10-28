@@ -404,7 +404,11 @@ function questions(state: Game, resume: CastResume): Ask {
       const combos: Choice[] = []
       for (const player of state.players) {
         for (const combo of player.combos) {
-          combos.push({ id: `combo:${combo.id}`, label: `${pname(state, player.id)} ${combo.kind}`, hint: `${combo.points}` })
+          combos.push({
+            id: `combo:${combo.id}`,
+            label: `${pname(state, player.id)} · ${combo.kind === 'mixed' ? 'mixed path' : `three ${combo.kind}s`}`,
+            hint: `${combo.points} points`,
+          })
         }
       }
       return pose(actor, 'Choose a setting combo to protect.', combos)
