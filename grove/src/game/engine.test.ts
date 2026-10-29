@@ -48,18 +48,25 @@ describe('scoring', () => {
     expect(scoreBodies([{ attrs: ['STR', 'AGI', 'INT'], range: 'Melee', count: 1 }]).points).toBe(3)
   })
 
-  it('applies debug score rules including attack on core', () => {
+  it('applies debug score rules including attack on core and mix toggles', () => {
     setScoreRules({
       ...DEFAULT_SCORE_RULES,
       heroPoints: 1,
       coreBonus: [0, 0, 0, 0, 0],
+      mixBonus: [0, 0, 2, 4],
       attackBonus: [0, 0, 1, 2, 3],
       attackOnCore: true,
+      attackOnMix: false,
       coreCombo: 7,
       mixCombo: 4,
     })
     expect(scoreBodies([{ attrs: ['STR'], range: 'Melee', count: 3 }]).points).toBe(4)
     expect(scoreBodies([{ attrs: ['STR'], range: 'Melee', count: 3 }]).why).toContain('Melee')
+    expect(scoreBodies([
+      { attrs: ['STR'], range: 'Melee', count: 1 },
+      { attrs: ['AGI'], range: 'Melee', count: 1 },
+      { attrs: ['INT'], range: 'Melee', count: 1 },
+    ]).points).toBe(5)
     let game = ready()
     game = give(game, 'river', 0)
     game = give(game, 'river', 0)

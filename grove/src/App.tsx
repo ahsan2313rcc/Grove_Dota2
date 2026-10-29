@@ -11,10 +11,11 @@ import {
 } from './game/balance.ts'
 import { apply, createGame, type SeatSpec } from './game/engine.ts'
 import { log } from './game/flow.ts'
-import { getScoreRules, resetScoreRules, setScoreRules, type ScoreRules } from './game/scoring.ts'
+import { cloneRules, DEFAULT_SCORE_RULES, getScoreRules, resetScoreRules, setScoreRules, type ScoreRules } from './game/scoring.ts'
 import type { Action, AiStrat, Game } from './game/types.ts'
 import { Glossary } from './ui/Glossary.tsx'
 import { type DebugSpeed, type DebugView } from './ui/DebugRail.tsx'
+import { ScoreRulesPanel } from './ui/ScoreRulesPanel.tsx'
 import { Table } from './ui/Table.tsx'
 
 export type SeatCount = 2 | 3 | 4 | 5 | 6 | 7 | 8
@@ -132,7 +133,6 @@ export default function App() {
   const [batchDone, setBatchDone] = useState(0)
   const [stratFilter, setStratFilter] = useState<StratFilter>(ALL_STRAT_FILTER)
   const [debugStrats, setDebugStrats] = useState<AiStrat[]>(() => Array.from({ length: boot?.seats ?? 2 }, (_, index) => cycleStrat(index)))
-  const [scoreRules, setScoreRulesState] = useState<ScoreRules>(() => getScoreRules())
   const batchToken = useRef(0)
 
   const live = runs[Math.min(focus, Math.max(0, runs.length - 1))] ?? null
@@ -229,29 +229,11 @@ export default function App() {
     setBatchDone(0)
     setStratFilter(ALL_STRAT_FILTER)
     setDebugStrats(Array.from({ length: 2 }, (_, index) => cycleStrat(index)))
-    setScoreRulesState(resetScoreRules())
+    resetScoreRules()
   }
 
   function resetDebug() {
     if (runningBatch) return
-    batchToken.current += 1
-    setReports([])
-    setBatchDone(0)
-    setFocus(0)
-    setRunningBatch(false)
-    setMatch((value) => value + 1)
-    if (debugView === 'stats') {
-      setRuns([])
-      return
-    }
-    const count = Math.max(1, Math.min(8, runs.length || 1))
-    setRuns(Array.from({ length: count }, (_, index) => makeRun(seed + index, seatCount, debugStrats)))
-  }
-
-  function applyScoreRules(next: ScoreRules) {
-    if (runningBatch) return
-    const applied = setScoreRules(next)
-    setScoreRulesState(applied)
     batchToken.current += 1
     setReports([])
     setBatchDone(0)
@@ -313,7 +295,8 @@ export default function App() {
     setDebugView(view)
   }
 
-  function startDebugSession(nextSeed: number, seats: SeatCount, parallel: number, background: boolean, strats: AiStrat[]) {
+  function startDebugSession(nextSeed: number, seats: SeatCount, parallel: number, background: boolean, strats: AiStrat[], rules: ScoreRules) {
+    setScoreRules(rules)
     setMatch((value) => value + 1)
     setSeed(nextSeed)
     setSeatCount(seats)
@@ -361,11 +344,12 @@ export default function App() {
   if (runs.length === 0 && !debug) {
     return (
       <Lobby
-        onStart={(next, nextSeed, nextDebug, seats, parallel, background, strats) => {
+        onStart={(next, nextSeed, nextDebug, seats, parallel, background, strats, rules) => {
           if (nextDebug) {
-            startDebugSession(nextSeed, seats, parallel, background, strats)
+            startDebugSession(nextSeed, seats, parallel, background, strats, rules)
             return
           }
+          setScoreRules(rules)
           setMatch((value) => value + 1)
           setSeed(nextSeed)
           setSeatCount(seats)
@@ -397,7 +381,6 @@ export default function App() {
         debugSummary={summary}
         debugReports={reports}
         debugStratFilter={stratFilter}
-        debugScoreRules={scoreRules}
         onDebugSpeed={setDebugSpeed}
         onDebugStep={stepDebug}
         onDebugView={onDebugView}
@@ -405,7 +388,6 @@ export default function App() {
         onDebugFocus={setFocus}
         onDebugRunBatch={runBatch}
         onDebugStratFilter={setStratFilter}
-        onDebugScoreRules={applyScoreRules}
         onDebugReset={resetDebug}
         onAction={send}
         onLobby={leave}
@@ -436,6 +418,7 @@ function Lobby({
     parallel: number,
     background: boolean,
     strats: AiStrat[],
+    rules: ScoreRules,
   ) => void
 }) {
   const [seedText, setSeedText] = useState('')
@@ -445,6 +428,8 @@ function Lobby({
   const [background, setBackground] = useState(false)
   const [fault, setFault] = useState('')
   const [glossary, setGlossary] = useState(false)
+  const [scoreOpen, setScoreOpen] = useState(false)
+  const [lobbyRules, setLobbyRules] = useState<ScoreRules>(() => cloneRules(getScoreRules()))
 
   function setPlayerCount(next: SeatCount) {
     setCount(next)
@@ -475,7 +460,8 @@ function Lobby({
       }
     })
     try {
-      onStart(createGame({ seed, seats: roster }), seed, debug, count, debug ? parallel : 1, debug && background, strats)
+      const rules = debug ? lobbyRules : DEFAULT_SCORE_RULES
+      onStart(createGame({ seed, seats: roster }), seed, debug, count, debug ? parallel : 1, debug && background, strats, rules)
     } catch (error) {
       setFault(error instanceof Error ? error.message : 'The deck could not be dealt.')
     }
@@ -597,6 +583,14 @@ function Lobby({
                   ? `Watches game 1 of ${parallel} (max 8 live). Switch focus in the debug rail.`
                   : 'AI seats auto-play with the strats chosen above.'}
             </p>
+            <button type="button" data-testid="lobby-scoring" onClick={() => setScoreOpen(true)}>
+              Scoring…
+            </button>
+            <p className="quiet">
+              Core combo {lobbyRules.coreCombo} · mix combo {lobbyRules.mixCombo}
+              {lobbyRules.attackOnCore ? ' · atk on core' : ''}
+              {lobbyRules.attackOnMix ? ' · atk on mix' : ''}
+            </p>
           </fieldset>
         ) : null}
         <p className="quiet">
@@ -622,6 +616,25 @@ function Lobby({
         {fault ? <p className="warn">{fault}</p> : null}
       </form>
       {glossary ? <Glossary onClose={() => setGlossary(false)} /> : null}
+      {scoreOpen ? (
+        <div className="scrim" onClick={() => setScoreOpen(false)}>
+          <section
+            className="sheet score-sheet"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="score-title"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <p className="eyebrow">Debug balance</p>
+            <h2 id="score-title">Scoring</h2>
+            <p className="quiet">These rules apply when you start the debug match. Attack bonus can be enabled separately for core and mix teams.</p>
+            <ScoreRulesPanel value={lobbyRules} onChange={setLobbyRules} />
+            <button type="button" className="primary block" data-testid="score-done" onClick={() => setScoreOpen(false)}>
+              Done
+            </button>
+          </section>
+        </div>
+      ) : null}
     </main>
   )
 }

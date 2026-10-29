@@ -342,6 +342,14 @@ p { margin: 0; }
   color: var(--cream);
   padding: 0.4rem 0.55rem;
 }
+.score-sheet {
+  width: min(520px, 100%);
+}
+.score-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
 .check-row {
   flex-direction: row !important;
   align-items: center;

@@ -1,10 +1,9 @@
-import { useEffect, useState } from 'react'
 import { AI_STRATS, stratLabel } from '../game/ai.ts'
 import type { BalanceSummary, CardBalanceRow, MatchReport, StratFilter } from '../game/balance.ts'
 import type { AiStrat } from '../game/types.ts'
 import { display } from '../game/catalog.ts'
 import { scoreState, scoreTeam } from '../game/flow.ts'
-import { cloneRules, DEFAULT_SCORE_RULES, type ScoreRules, teamShape } from '../game/scoring.ts'
+import { teamShape } from '../game/scoring.ts'
 import type { Game } from '../game/types.ts'
 
 export type DebugSpeed = 0 | 0.5 | 1 | 2
@@ -31,7 +30,6 @@ export function DebugRail({
   summary,
   reports,
   stratFilter,
-  scoreRules,
   onSpeed,
   onStep,
   onView,
@@ -39,7 +37,6 @@ export function DebugRail({
   onFocus,
   onRunBatch,
   onStratFilter,
-  onScoreRules,
   onReset,
 }: {
   game: Game | null
@@ -55,7 +52,6 @@ export function DebugRail({
   summary: BalanceSummary
   reports: MatchReport[]
   stratFilter: StratFilter
-  scoreRules: ScoreRules
   onSpeed: (speed: DebugSpeed) => void
   onStep: () => void
   onView: (view: DebugView) => void
@@ -63,27 +59,9 @@ export function DebugRail({
   onFocus: (index: number) => void
   onRunBatch: () => void
   onStratFilter: (filter: StratFilter) => void
-  onScoreRules: (rules: ScoreRules) => void
   onReset: () => void
 }) {
   const active = game?.players[game.active]
-  const [draft, setDraft] = useState<ScoreRules>(() => cloneRules(scoreRules))
-
-  useEffect(() => {
-    setDraft(cloneRules(scoreRules))
-  }, [scoreRules])
-
-  function setNum<K extends keyof ScoreRules>(key: K, value: number) {
-    setDraft((current) => ({ ...current, [key]: value }))
-  }
-
-  function setBonus(kind: 'coreBonus' | 'mixBonus' | 'attackBonus', index: number, value: number) {
-    setDraft((current) => {
-      const next = [...current[kind]] as number[]
-      next[index] = value
-      return { ...current, [kind]: next as ScoreRules[typeof kind] }
-    })
-  }
 
   return (
     <aside className="debug-rail" data-testid="debug-rail">
@@ -127,77 +105,6 @@ export function DebugRail({
         <button type="button" data-testid="debug-reset" disabled={runningBatch} onClick={onReset}>
           Reset
         </button>
-      </div>
-
-      <div className="debug-block">
-        <h3>Scoring</h3>
-        <p className="quiet debug-legend">Apply clears traced stats and restarts live runs under the new rules.</p>
-        <div className="debug-score">
-          <label>
-            Hero pts
-            <input data-testid="score-hero" type="number" min={0} max={9} value={draft.heroPoints} onChange={(event) => setNum('heroPoints', Number(event.target.value) || 0)} />
-          </label>
-          <label>
-            Core combo
-            <input data-testid="score-core-combo" type="number" min={0} max={99} value={draft.coreCombo} onChange={(event) => setNum('coreCombo', Number(event.target.value) || 0)} />
-          </label>
-          <label>
-            Mix combo
-            <input data-testid="score-mix-combo" type="number" min={0} max={99} value={draft.mixCombo} onChange={(event) => setNum('mixCombo', Number(event.target.value) || 0)} />
-          </label>
-        </div>
-        <p className="quiet debug-score-label">Core bonus · heroes 1–5</p>
-        <div className="debug-score-row" data-testid="score-core-bonus">
-          {draft.coreBonus.map((value, index) => (
-            <label key={`core-${index}`}>
-              ×{index + 1}
-              <input type="number" min={0} max={99} value={value} onChange={(event) => setBonus('coreBonus', index, Number(event.target.value) || 0)} />
-            </label>
-          ))}
-        </div>
-        <p className="quiet debug-score-label">Mix bonus · attrs 1–4</p>
-        <div className="debug-score-row" data-testid="score-mix-bonus">
-          {draft.mixBonus.map((value, index) => (
-            <label key={`mix-${index}`}>
-              {index + 1}a
-              <input type="number" min={0} max={99} value={value} onChange={(event) => setBonus('mixBonus', index, Number(event.target.value) || 0)} />
-            </label>
-          ))}
-        </div>
-        <p className="quiet debug-score-label">Attack bonus · heroes 1–5</p>
-        <div className="debug-score-row" data-testid="score-attack-bonus">
-          {draft.attackBonus.map((value, index) => (
-            <label key={`atk-${index}`}>
-              ×{index + 1}
-              <input type="number" min={0} max={99} value={value} onChange={(event) => setBonus('attackBonus', index, Number(event.target.value) || 0)} />
-            </label>
-          ))}
-        </div>
-        <label className="debug-check">
-          <input
-            data-testid="score-attack-on-core"
-            type="checkbox"
-            checked={draft.attackOnCore}
-            onChange={(event) => setDraft((current) => ({ ...current, attackOnCore: event.target.checked }))}
-          />
-          Attack bonus applies to core teams
-        </label>
-        <div className="debug-speeds">
-          <button type="button" className="primary" data-testid="score-apply" disabled={runningBatch} onClick={() => onScoreRules(draft)}>
-            Apply scoring
-          </button>
-          <button
-            type="button"
-            data-testid="score-defaults"
-            disabled={runningBatch}
-            onClick={() => {
-              setDraft(cloneRules(DEFAULT_SCORE_RULES))
-              onScoreRules(DEFAULT_SCORE_RULES)
-            }}
-          >
-            Defaults
-          </button>
-        </div>
       </div>
 
       <div className="debug-block">

@@ -18,6 +18,8 @@ export interface ScoreRules {
   attackBonus: [number, number, number, number, number]
   /** When true, mono teams also take the attack bonus. */
   attackOnCore: boolean
+  /** When true, mixed / open teams take the attack bonus. */
+  attackOnMix: boolean
   /** Three-of-a-kind setting combo points. */
   coreCombo: number
   /** Mixed River/Jungle/Lane combo points. */
@@ -30,6 +32,7 @@ export const DEFAULT_SCORE_RULES: ScoreRules = {
   mixBonus: [0, 0, 2, 4],
   attackBonus: [0, 0, 1, 2, 3],
   attackOnCore: false,
+  attackOnMix: true,
   coreCombo: 5,
   mixCombo: 5,
 }
@@ -59,6 +62,7 @@ export function cloneRules(rules: ScoreRules): ScoreRules {
     mixBonus: [...rules.mixBonus] as ScoreRules['mixBonus'],
     attackBonus: [...rules.attackBonus] as ScoreRules['attackBonus'],
     attackOnCore: rules.attackOnCore,
+    attackOnMix: rules.attackOnMix,
     coreCombo: rules.coreCombo,
     mixCombo: rules.mixCombo,
   }
@@ -75,6 +79,7 @@ export function normalizeRules(rules: ScoreRules): ScoreRules {
     mixBonus: rules.mixBonus.map(clamp) as ScoreRules['mixBonus'],
     attackBonus: rules.attackBonus.map(clamp) as ScoreRules['attackBonus'],
     attackOnCore: !!rules.attackOnCore,
+    attackOnMix: !!rules.attackOnMix,
     coreCombo: clamp(rules.coreCombo),
     mixCombo: clamp(rules.mixCombo),
   }
@@ -105,8 +110,10 @@ export function scoreBodies(bodies: ScoreBody[], rules: ScoreRules = current): {
   }
 
   const mix = mixBonus(union.size, rules)
+  const atk = rules.attackOnMix ? attack.points : 0
+  const whyAtk = rules.attackOnMix ? attack.why : ''
   const why = union.size === 0 ? 'No attribute' : mix.why
-  return { points: base + mix.points + attack.points, why: `${why}${attack.why}` }
+  return { points: base + mix.points + atk, why: `${why}${whyAtk}` }
 }
 
 function mixBonus(colors: number, rules: ScoreRules): { points: number; why: string } {
