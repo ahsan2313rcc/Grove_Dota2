@@ -77,6 +77,11 @@ export interface ShapeCounts {
   mixSettings: number
   coreTeamPoints: number
   mixTeamPoints: number
+  coreTeamPoints3: number
+  coreTeamPoints4: number
+  coreTeamPoints5: number
+  mixTeamPoints3: number
+  mixTeamPoints4: number
   coreSettingPoints: number
   mixSettingPoints: number
 }
@@ -213,6 +218,11 @@ const EMPTY_SHAPES = (): ShapeCounts => ({
   mixSettings: 0,
   coreTeamPoints: 0,
   mixTeamPoints: 0,
+  coreTeamPoints3: 0,
+  coreTeamPoints4: 0,
+  coreTeamPoints5: 0,
+  mixTeamPoints3: 0,
+  mixTeamPoints4: 0,
   coreSettingPoints: 0,
   mixSettingPoints: 0,
 })
@@ -591,12 +601,12 @@ export function summarizeReports(reports: MatchReport[], filter: StratFilter = A
       .sort((a, b) => b.wins - a.wins || b.avgScore - a.avgScore),
     shapeCompare: [
       shapeRow('core_team', 'Core team', shapeTotals.coreTeams, shapeTotals.coreTeamPoints, matchCount),
-      shapeRow('core_team_3', 'Core team ×3', shapeTotals.coreTeams3, 0, matchCount),
-      shapeRow('core_team_4', 'Core team ×4', shapeTotals.coreTeams4, 0, matchCount),
-      shapeRow('core_team_5', 'Core team ×5', shapeTotals.coreTeams5, 0, matchCount),
+      shapeRow('core_team_3', 'Core team ×3', shapeTotals.coreTeams3, shapeTotals.coreTeamPoints3, matchCount),
+      shapeRow('core_team_4', 'Core team ×4', shapeTotals.coreTeams4, shapeTotals.coreTeamPoints4, matchCount),
+      shapeRow('core_team_5', 'Core team ×5', shapeTotals.coreTeams5, shapeTotals.coreTeamPoints5, matchCount),
       shapeRow('mix_team', 'Mixed team', shapeTotals.mixTeams, shapeTotals.mixTeamPoints, matchCount),
-      shapeRow('mix_team_3', 'Mixed team ×3', shapeTotals.mixTeams3, 0, matchCount),
-      shapeRow('mix_team_4', 'Mixed team ×4', shapeTotals.mixTeams4, 0, matchCount),
+      shapeRow('mix_team_3', 'Mixed team ×3', shapeTotals.mixTeams3, shapeTotals.mixTeamPoints3, matchCount),
+      shapeRow('mix_team_4', 'Mixed team ×4', shapeTotals.mixTeams4, shapeTotals.mixTeamPoints4, matchCount),
       shapeRow('core_setting', 'Core setting', shapeTotals.coreSettings, shapeTotals.coreSettingPoints, matchCount),
       shapeRow('mix_setting', 'Mixed setting', shapeTotals.mixSettings, shapeTotals.mixSettingPoints, matchCount),
     ],
@@ -752,14 +762,26 @@ function shapeCounts(game: Game): ShapeCounts {
       if (shape === 'core') {
         shapes.coreTeams += 1
         shapes.coreTeamPoints += scored.points
-        if (size === 3) shapes.coreTeams3 += 1
-        else if (size === 4) shapes.coreTeams4 += 1
-        else if (size >= 5) shapes.coreTeams5 += 1
+        if (size === 3) {
+          shapes.coreTeams3 += 1
+          shapes.coreTeamPoints3 += scored.points
+        } else if (size === 4) {
+          shapes.coreTeams4 += 1
+          shapes.coreTeamPoints4 += scored.points
+        } else if (size >= 5) {
+          shapes.coreTeams5 += 1
+          shapes.coreTeamPoints5 += scored.points
+        }
       } else if (shape === 'mix') {
         shapes.mixTeams += 1
         shapes.mixTeamPoints += scored.points
-        if (size === 3) shapes.mixTeams3 += 1
-        else if (size === 4) shapes.mixTeams4 += 1
+        if (size === 3) {
+          shapes.mixTeams3 += 1
+          shapes.mixTeamPoints3 += scored.points
+        } else if (size === 4) {
+          shapes.mixTeams4 += 1
+          shapes.mixTeamPoints4 += scored.points
+        }
       } else {
         shapes.openTeams += 1
       }

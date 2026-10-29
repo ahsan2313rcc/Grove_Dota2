@@ -228,7 +228,7 @@ export function DebugRail({
                 <td>{row.label}</td>
                 <td>{row.count}</td>
                 <td>{fmt(row.avgCount)}</td>
-                <td>{row.id.endsWith('_3') || row.id.endsWith('_4') || row.id.endsWith('_5') ? '—' : fmt(row.avgPoints)}</td>
+                <td>{fmt(row.avgPoints)}</td>
               </tr>
             ))}
           </tbody>
