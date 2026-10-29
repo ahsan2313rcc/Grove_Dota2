@@ -56,8 +56,10 @@ function moved(before: Game, after: Game): boolean {
 }
 
 function value(state: Game, actor: PlayerId): number {
-  if (state.over) return (state.over.scores[actor] - state.over.scores[actor === 0 ? 1 : 0]) * 5
+  const others = state.players.map((player) => player.id).filter((id) => id !== actor)
+  const bestFoe = (scores: number[]) => Math.max(0, ...others.map((id) => scores[id] ?? 0))
+  if (state.over) return ((state.over.scores[actor] ?? 0) - bestFoe(state.over.scores)) * 5
   const mine = scoreState(state, actor).total
-  const theirs = scoreState(state, actor === 0 ? 1 : 0).total
+  const theirs = bestFoe(state.players.map((player) => scoreState(state, player.id).total))
   return mine - theirs + state.players[actor].hand.length * 0.12
 }

@@ -2,8 +2,9 @@ import { display } from '../game/catalog.ts'
 import { attrsOf, enterReason, findHero, graveLocked, itemsLocked, rangeOf, scoreTeam, TEAM_CAP } from '../game/flow.ts'
 import type { Attr, BoardHero, CardInst, Game, PlayerId, Range, Team } from '../game/types.ts'
 
-export function opponentOf(id: PlayerId): PlayerId {
-  return id === 0 ? 1 : 0
+export function opponentOf(game: Game, id: PlayerId): PlayerId {
+  const next = (id + 1) % game.players.length
+  return next
 }
 
 export function handRevealed(game: Game, viewer: PlayerId, target: PlayerId): boolean {
@@ -56,7 +57,9 @@ export function statusLines(game: Game, viewer: PlayerId): string[] {
   const me = game.players[viewer]
   if (game.active === viewer && me.noHeroNow) lines.push('Doom: you cannot play heroes this turn.')
   if (me.skip) lines.push('You skip your next turn.')
-  if (game.players[opponentOf(viewer)].skip) lines.push(`${game.players[opponentOf(viewer)].name} skips their next turn.`)
+  for (const player of game.players) {
+    if (player.id !== viewer && player.skip) lines.push(`${player.name} skips their next turn.`)
+  }
   if (game.lockPlay && game.lockPlay.caster !== viewer) lines.push('Chronosphere: you cannot play cards.')
   if (game.silence) lines.push('Global Silence: hero abilities do not fire.')
   if (game.naga) lines.push('Song of the Siren: heroes cannot be destroyed.')

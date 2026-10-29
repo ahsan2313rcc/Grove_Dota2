@@ -6,7 +6,7 @@ import { teamShape } from '../game/scoring.ts'
 import type { Action, CardInst, Game, PlayerId } from '../game/types.ts'
 import { CardFace } from './CardFace.tsx'
 import { Prompt } from './Prompt.tsx'
-import { emberTargets, handRevealed, heroMarks, isCombo, opponentOf, playBlock, shownAttrs, shownRange, statusLines } from './present.ts'
+import { emberTargets, handRevealed, heroMarks, isCombo, playBlock, shownAttrs, shownRange, statusLines } from './present.ts'
 import { Rules } from './Rules.tsx'
 
 type Focus =
@@ -15,10 +15,6 @@ type Focus =
   | { kind: 'card'; defId: string }
 
 type PileName = 'deck' | 'grave' | 'exile' | 'runes' | 'neutrals' | 'towers'
-type SeatCount = 2 | 3 | 4 | 5 | 6 | 7 | 8
-type Chair =
-  | { kind: 'player'; key: string; id: PlayerId; mine: boolean }
-  | { kind: 'open'; key: string; label: string }
 
 const PAGE_SIZE = 4
 
@@ -26,14 +22,12 @@ export function Table({
   game,
   seed,
   stuck,
-  seats = 2,
   onAction,
   onLobby,
 }: {
   game: Game
   seed: number
   stuck: boolean
-  seats?: SeatCount
   onAction: (action: Action) => void
   onLobby: () => void
 }) {
@@ -48,18 +42,26 @@ export function Table({
   const [page, setPage] = useState(0)
   const [acked, setAcked] = useState('')
   const [leaveArmed, setLeaveArmed] = useState(false)
-  const names: [string, string] = [game.players[0].name, game.players[1].name]
+  const names = game.players.map((player) => player.name)
   const promptKey = game.pending ? `${game.turn}:${game.pending.actor}:${game.pending.prompt}:${game.pending.choices.length}` : ''
-  const response = game.mode === 'hotseat' && !!game.pending && game.pending.actor !== game.active
-  const viewer: PlayerId = game.mode === 'ai' ? 0 : response && acked === promptKey ? game.pending!.actor : game.active
-  const you = game.players[viewer]
-  const foeId = opponentOf(viewer)
-  const foe = game.players[foeId]
-  const chairs = buildChairs(seats, viewer, foeId)
+  const humans = game.players.filter((player) => !player.ai).map((player) => player.id)
+  const primaryHuman = humans[0] ?? 0
+  const pendingHuman = game.pending && !game.players[game.pending.actor]?.ai ? game.pending.actor : null
+  const activeHuman = game.players[game.active] && !game.players[game.active]!.ai ? game.active : null
+  const needsHandoff = pendingHuman !== null && acked !== promptKey
+  const viewer: PlayerId = pendingHuman !== null && acked === promptKey
+    ? pendingHuman
+    : (activeHuman ?? primaryHuman)
+  const you = game.players[viewer]!
+  const chairs = game.players.map((player) => ({
+    key: `p-${player.id}`,
+    id: player.id,
+    mine: player.id === viewer,
+  }))
   const pageCount = Math.max(1, Math.ceil(chairs.length / PAGE_SIZE))
   const safePage = ((page % pageCount) + pageCount) % pageCount
   const visible = chairs.slice(safePage * PAGE_SIZE, safePage * PAGE_SIZE + PAGE_SIZE)
-  const canAct = !game.over && !game.veil && !game.pending && game.active === viewer
+  const canAct = !game.over && !game.veil && !game.pending && game.active === viewer && !you.ai
   const handIds = new Set(you.hand.map((card) => card.uid))
   const liveCombo = combo.filter((uid) => handIds.has(uid))
   if (liveCombo.length !== combo.length) setCombo(liveCombo)
@@ -70,7 +72,8 @@ export function Table({
   const lines = statusLines(game, viewer)
   const lastLog = game.log[game.log.length - 1] ?? ''
   const showDetail = !!focus || !!placing || !!moving
-  const whoseTurn = game.over ? 'Match over' : game.active === viewer ? 'Your turn' : `${foe.name}'s turn`
+  const activeName = game.players[game.active]?.name ?? 'Player'
+  const whoseTurn = game.over ? 'Match over' : game.active === viewer ? 'Your turn' : `${activeName}'s turn`
 
   useEffect(() => {
     document.querySelector('.lane.mine')?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
@@ -90,29 +93,29 @@ export function Table({
     return () => window.removeEventListener('keydown', onKey)
   }, [])
 
-  if (game.mode === 'hotseat' && game.veil) {
+  if (game.mode === 'hotseat' && game.veil && !game.players[game.active]?.ai) {
     return (
       <SeatCover
-        title={game.players[game.active].name}
+        title={game.players[game.active]!.name}
         body="Five cards are waiting. The other hand stays hidden until the seat passes back."
         action="Begin turn"
         testId="ready"
         names={names}
-        scores={[scoreState(game, 0).total, scoreState(game, 1).total]}
+        scores={game.players.map((player) => scoreState(game, player.id).total)}
         onAction={() => onAction({ type: 'ready' })}
       />
     )
   }
 
-  if (response && game.pending && acked !== promptKey) {
+  if (needsHandoff && pendingHuman !== null) {
     return (
       <SeatCover
-        title={names[game.pending.actor]}
+        title={names[pendingHuman] ?? 'Player'}
         body="A response is waiting. Sit down before the choice is shown."
-        action={`I'm ${names[game.pending.actor]}`}
+        action={`I'm ${names[pendingHuman]}`}
         testId="handoff"
         names={names}
-        scores={[scoreState(game, 0).total, scoreState(game, 1).total]}
+        scores={game.players.map((player) => scoreState(game, player.id).total)}
         onAction={() => setAcked(promptKey)}
       />
     )
@@ -194,10 +197,7 @@ export function Table({
             ) : null}
             <div className="board-grid" data-testid="board-grid" data-count={visible.length} data-page={safePage}>
               {visible.map((chair) => {
-                if (chair.kind === 'open') {
-                  return <OpenSeat key={chair.key} label={chair.label} />
-                }
-                const player = game.players[chair.id]
+                const player = game.players[chair.id]!
                 const scored = scoreState(game, chair.id)
                 const shapes = countShapes(game, chair.id)
                 return (
@@ -208,8 +208,8 @@ export function Table({
                     shapes={shapes}
                     handCount={player.hand.length}
                     active={game.active === chair.id}
-                    scoreTestId={chair.mine ? 'score-you' : 'score-foe'}
-                    handTestId={chair.mine ? undefined : 'hand-foe'}
+                    scoreTestId={chair.mine ? 'score-you' : chair.id === (viewer + 1) % game.players.length ? 'score-foe' : `score-${chair.id}`}
+                    handTestId={chair.mine ? undefined : chair.id === (viewer + 1) % game.players.length ? 'hand-foe' : `hand-${chair.id}`}
                     mine={chair.mine}
                     showHand={!chair.mine}
                     onHand={chair.mine ? undefined : () => setHandOpen(chair.id)}
@@ -350,17 +350,6 @@ export function Table({
   )
 }
 
-function buildChairs(seats: SeatCount, viewer: PlayerId, foeId: PlayerId): Chair[] {
-  const chairs: Chair[] = [
-    { kind: 'player', key: `p-${viewer}`, id: viewer, mine: true },
-    { kind: 'player', key: `p-${foeId}`, id: foeId, mine: false },
-  ]
-  for (let index = 3; index <= seats; index += 1) {
-    chairs.push({ kind: 'open', key: `open-${index}`, label: `Seat ${index}` })
-  }
-  return chairs
-}
-
 function countShapes(game: Game, id: PlayerId): { core: number; mix: number } {
   let core = 0
   let mix = 0
@@ -370,21 +359,6 @@ function countShapes(game: Game, id: PlayerId): { core: number; mix: number } {
     if (shape === 'mix') mix += 1
   }
   return { core, mix }
-}
-
-function OpenSeat({ label }: { label: string }) {
-  return (
-    <section className="lane open" data-testid="open-seat">
-      <div className="seat">
-        <span>{label}</span>
-        <strong>—</strong>
-        <small>Open chair</small>
-      </div>
-      <div className="lane-board">
-        <p className="quiet">Waiting for a player. This match seats two; extra chairs stay empty.</p>
-      </div>
-    </section>
-  )
 }
 
 function Lane({
@@ -506,8 +480,8 @@ function SeatCover({
   body: string
   action: string
   testId: string
-  names: [string, string]
-  scores: [number, number]
+  names: string[]
+  scores: number[]
   onAction: () => void
 }) {
   return (
@@ -515,7 +489,7 @@ function SeatCover({
       <p className="eyebrow">Pass the seat</p>
       <h1>{title}</h1>
       <p>{body}</p>
-      <p className="cover-scores">{names[0]} {scores[0]} · {names[1]} {scores[1]}</p>
+      <p className="cover-scores">{names.map((name, index) => `${name} ${scores[index] ?? 0}`).join(' · ')}</p>
       <button type="button" className="primary" data-testid={testId} onClick={onAction}>{action}</button>
     </div>
   )
@@ -753,22 +727,23 @@ function PileDialog({
   )
 }
 
-function Over({ game, names, onLobby }: { game: Game; names: [string, string]; onLobby: () => void }) {
+function Over({ game, names, onLobby }: { game: Game; names: string[]; onLobby: () => void }) {
   const over = game.over
   if (!over) return null
-  const [a, b] = over.scores
-  const headline = a === b ? 'The match is tied.' : a > b ? `${names[0]} wins.` : `${names[1]} wins.`
+  const best = Math.max(...over.scores)
+  const winners = names.filter((_, index) => over.scores[index] === best)
+  const headline = winners.length > 1 ? 'The match is tied.' : `${winners[0]} wins.`
   return (
     <div className="scrim">
       <section className="sheet over" role="dialog" aria-modal="true">
         <p className="eyebrow">{over.reason}</p>
         <h2>{headline}</h2>
-        <div className="over-scores">
+        <div className="over-scores" style={{ gridTemplateColumns: `repeat(${Math.min(names.length, 4)}, minmax(0, 1fr))` }}>
           {names.map((name, index) => (
-            <div key={name}>
+            <div key={`${name}-${index}`}>
               <strong>{over.scores[index]}</strong>
               <span>{name}</span>
-              <small>{over.parts[index].teams} from teams · {over.parts[index].settings} from settings</small>
+              <small>{over.parts[index]?.teams ?? 0} from teams · {over.parts[index]?.settings ?? 0} from settings</small>
             </div>
           ))}
         </div>

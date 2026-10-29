@@ -15,6 +15,7 @@ import {
   extract,
   findHero,
   foe,
+  opponents,
   graveLocked,
   heroChoices,
   heroWeight,
@@ -134,6 +135,16 @@ function graveHeroes(state: Game): Choice[] {
     .map((card) => ({ id: `card:${card.uid}`, label: display(card.defId).name, defId: card.defId }))
 }
 
+function opponentChoices(state: Game, actor: PlayerId): Choice[] {
+  return opponents(state, actor).map((id) => ({ id: `player:${id}`, label: pname(state, id) }))
+}
+
+function pickedEnemy(state: Game, resume: CastResume, actor: PlayerId): PlayerId {
+  const raw = resume.picked.find((id) => id.startsWith('player:'))
+  if (raw) return Number(raw.slice(7))
+  return foe(state, actor)
+}
+
 function ownTeams(state: Game, actor: PlayerId, withNew: boolean): Choice[] {
   const choices = teamChoices(state, actor, 'ability', (_team, player) => player.id === actor)
   if (withNew && state.players[actor].teams.length < TEAM_CAP) choices.push({ id: `new:${actor}`, label: 'New team' })
@@ -236,7 +247,7 @@ function questions(state: Game, resume: CastResume): Ask {
   const at = step(resume)
   const actor = resume.actor
   const kind = sourceKind(resume.defId)
-  const enemy = foe(actor)
+  const enemy = foe(state, actor)
   const home = here(state, resume)
 
   switch (resume.defId) {
@@ -261,20 +272,23 @@ function questions(state: Game, resume: CastResume): Ask {
     case 'scythe':
     case 'gloves':
     case 'illusion':
-      if (at > 0) return ready()
       if (resume.defId === 'pudge' || resume.defId === 'lion') {
-        const heroes = state.players[enemy].hand.filter((card) => card.kind === 'hero')
-        if (resume.defId === 'lion') {
+        if (at === 0) return pose(actor, 'Choose an opponent.', opponentChoices(state, actor))
+        if (resume.defId === 'lion' && at === 1) {
+          const target = pickedEnemy(state, resume, actor)
+          const heroes = state.players[target]?.hand.filter((card) => card.kind === 'hero') ?? []
+          if (heroes.length === 0) return fizzle('They have no hero in hand.')
           return pose(actor, "Exile a hero from the opponent's hand.", heroes.map((card) => ({
             id: `card:${card.uid}`,
             label: display(card.defId).name,
             defId: card.defId,
           })))
         }
-        return pose(actor, 'Hook a hero out of their hand.', [{ id: `player:${enemy}`, label: pname(state, enemy) }])
+        return ready()
       }
+      if (at > 0) return ready()
       if (resume.defId === 'night_stalker' || resume.defId === 'queen_of_pain' || resume.defId === 'bane' || resume.defId === 'gloves') {
-        return pose(actor, 'Choose an opponent.', [{ id: `player:${enemy}`, label: pname(state, enemy) }])
+        return pose(actor, 'Choose an opponent.', opponentChoices(state, actor))
       }
       return pose(actor, 'Choose an enemy hero.', enemyHeroes(state, actor, kind))
     case 'phantom_assassin':
@@ -291,7 +305,7 @@ function questions(state: Game, resume: CastResume): Ask {
       }))
     case 'halberd':
       if (at > 0) return ready()
-      return pose(actor, 'Choose an opponent.', [{ id: `player:${enemy}`, label: pname(state, enemy) }])
+      return pose(actor, 'Choose an opponent.', opponentChoices(state, actor))
     case 'abyssal':
       if (at === 0) return pose(actor, 'Choose an enemy hero.', enemyHeroes(state, actor, kind))
       if (at > 1) return ready()
@@ -559,7 +573,7 @@ function questions(state: Game, resume: CastResume): Ask {
         return ready()
       }
       if (at > 0) return ready()
-      return pose(actor, 'Choose an opponent.', [{ id: `player:${enemy}`, label: pname(state, enemy) }])
+      return pose(actor, 'Choose an opponent.', opponentChoices(state, actor))
     case 'magnus_keep':
       return ready()
     case 'magnus': {
@@ -643,7 +657,7 @@ function questions(state: Game, resume: CastResume): Ask {
 
 function effect(state: Game, resume: CastResume): Game {
   const actor = resume.actor
-  const enemy = foe(actor)
+  const enemy = pickedEnemy(state, resume, actor)
   const heroes = heroIds(resume.picked)
   const teams = rawTeams(resume.picked)
   const cards = cardIds(resume.picked)
@@ -685,7 +699,7 @@ function effect(state: Game, resume: CastResume): Game {
     case 'kunkka':
       return startKunkka(state, actor)
     case 'largo':
-      return queueDraw(queueDraw(log(state, 'Catchy Lilt.'), 0, 2), 1, 2)
+      return state.players.reduce((current, player) => queueDraw(current, player.id, 2), log(state, 'Catchy Lilt.'))
     case 'legion_commander':
       state = kill(state, resume.sourceUid, 'Duel')
       if (heroes[0]) state = kill(state, heroes[0], 'Duel')
@@ -837,8 +851,8 @@ function effect(state: Game, resume: CastResume): Game {
         'Soulbind.',
       )
     case 'invoker':
-      state = dump(dump(log(state, 'Cataclysm.'), 0), 1)
-      return queueDraw(queueDraw(state, 0, 3), 1, 3)
+      state = state.players.reduce((current, player) => dump(current, player.id), log(state, 'Cataclysm.'))
+      return state.players.reduce((current, player) => queueDraw(current, player.id, 3), state)
     case 'jakiro':
       if (!teams[0]) return state
       return log(updateTeamTimed(state, teams[0], 'noEnter', stamp), 'Ice Path.')
@@ -1599,7 +1613,7 @@ function startKunkka(state: Game, actor: PlayerId): Game {
   return ask(
     { ...next, limbo: cards },
     {
-      actor: foe(actor),
+      actor: foe(state, actor),
       prompt: 'Split these cards into two piles.',
       mode: 'split',
       min: cards.length,
@@ -1653,7 +1667,7 @@ function arrow(state: Game, resume: CastResume): Game {
 function hook(state: Game, resume: CastResume): Game {
   const home = here(state, resume)
   if (!home) return state
-  const enemy = foe(resume.actor)
+  const enemy = pickedEnemy(state, resume, resume.actor)
   const pool = state.players[enemy].hand.filter((card) => card.kind === 'hero')
   const [next, card] = randomFrom(state, pool)
   if (!card) return log(next, 'Meat Hook finds no hero.')

@@ -14,7 +14,8 @@ import {
   expireStart,
   findHand,
   findHero,
-  foe,
+  holderWith,
+  nextSeat,
   heroWeight,
   itemsLocked,
   log,
@@ -43,10 +44,20 @@ import {
 } from './flow.ts'
 import type { Action, CardInst, CardKind, Game, Player, PlayerId, Resume } from './types.ts'
 
-export function createGame(opts: { seed?: number; mode: 'hotseat' | 'ai'; names?: [string, string] }): Game {
-  const mode = opts.mode
-  const names = opts.names ?? (mode === 'ai' ? ['You', 'The Grove'] : ['Player 1', 'Player 2'])
-  let state = blank(opts.seed ?? (Date.now() % 100000), mode, names)
+export type SeatSpec = { name: string; ai: boolean }
+
+export function createGame(opts: {
+  seed?: number
+  mode?: 'hotseat' | 'ai'
+  names?: [string, string]
+  seats?: SeatSpec[]
+}): Game {
+  const seats = opts.seats ?? legacySeats(opts.mode ?? 'hotseat', opts.names)
+  if (seats.length < 2 || seats.length > 8) throw new Error('Grove seats 2 to 8 players.')
+  const humans = seats.filter((seat) => !seat.ai).length
+  if (humans < 1) throw new Error('At least one human player is required.')
+  const mode: 'hotseat' | 'ai' = humans >= 2 ? 'hotseat' : 'ai'
+  let state = blank(opts.seed ?? (Date.now() % 100000), mode, seats)
   const cards: CardInst[] = []
   for (const hero of HEROES) {
     const made = makeCard(state, hero.id, 'hero')
@@ -72,17 +83,25 @@ export function createGame(opts: { seed?: number; mode: 'hotseat' | 'ai'; names?
   state = fillPile(state, 'runes')
   state = fillPile(state, 'neutrals')
   state = fillPile(state, 'towers')
-  state = takeDraw(state, 0, 5)
-  state = takeDraw(state, 1, 5)
+  for (let id = 0; id < seats.length; id += 1) state = takeDraw(state, id, 5)
+  const names = seats.map((seat) => seat.name)
+  const listed = names.length === 2 ? `${names[0]} and ${names[1]}` : names.join(', ')
   state = {
     ...state,
     live: true,
-    veil: mode === 'hotseat',
-    log: [`${names[0]} and ${names[1]} draw 5. ${names[0]} acts first.`],
+    veil: mode === 'hotseat' && !seats[0]!.ai,
+    log: [`${listed} draw 5. ${names[0]} acts first.`],
   }
-  state.players[0].actions = 2
-  state.players[1].actions = 0
+  state = setPlayer(state, 0, (player) => ({ ...player, actions: 2 }))
   return state
+}
+
+function legacySeats(mode: 'hotseat' | 'ai', names?: [string, string]): SeatSpec[] {
+  const labels = names ?? (mode === 'ai' ? ['You', 'The Grove'] : ['Player 1', 'Player 2'])
+  return [
+    { name: labels[0], ai: false },
+    { name: labels[1], ai: mode === 'ai' },
+  ]
 }
 
 function fillPile(state: Game, pile: 'runes' | 'neutrals' | 'towers'): Game {
@@ -98,7 +117,7 @@ function fillPile(state: Game, pile: 'runes' | 'neutrals' | 'towers'): Game {
   return { ...shuffled[0], [pile]: shuffled[1] }
 }
 
-function blank(seed: number, mode: 'hotseat' | 'ai', names: [string, string]): Game {
+function blank(seed: number, mode: 'hotseat' | 'ai', seats: SeatSpec[]): Game {
   const player = (id: PlayerId, name: string, ai: boolean): Player => ({
     id,
     name,
@@ -126,7 +145,7 @@ function blank(seed: number, mode: 'hotseat' | 'ai', names: [string, string]): G
     runes: [],
     neutrals: [],
     towers: [],
-    players: [player(0, names[0], false), player(1, names[1], mode === 'ai')],
+    players: seats.map((seat, id) => player(id, seat.name, seat.ai)),
     active: 0,
     turn: 1,
     log: [],
@@ -288,13 +307,13 @@ function endTurn(state: Game): Game {
   if (state.players[actor].hand.length > state.players[actor].handLimit) return askLimit(state, actor, 'end')
   state = returnPhased(state, state.turn)
   state = clearEnd(state)
-  return startTurn(state, foe(actor))
+  return startTurn(state, nextSeat(state, actor))
 }
 
 function startTurn(state: Game, id: PlayerId): Game {
   let guard = 0
   let active = id
-  while (guard < 4) {
+  while (guard < state.players.length + 1) {
     guard += 1
     state = { ...state, active, turn: state.turn + 1 }
     state = expireStart(state)
@@ -302,9 +321,10 @@ function startTurn(state: Game, id: PlayerId): Game {
     state = returnLassos(state)
     state = viperDue(state)
     const player = state.players[active]
+    if (!player) break
     if (player.skip) {
       state = setPlayer(log(state, `${player.name} skips the turn.`), active, (current) => ({ ...current, skip: false }))
-      active = foe(active)
+      active = nextSeat(state, active)
       continue
     }
     if (player.noHeroNext) {
@@ -324,11 +344,12 @@ function combo(state: Game, uids: string[], forced = false): Game {
   const cards = uids.map((uid) => state.players[actor].hand.find((card) => card.uid === uid))
   if (cards.some((card) => !card || card.kind !== 'setting')) return state
   if (!forced) {
-    const nyx = state.players[foe(actor)].hand.filter((card) => card.defId === 'nyx_assassin')
-    if (nyx.length > 0) {
+    const holder = holderWith(state, actor, 'nyx_assassin')
+    if (holder !== null) {
+      const nyx = state.players[holder]!.hand.filter((card) => card.defId === 'nyx_assassin')
       return ask(state, {
-        actor: foe(actor),
-        prompt: `${pname(state, foe(actor))} may discard Nyx Assassin to counter the setting combo, or pass.`,
+        actor: holder,
+        prompt: `${pname(state, holder)} may discard Nyx Assassin to counter the setting combo, or pass.`,
         mode: 'pick',
         min: 1,
         max: 1,
@@ -396,9 +417,9 @@ function play(state: Game, uid: string, team: string): Game {
 }
 
 function offerCounter(state: Game, actor: PlayerId, uid: string, team: string): Game {
-  const enemy = foe(actor)
-  const cards = state.players[enemy].hand.filter((card) => card.defId === 'nyx_assassin')
-  if (cards.length === 0) return resolvePlay(state, uid, team)
+  const enemy = holderWith(state, actor, 'nyx_assassin')
+  if (enemy === null) return resolvePlay(state, uid, team)
+  const cards = state.players[enemy]!.hand.filter((card) => card.defId === 'nyx_assassin')
   const played = findHand(state, uid)
   const name = played ? display(played.card.defId).name : 'that card'
   return ask(state, {
@@ -460,9 +481,9 @@ function playHero(state: Game, actor: PlayerId, card: CardInst, team: string): G
 }
 
 function offerTorment(state: Game, heroUid: string, resume: Resume & { kind: 'cast' }): Game {
-  const enemy = foe(resume.actor)
-  const cards = state.players[enemy].hand.filter((card) => card.defId === 'tormentor')
-  if (cards.length === 0) return cast(state, resume)
+  const enemy = holderWith(state, resume.actor, 'tormentor')
+  if (enemy === null) return cast(state, resume)
+  const cards = state.players[enemy]!.hand.filter((card) => card.defId === 'tormentor')
   return ask(state, {
     actor: enemy,
     prompt: 'Play Tormentor on the hero that just entered, or pass.',
@@ -583,7 +604,7 @@ function satisfy(state: Game, ids: string[]): Game {
     const choice = ids[0]
     if (!choice || choice === 'pass') return resolvePlay(next, resume.uid, resume.team)
     const nyxUid = choice.slice(4)
-    let dumped = discardUid(next, foe(resume.actor), nyxUid)
+    let dumped = discardUid(next, pending.actor, nyxUid)
     const card = dumped.players[resume.actor].hand.find((entry) => entry.uid === resume.uid)
     if (card) dumped = toGrave(removeHand(dumped, resume.actor, card.uid), card, { type: 'hand', player: resume.actor })
     return log(dumped, `Spiked Carapace counters ${card ? display(card.defId).name : 'the card'}.`)
@@ -592,7 +613,7 @@ function satisfy(state: Game, ids: string[]): Game {
     const choice = ids[0]
     if (!choice || choice === 'pass') return combo(next, resume.uids, true)
     const nyxUid = choice.slice(4)
-    let dumped = discardUid(next, foe(resume.actor), nyxUid)
+    let dumped = discardUid(next, pending.actor, nyxUid)
     for (const uid of resume.uids) {
       const card = dumped.players[resume.actor].hand.find((entry) => entry.uid === uid)
       if (card) dumped = toGrave(removeHand(dumped, resume.actor, card.uid), card, { type: 'hand', player: resume.actor })
@@ -613,7 +634,7 @@ function satisfy(state: Game, ids: string[]): Game {
     const choice = ids[0]
     if (!choice || choice === 'pass' || !resume.cast) return resume.cast ? cast(next, resume.cast) : next
     const uid = choice.slice('torment:'.length)
-    const owner = foe(resume.cast.actor)
+    const owner = pending.actor
     const card = next.players[owner].hand.find((entry) => entry.uid === uid)
     let played = card ? toExile(removeHand(next, owner, uid), card) : next
     played = enqueue(played, resume.heroUid, 'Tormentor', false, true, owner)
@@ -736,13 +757,15 @@ function answerSave(state: Game, uid: string, dying: string, cause: string, forc
 
 function finish(state: Game, reason: string): Game {
   state = returnPhased(state, state.turn)
-  const parts = [scoreState(state, 0), scoreState(state, 1)] as const
+  const parts = state.players.map((player) => scoreState(state, player.id))
+  const scores = parts.map((part) => part.total)
+  const summary = state.players.map((player, index) => `${player.name} ${scores[index]}`).join(', ')
   return {
     ...state,
     pending: null,
     veil: false,
-    over: { reason, scores: [parts[0].total, parts[1].total], parts: [parts[0], parts[1]] },
-    log: [...state.log, `${reason} ${state.players[0].name} ${parts[0].total}, ${state.players[1].name} ${parts[1].total}.`],
+    over: { reason, scores, parts },
+    log: [...state.log, `${reason} ${summary}.`],
   }
 }
 
@@ -807,7 +830,8 @@ function autoIds(state: Game): string[] {
     return pending.choices.map((choice, index) => `${index % 2 === 0 ? 'a' : 'b'}:${choice.id}`)
   }
   if (pending.mode === 'assign') {
-    return pending.choices.map((choice, index) => `${index % 2}:${choice.id}`)
+    const seats = Math.max(2, state.players.length)
+    return pending.choices.map((choice, index) => `${index % seats}:${choice.id}`)
   }
   if (pending.mode === 'groups') {
     return pending.choices.map((choice, index) => `${index % 3}:${choice.id}`)

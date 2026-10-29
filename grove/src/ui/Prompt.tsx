@@ -8,7 +8,7 @@ export function Prompt({
   onChoose,
 }: {
   pending: Pending
-  names: [string, string]
+  names: string[]
   onChoose: (ids: string[]) => void
 }) {
   const [picked, setPicked] = useState<string[]>([])
@@ -95,9 +95,9 @@ export function Prompt({
   )
 }
 
-function segments(mode: Pending['mode'], names: [string, string]): { value: string; label: string }[] {
+function segments(mode: Pending['mode'], names: string[]): { value: string; label: string }[] {
   if (mode === 'split') return [{ value: 'a', label: 'Pile A' }, { value: 'b', label: 'Pile B' }]
-  if (mode === 'assign') return [{ value: '0', label: names[0] }, { value: '1', label: names[1] }]
+  if (mode === 'assign') return names.map((name, index) => ({ value: String(index), label: name }))
   return [
     { value: '0', label: 'Group 1' },
     { value: '1', label: 'Group 2' },

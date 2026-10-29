@@ -1,4 +1,4 @@
-export type PlayerId = 0 | 1
+export type PlayerId = number
 export type Attr = 'STR' | 'AGI' | 'INT' | 'UNI'
 export type Range = 'Melee' | 'Ranged'
 export type SettingKind = 'river' | 'jungle' | 'lane'
@@ -161,8 +161,8 @@ export interface Lasso {
 
 export interface Over {
   reason: string
-  scores: [number, number]
-  parts: [ScoreParts, ScoreParts]
+  scores: number[]
+  parts: ScoreParts[]
 }
 
 export interface ScoreParts {
@@ -182,7 +182,7 @@ export interface Game {
   runes: CardInst[]
   neutrals: CardInst[]
   towers: CardInst[]
-  players: [Player, Player]
+  players: Player[]
   active: PlayerId
   turn: number
   log: string[]

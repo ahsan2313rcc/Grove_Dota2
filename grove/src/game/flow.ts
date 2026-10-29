@@ -19,8 +19,28 @@ import type {
 
 export type SourceKind = 'ability' | 'item' | 'reward'
 
-export function foe(id: PlayerId): PlayerId {
-  return id === 0 ? 1 : 0
+export function opponents(state: Game, id: PlayerId): PlayerId[] {
+  return state.players.map((player) => player.id).filter((player) => player !== id)
+}
+
+export function nextSeat(state: Game, id: PlayerId): PlayerId {
+  const count = state.players.length
+  if (count === 0) return id
+  return (id + 1) % count
+}
+
+/** Next opponent clockwise. Prefer a picked `player:` id when an effect already chose one. */
+export function foe(state: Game, id: PlayerId): PlayerId {
+  return nextSeat(state, id)
+}
+
+export function holderWith(state: Game, actor: PlayerId, defId: string): PlayerId | null {
+  const count = state.players.length
+  for (let step = 1; step < count; step += 1) {
+    const id = (actor + step) % count
+    if (state.players[id]?.hand.some((card) => card.defId === defId)) return id
+  }
+  return null
 }
 
 export function pname(state: Game, id: PlayerId): string {
@@ -59,9 +79,10 @@ export function shuffle<T>(state: Game, cards: T[]): [Game, T[]] {
 }
 
 export function setPlayer(state: Game, id: PlayerId, fn: (player: Player) => Player): Game {
-  const players = [state.players[0], state.players[1]] as [Player, Player]
-  players[id] = fn(players[id])
-  return { ...state, players }
+  return {
+    ...state,
+    players: state.players.map((player) => (player.id === id ? fn(player) : player)),
+  }
 }
 
 export interface Loc {
@@ -103,7 +124,7 @@ export function editHero(state: Game, uid: string, fn: (hero: BoardHero) => Boar
         return next ? [next] : []
       }),
     })),
-  })) as [Player, Player]
+  }))
   return strip({ ...state, players })
 }
 
@@ -111,7 +132,7 @@ export function updateTeam(state: Game, teamId: string, fn: (team: Team) => Team
   const players = state.players.map((player) => ({
     ...player,
     teams: player.teams.map((team) => (team.id === teamId ? fn(team) : team)),
-  })) as [Player, Player]
+  }))
   return strip({ ...state, players })
 }
 
@@ -124,7 +145,7 @@ export function strip(state: Game): Game {
         gaze: team.heroes.some((hero) => hero.defId === 'medusa'),
       }))
       .filter((team) => team.heroes.length > 0 || team.mine),
-  })) as [Player, Player]
+  }))
   return { ...state, players }
 }
 
@@ -824,7 +845,7 @@ export function expireStart(state: Game): Game {
           bkb: drop(hero.bkb),
         })),
       })),
-    })) as [Player, Player],
+    })),
   }
   return next
 }
@@ -854,7 +875,7 @@ function expireBoards(state: Game): Game {
         ...team,
         heroes: team.heroes.map((hero) => ({ ...hero, dawn: null })),
       })),
-    })) as [Player, Player],
+    })),
   }
 }
 

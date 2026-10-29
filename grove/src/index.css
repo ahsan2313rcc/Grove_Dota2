@@ -280,6 +280,23 @@ p { margin: 0; }
   color: var(--cream-dim);
   font-size: 0.85rem;
 }
+.seat-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.seat-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: end;
+}
+.kind-picks { display: flex; gap: 4px; }
+.kind-picks button { padding: 0.35rem 0.7rem; font-size: 0.8rem; }
+.kind-picks button.on { background: var(--gold); color: var(--ink); }
 .detail {
   padding: 8px 10px;
   border-radius: 12px;
