@@ -44,9 +44,15 @@ describe('balance', () => {
     expect(tempo.byStrat.every((row) => row.strat === 'tempo')).toBe(true)
     expect(tempo.heroHigh[0] ? tempo.heroHigh[0].avgRelativeSwing >= (tempo.heroLow[0]?.avgRelativeSwing ?? -Infinity) : true).toBe(true)
     expect(tempo.eventStats.find((row) => row.id === 'drawDeck')?.total).toBeGreaterThan(0)
+    const tempoDraw = tempo.eventStats.find((row) => row.id === 'drawDeck')!.total
+    const allDraw = all.eventStats.find((row) => row.id === 'drawDeck')!.total
+    expect(tempoDraw).toBeLessThan(allDraw)
+    const tempoShapes = tempo.shapeCompare.find((row) => row.id === 'mix_team')!.count
+    const allShapes = all.shapeCompare.find((row) => row.id === 'mix_team')!.count
+    expect(tempoShapes).toBeLessThanOrEqual(allShapes)
 
-    const mixOnly = summarizeReports(reports, { strats: [], mixOnly: true })
-    expect(mixOnly.matches).toBe(reports.filter((report) => report.mixture).length)
-    expect(mixOnly.shapeCompare.some((row) => row.count >= 0)).toBe(true)
+    const mixSeats = summarizeReports(reports, { strats: [], mixOnly: true })
+    expect(mixSeats.matches).toBe(reports.filter((report) => report.mixture).length)
+    expect(mixSeats.shapeCompare.some((row) => row.count >= 0)).toBe(true)
   })
 })

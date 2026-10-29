@@ -8,7 +8,7 @@ import type { Action, AiStrat, Attr, CardInst, CardKind, Game } from './types.ts
 export type PlayKind = CardKind | 'combo' | 'draw' | 'morph' | 'move' | 'other'
 export type RelBucket = 'hero' | 'setting' | 'loot' | 'other'
 
-/** Empty `strats` means every personality. `mixOnly` keeps mixture matches only. */
+/** Empty `strats` means every personality. `mixOnly` keeps matches where seats use different strats. */
 export type StratFilter = {
   strats: AiStrat[]
   mixOnly: boolean
@@ -99,7 +99,9 @@ export interface MatchReport {
   swings: SwingEvent[]
   rounds: RoundEvent[]
   events: EventCounts
+  seatEvents: EventCounts[]
   shapes: ShapeCounts
+  seatShapes: ShapeCounts[]
   over: boolean
 }
 
@@ -232,6 +234,7 @@ export class BalanceTracker {
   private swings: SwingEvent[] = []
   private rounds: RoundEvent[] = []
   private events: EventCounts = EMPTY_EVENTS()
+  private seatEvents: EventCounts[] = []
   private actions = 0
   private turnActor = 0
   private turnNo = 1
@@ -249,6 +252,7 @@ export class BalanceTracker {
     this.turnNo = game.turn
     this.turnCards = 0
     this.turnStartScores = totals(game)
+    this.seatEvents = game.players.map(() => EMPTY_EVENTS())
   }
 
   observe(before: Game, action: Action, after: Game) {
@@ -272,8 +276,8 @@ export class BalanceTracker {
       const resolved = held && !after.players[before.active]?.hand.some((card) => card.uid === action.uid)
       if (held && resolved) {
         this.turnCards += 1
-        this.recordSwing(before, after, before.active, held.defId, held.kind)
-        this.tallyPlay(held.kind, display(held.defId).instant)
+        this.recordSwing(before, after, actor, held.defId, held.kind)
+        this.tallyPlay(actor, held.kind, display(held.defId).instant)
       }
     } else if (action.type === 'combo') {
       this.turnCards += 1
@@ -282,19 +286,19 @@ export class BalanceTracker {
         .filter((id): id is string => !!id)
       const mixed = new Set(ids).size > 1
       this.recordSwing(before, after, before.active, mixed ? 'mixed_path' : (ids[0] ?? 'setting'), 'combo')
-      this.events.playSetting += 1
+      this.bumpEvent(before.active, 'playSetting')
     } else if (action.type === 'morph') {
       this.turnCards += 1
       const loc = before.players.flatMap((player) => player.teams.flatMap((team) => team.heroes)).find((hero) => hero.uid === action.uid)
       this.recordSwing(before, after, before.active, loc?.defId ?? 'morphling', 'morph')
-      this.events.playMorph += 1
+      this.bumpEvent(before.active, 'playMorph')
     } else if (action.type === 'draw') {
       this.turnCards += 1
       this.recordSwing(before, after, before.active, 'draw', 'draw')
-      this.events.drawAction += 1
+      this.bumpEvent(before.active, 'drawAction')
     } else if (action.type === 'move') {
       this.recordSwing(before, after, before.active, 'ember_spirit', 'move')
-      this.events.playMove += 1
+      this.bumpEvent(before.active, 'playMove')
     }
 
     if (after.over) this.flushRound(after)
@@ -309,13 +313,19 @@ export class BalanceTracker {
     return this.report(game, false)
   }
 
-  private tallyPlay(kind: CardKind, instant: boolean) {
-    if (kind === 'hero') this.events.playHero += 1
-    if (kind === 'item') this.events.playItem += 1
-    if (kind === 'rune') this.events.playRune += 1
-    if (kind === 'neutral') this.events.playNeutral += 1
-    if (kind === 'tower') this.events.playTower += 1
-    if (instant) this.events.playInstant += 1
+  private bumpEvent(actor: number, key: keyof EventCounts, amount = 1) {
+    this.events[key] += amount
+    const seat = this.seatEvents[actor] ?? (this.seatEvents[actor] = EMPTY_EVENTS())
+    seat[key] += amount
+  }
+
+  private tallyPlay(actor: number, kind: CardKind, instant: boolean) {
+    if (kind === 'hero') this.bumpEvent(actor, 'playHero')
+    if (kind === 'item') this.bumpEvent(actor, 'playItem')
+    if (kind === 'rune') this.bumpEvent(actor, 'playRune')
+    if (kind === 'neutral') this.bumpEvent(actor, 'playNeutral')
+    if (kind === 'tower') this.bumpEvent(actor, 'playTower')
+    if (instant) this.bumpEvent(actor, 'playInstant')
   }
 
   private tallyEvents(before: Game, after: Game, actor: number) {
@@ -331,25 +341,25 @@ export class BalanceTracker {
 
     for (const [uid] of afterHand) {
       if (beforeHand.has(uid)) continue
-      if (beforeDeck.has(uid)) this.events.drawDeck += 1
-      else if (beforeGrave.has(uid)) this.events.drawGrave += 1
+      if (beforeDeck.has(uid)) this.bumpEvent(actor, 'drawDeck')
+      else if (beforeGrave.has(uid)) this.bumpEvent(actor, 'drawGrave')
     }
 
     for (const [uid] of beforeHand) {
       if (afterHand.has(uid)) continue
-      if (afterGrave.has(uid)) this.events.discard += 1
-      if (afterExile.has(uid) && !beforeExile.has(uid)) this.events.exile += 1
+      if (afterGrave.has(uid)) this.bumpEvent(actor, 'discard')
+      if (afterExile.has(uid) && !beforeExile.has(uid)) this.bumpEvent(actor, 'exile')
     }
 
     for (const [uid] of beforeBoard) {
       if (afterBoard.has(uid)) continue
-      if (afterGrave.has(uid)) this.events.destroy += 1
-      if (afterExile.has(uid) && !beforeExile.has(uid)) this.events.exile += 1
+      if (afterGrave.has(uid)) this.bumpEvent(actor, 'destroy')
+      if (afterExile.has(uid) && !beforeExile.has(uid)) this.bumpEvent(actor, 'exile')
     }
 
     for (const [uid] of afterExile) {
       if (beforeExile.has(uid)) continue
-      if (beforeGrave.has(uid) && !afterGrave.has(uid)) this.events.exile += 1
+      if (beforeGrave.has(uid) && !afterGrave.has(uid)) this.bumpEvent(actor, 'exile')
     }
   }
 
@@ -385,7 +395,9 @@ export class BalanceTracker {
       swings: this.swings.slice(),
       rounds,
       events: { ...this.events },
+      seatEvents: game.players.map((_, index) => ({ ...(this.seatEvents[index] ?? EMPTY_EVENTS()) })),
       shapes: shapeCounts(game),
+      seatShapes: game.players.map((player) => shapeCountsFor(game, player.id)),
       over: !!game.over,
     }
   }
@@ -458,11 +470,11 @@ export function summarizeReports(reports: MatchReport[], filter: StratFilter = A
   const filteringPlays = filter.strats.length > 0
 
   for (const report of scoped) {
-    addEvents(eventTotals, report.events)
-    addShapes(shapeTotals, report.shapes)
-
-    for (const strat of report.seatStrats) {
+    for (let seat = 0; seat < report.seatStrats.length; seat += 1) {
+      const strat = report.seatStrats[seat]!
       if (!allowsStrat(filter, strat)) continue
+      addEvents(eventTotals, report.seatEvents[seat] ?? EMPTY_EVENTS())
+      addShapes(shapeTotals, report.seatShapes[seat] ?? EMPTY_SHAPES())
       const row = stratMap.get(strat) ?? { seats: 0, wins: 0, finishes: 0, score: 0, actor: 0, relative: 0, plays: 0 }
       row.seats += 1
       stratMap.set(strat, row)
@@ -761,48 +773,54 @@ function mixAttrCount(why: string): number {
 
 function shapeCounts(game: Game): ShapeCounts {
   const shapes = EMPTY_SHAPES()
-  for (const player of game.players) {
-    for (const team of player.teams) {
-      const scored = scoreTeam(game, team)
-      const shape = teamShape(scored.why)
-      // Core tiers are by hero count; mix tiers are by attribute count (+2 / +4).
-      const size = team.heroes.reduce((sum, hero) => sum + (hero.defId === 'meepo' ? 2 : 1), 0)
-      const mixAttrs = mixAttrCount(scored.why)
-      if (shape === 'core') {
-        shapes.coreTeams += 1
-        shapes.coreTeamPoints += scored.points
-        if (size === 3) {
-          shapes.coreTeams3 += 1
-          shapes.coreTeamPoints3 += scored.points
-        } else if (size === 4) {
-          shapes.coreTeams4 += 1
-          shapes.coreTeamPoints4 += scored.points
-        } else if (size >= 5) {
-          shapes.coreTeams5 += 1
-          shapes.coreTeamPoints5 += scored.points
-        }
-      } else if (shape === 'mix') {
-        shapes.mixTeams += 1
-        shapes.mixTeamPoints += scored.points
-        if (mixAttrs === 3) {
-          shapes.mixTeams3 += 1
-          shapes.mixTeamPoints3 += scored.points
-        } else if (mixAttrs >= 4) {
-          shapes.mixTeams4 += 1
-          shapes.mixTeamPoints4 += scored.points
-        }
-      } else {
-        shapes.openTeams += 1
+  for (const player of game.players) addShapes(shapes, shapeCountsFor(game, player.id))
+  return shapes
+}
+
+function shapeCountsFor(game: Game, playerId: number): ShapeCounts {
+  const shapes = EMPTY_SHAPES()
+  const player = game.players[playerId]
+  if (!player) return shapes
+  for (const team of player.teams) {
+    const scored = scoreTeam(game, team)
+    const shape = teamShape(scored.why)
+    // Core tiers are by hero count; mix tiers are by attribute count (+2 / +4).
+    const size = team.heroes.reduce((sum, hero) => sum + (hero.defId === 'meepo' ? 2 : 1), 0)
+    const mixAttrs = mixAttrCount(scored.why)
+    if (shape === 'core') {
+      shapes.coreTeams += 1
+      shapes.coreTeamPoints += scored.points
+      if (size === 3) {
+        shapes.coreTeams3 += 1
+        shapes.coreTeamPoints3 += scored.points
+      } else if (size === 4) {
+        shapes.coreTeams4 += 1
+        shapes.coreTeamPoints4 += scored.points
+      } else if (size >= 5) {
+        shapes.coreTeams5 += 1
+        shapes.coreTeamPoints5 += scored.points
       }
+    } else if (shape === 'mix') {
+      shapes.mixTeams += 1
+      shapes.mixTeamPoints += scored.points
+      if (mixAttrs === 3) {
+        shapes.mixTeams3 += 1
+        shapes.mixTeamPoints3 += scored.points
+      } else if (mixAttrs >= 4) {
+        shapes.mixTeams4 += 1
+        shapes.mixTeamPoints4 += scored.points
+      }
+    } else {
+      shapes.openTeams += 1
     }
-    for (const combo of player.combos) {
-      if (combo.kind === 'mixed') {
-        shapes.mixSettings += 1
-        shapes.mixSettingPoints += combo.points
-      } else {
-        shapes.coreSettings += 1
-        shapes.coreSettingPoints += combo.points
-      }
+  }
+  for (const combo of player.combos) {
+    if (combo.kind === 'mixed') {
+      shapes.mixSettings += 1
+      shapes.mixSettingPoints += combo.points
+    } else {
+      shapes.coreSettings += 1
+      shapes.coreSettingPoints += combo.points
     }
   }
   return shapes

@@ -163,27 +163,24 @@ export function DebugRail({
             aria-pressed={stratFilter.mixOnly}
             onClick={() => onStratFilter({ ...stratFilter, mixOnly: !stratFilter.mixOnly })}
           >
-            Mix only
+            Mixed seats
           </button>
         </div>
         <p className="quiet debug-legend">
           {stratFilter.strats.length === 0 && !stratFilter.mixOnly
-            ? 'All strats on. Toggle personalities on/off; Mix only keeps mixed seat matches.'
+            ? 'All seats. Toggle strats to slice tables; Mixed seats keeps only matches with different seat strats.'
             : [
-              stratFilter.strats.length > 0 ? stratFilter.strats.map(stratLabel).join(' · ') : 'All strats',
-              stratFilter.mixOnly ? 'mixture matches' : null,
+              stratFilter.strats.length > 0 ? `Seats: ${stratFilter.strats.map(stratLabel).join(' · ')}` : 'All strats',
+              stratFilter.mixOnly ? 'mixed-seat matches only' : null,
             ].filter(Boolean).join(' · ')}
         </p>
       </div>
 
       <div className="debug-block">
         <h3>Summary</h3>
-        <dl className="debug-piles">
-          <div><dt>Matches</dt><dd>{summary.finished}/{summary.matches}</dd></div>
-          <div><dt>Avg turns</dt><dd>{fmt(summary.avgTurns)}</dd></div>
-          <div><dt>Avg spread</dt><dd>{fmt(summary.avgFinalSpread)}</dd></div>
-          <div><dt>Avg win</dt><dd>{fmt(summary.avgWinnerScore)}</dd></div>
-        </dl>
+        <p className="quiet" data-testid="debug-summary-line">
+          {summary.finished}/{summary.matches} done · avg T{fmt(summary.avgTurns)} · spread {fmt(summary.avgFinalSpread)} · win {fmt(summary.avgWinnerScore)}
+        </p>
       </div>
 
       <div className="debug-block">
