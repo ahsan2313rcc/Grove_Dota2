@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { chooseAiAction } from './ai.ts'
-import { apply, createGame } from './engine.ts'
+import { apply, createGame, morphCasts } from './engine.ts'
+import { attrsOf } from './flow.ts'
 import { scoreBodies } from './scoring.ts'
 import type { CardInst, Game, PlayerId } from './types.ts'
 
@@ -205,6 +206,172 @@ describe('heroes', () => {
     expect(game.grave.some((card) => card.defId === 'sven')).toBe(true)
   })
 
+  it('exiles under Razor without copying the attribute or the ability', () => {
+    let game = ready()
+    game = only(game, 0, ['razor'])
+    game = only(game, 1, ['sven'])
+    game = apply(game, { type: 'end' })
+    game = apply(game, { type: 'ready' })
+    game = apply(game, { type: 'play', uid: uid(game, 1, 'sven'), team: 'new' })
+    game = apply(game, { type: 'end' })
+    game = apply(game, { type: 'ready' })
+    const sven = game.players[1].teams.flatMap((team) => team.heroes).find((hero) => hero.defId === 'sven')
+    game = apply(game, { type: 'play', uid: uid(game, 0, 'razor'), team: 'new' })
+    game = apply(game, { type: 'choose', ids: [`hero:${sven?.uid ?? ''}`] })
+    const razor = game.players[0].teams.flatMap((team) => team.heroes).find((hero) => hero.defId === 'razor')
+    expect(razor?.held?.card.defId).toBe('sven')
+    expect(razor?.held?.mode).toBe('razor')
+    expect(attrsOf(game, razor!).includes('STR')).toBe(false)
+    expect(morphCasts(game)).toEqual([])
+    expect(game.players[1].teams.flatMap((team) => team.heroes)).toEqual([])
+    expect(game.exile.some((card) => card.defId === 'sven')).toBe(false)
+    expect(game.grave.some((card) => card.defId === 'sven')).toBe(false)
+  })
+
+  it('lets Morphling copy an attribute and cast only on that turn', () => {
+    let game = ready()
+    game = only(game, 0, ['morphling'])
+    game = only(game, 1, ['sven'])
+    game = apply(game, { type: 'end' })
+    game = apply(game, { type: 'ready' })
+    game = apply(game, { type: 'play', uid: uid(game, 1, 'sven'), team: 'new' })
+    game = apply(game, { type: 'end' })
+    game = apply(game, { type: 'ready' })
+    const sven = game.players[1].teams.flatMap((team) => team.heroes).find((hero) => hero.defId === 'sven')
+    game = apply(game, { type: 'play', uid: uid(game, 0, 'morphling'), team: 'new' })
+    game = apply(game, { type: 'choose', ids: [`hero:${sven?.uid ?? ''}`] })
+    const morph = game.players[0].teams.flatMap((team) => team.heroes).find((hero) => hero.defId === 'morphling')
+    expect(morph?.held?.mode).toBe('morph')
+    expect(attrsOf(game, morph!)).toEqual(['AGI', 'STR'])
+    expect(morphCasts(game).map((cast) => cast.label)).toEqual(['Cast Sven'])
+    game = apply(game, { type: 'end' })
+    game = apply(game, { type: 'ready' })
+    game = apply(game, { type: 'end' })
+    game = apply(game, { type: 'ready' })
+    const later = game.players[0].teams.flatMap((team) => team.heroes).find((hero) => hero.defId === 'morphling')
+    expect(later?.held?.card.defId).toBe('sven')
+    expect(attrsOf(game, later!)).toEqual(['AGI', 'STR'])
+    expect(morphCasts(game)).toEqual([])
+  })
+
+  it('discards Nyx to send the countered card to the grave', () => {
+    let game = ready()
+    game = only(game, 0, ['sven'])
+    game = only(game, 1, ['nyx_assassin'])
+    game = apply(game, { type: 'play', uid: uid(game, 0, 'sven'), team: 'new' })
+    expect(game.pending?.prompt).toContain('counter Sven')
+    const nyx = game.pending?.choices.find((choice) => choice.id.startsWith('nyx:'))?.id ?? ''
+    game = apply(game, { type: 'choose', ids: [nyx] })
+    expect(game.players[0].teams).toEqual([])
+    expect(game.grave.map((card) => card.defId).sort()).toEqual(['nyx_assassin', 'sven'])
+    expect(game.players[0].actions).toBe(1)
+  })
+
+  it('mutes an enemy hero with Orchid', () => {
+    let game = ready()
+    game = only(game, 0, ['orchid'])
+    game = only(game, 1, ['sven', 'refresher'])
+    game = apply(game, { type: 'end' })
+    game = apply(game, { type: 'ready' })
+    game = apply(game, { type: 'play', uid: uid(game, 1, 'sven'), team: 'new' })
+    const sven = game.players[1].teams.flatMap((team) => team.heroes).find((hero) => hero.defId === 'sven')
+    game = apply(game, { type: 'end' })
+    game = apply(game, { type: 'ready' })
+    game = apply(game, { type: 'play', uid: uid(game, 0, 'orchid'), team: '' })
+    expect(game.players[0].actions).toBe(2)
+    game = apply(game, { type: 'choose', ids: [`hero:${sven?.uid ?? ''}`] })
+    expect(game.players[1].teams[0]?.heroes[0]?.muted).toBe(true)
+    game = apply(game, { type: 'end' })
+    game = apply(game, { type: 'ready' })
+    game = apply(game, { type: 'play', uid: uid(game, 1, 'refresher'), team: '' })
+    game = apply(game, { type: 'choose', ids: [`hero:${sven?.uid ?? ''}`] })
+    expect(game.log.at(-1)).toContain('Orchid')
+    expect(game.pending).toBeNull()
+  })
+
+  it('returns an Eul target at the end of the turn without firing', () => {
+    let game = ready()
+    game = only(game, 0, ['euls'])
+    game = only(game, 1, ['chen'])
+    game = apply(game, { type: 'end' })
+    game = apply(game, { type: 'ready' })
+    const pile = game.neutrals.length
+    game = apply(game, { type: 'play', uid: uid(game, 1, 'chen'), team: 'new' })
+    expect(game.neutrals.length).toBe(pile - 1)
+    const hand = game.players[1].hand.length
+    const chen = game.players[1].teams.flatMap((team) => team.heroes).find((hero) => hero.defId === 'chen')
+    game = apply(game, { type: 'end' })
+    game = apply(game, { type: 'ready' })
+    game = apply(game, { type: 'play', uid: uid(game, 0, 'euls'), team: '' })
+    game = apply(game, { type: 'choose', ids: [`hero:${chen?.uid ?? ''}`] })
+    expect(game.phased.map((entry) => entry.hero.defId)).toEqual(['chen'])
+    expect(game.players[1].teams).toEqual([])
+    game = apply(game, { type: 'end' })
+    game = apply(game, { type: 'ready' })
+    expect(game.phased).toEqual([])
+    expect(game.players[1].teams.flatMap((team) => team.heroes.map((hero) => hero.defId))).toEqual(['chen'])
+    expect(game.players[1].hand.length).toBe(hand)
+    expect(game.neutrals.length).toBe(pile - 1)
+  })
+
+  it('exiles with Scythe, tucks with Abyssal, draws off Greaves, and steals with Satanic', () => {
+    let game = ready()
+    game = only(game, 0, ['scythe'])
+    game = only(game, 1, ['sven'])
+    game = apply(game, { type: 'end' })
+    game = apply(game, { type: 'ready' })
+    game = apply(game, { type: 'play', uid: uid(game, 1, 'sven'), team: 'new' })
+    const hexed = game.players[1].teams[0]?.heroes[0]?.uid ?? ''
+    game = apply(game, { type: 'end' })
+    game = apply(game, { type: 'ready' })
+    game = apply(game, { type: 'play', uid: uid(game, 0, 'scythe'), team: '' })
+    game = apply(game, { type: 'choose', ids: [`hero:${hexed}`] })
+    expect(game.exile.some((card) => card.defId === 'sven')).toBe(true)
+    expect(game.grave.some((card) => card.defId === 'sven')).toBe(false)
+    expect(game.players[1].noHeroNext).toBe(false)
+
+    game = ready()
+    game = only(game, 0, ['abyssal'])
+    game = only(game, 1, ['sven'])
+    game = apply(game, { type: 'end' })
+    game = apply(game, { type: 'ready' })
+    game = apply(game, { type: 'play', uid: uid(game, 1, 'sven'), team: 'new' })
+    const sven = game.players[1].teams[0]?.heroes[0]?.uid ?? ''
+    const before = game.players[0].hand.length
+    game = apply(game, { type: 'end' })
+    game = apply(game, { type: 'ready' })
+    game = apply(game, { type: 'play', uid: uid(game, 0, 'abyssal'), team: '' })
+    game = apply(game, { type: 'choose', ids: [`hero:${sven}`] })
+    game = apply(game, { type: 'choose', ids: ['deck:bottom'] })
+    expect(game.deck.at(-1)?.defId).toBe('sven')
+    expect(game.players[0].hand.length).toBe(before)
+
+    game = ready()
+    game = only(game, 0, ['greaves', 'river', 'jungle'])
+    const river = uid(game, 0, 'river')
+    const jungle = uid(game, 0, 'jungle')
+    game = apply(game, { type: 'play', uid: uid(game, 0, 'greaves'), team: '' })
+    game = apply(game, { type: 'choose', ids: [`card:${river}`, `card:${jungle}`] })
+    expect(game.players[0].hand.length).toBe(4)
+    expect(game.grave.some((card) => card.defId === 'river')).toBe(true)
+
+    game = ready()
+    game = only(game, 0, ['satanic'])
+    game = only(game, 1, ['sven'])
+    game = apply(game, { type: 'end' })
+    game = apply(game, { type: 'ready' })
+    game = apply(game, { type: 'play', uid: uid(game, 1, 'sven'), team: 'new' })
+    const stolen = game.players[1].teams[0]?.heroes[0]?.uid ?? ''
+    game = apply(game, { type: 'end' })
+    game = apply(game, { type: 'ready' })
+    game = apply(game, { type: 'play', uid: uid(game, 0, 'satanic'), team: '' })
+    game = apply(game, { type: 'choose', ids: [`hero:${stolen}`] })
+    game = apply(game, { type: 'choose', ids: ['new:0'] })
+    game = apply(game, { type: 'choose', ids: ['no'] })
+    expect(game.players[0].teams.flatMap((team) => team.heroes.map((hero) => hero.defId))).toEqual(['sven'])
+    expect(game.players[1].teams).toEqual([])
+  })
+
   it('gives the caster another turn', () => {
     let game = ready()
     game = only(game, 0, ['faceless_void'])
@@ -249,7 +416,8 @@ function only(game: Game, player: PlayerId, defIds: string[]): Game {
   let next = game
   const found: CardInst[] = []
   for (const defId of defIds) {
-    const card = next.deck.find((entry) => entry.defId === defId) ?? next.players[player].hand.find((entry) => entry.defId === defId)
+    const card = next.deck.find((entry) => entry.defId === defId)
+      ?? next.players.flatMap((seat) => seat.hand).find((entry) => entry.defId === defId)
     if (!card) throw new Error(`missing ${defId}`)
     found.push(card)
     next = {

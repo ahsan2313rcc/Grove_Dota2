@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { display } from '../game/catalog.ts'
 import { comboPlans, morphCasts, needsTeam, teamsFor } from '../game/engine.ts'
 import { findHero, scoreState, scoreTeam } from '../game/flow.ts'
+import { teamShape } from '../game/scoring.ts'
 import type { Action, CardInst, Game, PlayerId } from '../game/types.ts'
 import { CardFace } from './CardFace.tsx'
 import { Prompt } from './Prompt.tsx'
@@ -34,6 +35,9 @@ export function Table({
   const [moving, setMoving] = useState<string | null>(null)
   const [pile, setPile] = useState<PileName | null>(null)
   const [rules, setRules] = useState(false)
+  const [handOpen, setHandOpen] = useState<PlayerId | null>(null)
+  const [layout, setLayout] = useState<2 | 4 | 6 | 8>(2)
+  const [page, setPage] = useState(0)
   const [acked, setAcked] = useState('')
   const [leaveArmed, setLeaveArmed] = useState(false)
   const names: [string, string] = [game.players[0].name, game.players[1].name]
@@ -45,6 +49,10 @@ export function Table({
   const foe = game.players[foeId]
   const yourScore = scoreState(game, viewer)
   const foeScore = scoreState(game, foeId)
+  const yourShapes = countShapes(game, viewer)
+  const foeShapes = countShapes(game, foeId)
+  const pages = Math.max(1, layout - 1)
+  const safePage = page % pages
   const canAct = !game.over && !game.veil && !game.pending && game.active === viewer
   const handIds = new Set(you.hand.map((card) => card.uid))
   const liveCombo = combo.filter((uid) => handIds.has(uid))
@@ -70,6 +78,7 @@ export function Table({
       if (event.key !== 'Escape') return
       setPile(null)
       setRules(false)
+      setHandOpen(null)
       setPlacing(null)
       setMoving(null)
     }
@@ -124,6 +133,7 @@ export function Table({
     setCombo([])
     setPlacing(null)
     setFocus({ kind: 'hand', uid: card.uid })
+    setHandOpen(null)
   }
 
   function playFocused(uid: string) {
@@ -149,8 +159,6 @@ export function Table({
         </div>
         <div className="top-meta">
           <span>Seed {seed}</span>
-          <span>Turn {game.turn}</span>
-          <span>Deck {game.deck.length}</span>
         </div>
         <div className="top-actions">
           <button type="button" onClick={() => setRules(true)}>Rules</button>
@@ -164,16 +172,6 @@ export function Table({
         </div>
       </header>
 
-      <div className="scoreboard">
-        <Seat name={you.name} score={yourScore} active={game.active === viewer} testId="score-you" />
-        <div className="turn-chip">
-          {game.over ? 'Match over' : game.active === viewer ? 'Your turn' : `${foe.name}'s turn`}
-          <strong data-testid="actions">{game.players[game.active].actions}</strong>
-          <small>actions</small>
-        </div>
-        <Seat name={foe.name} score={foeScore} active={game.active === foeId} testId="score-foe" />
-      </div>
-
       {lines.length > 0 ? (
         <ul className="banners">
           {lines.map((line) => <li key={line}>{line}</li>)}
@@ -183,30 +181,38 @@ export function Table({
 
       <div className="felt">
         <div className="play">
-          <PlayerBoard
-            label={foe.name}
-            handCount={foe.hand.length}
-            cards={foe.hand}
-            revealed={handRevealed(game, viewer, foeId)}
-            teams={foe.teams}
-            combos={foe.combos}
-            game={game}
-            mine={false}
-            onInspect={(next) => { setFocus(next); setPlacing(null); setMoving(null) }}
-          />
-          <div className="piles">
-            <PileButton label="Deck" count={game.deck.length} sealed testId="pile-deck" onClick={() => setPile('deck')} />
-            <PileButton label="Grave" count={game.grave.length} testId="pile-grave" onClick={() => setPile('grave')} />
-            <PileButton label="Exile" count={game.exile.length} testId="pile-exile" onClick={() => setPile('exile')} />
-            <PileButton label="Runes" count={game.runes.length} sealed testId="pile-runes" onClick={() => setPile('runes')} />
-            <PileButton label="Neutrals" count={game.neutrals.length} sealed testId="pile-neutrals" onClick={() => setPile('neutrals')} />
-            <PileButton label="Towers" count={game.towers.length} sealed testId="pile-towers" onClick={() => setPile('towers')} />
+          <div className="score-row">
+            <Seat
+              name={you.name}
+              score={yourScore.total}
+              shapes={yourShapes}
+              handCount={you.hand.length}
+              active={game.active === viewer}
+              testId="score-you"
+              handTestId="hand"
+              onHand={() => setHandOpen(viewer)}
+            />
+            <div className="pile-row">
+              <PileButton label="Deck" count={game.deck.length} testId="pile-deck" onClick={() => setPile('deck')} />
+              <PileButton label="Grave" count={game.grave.length} testId="pile-grave" onClick={() => setPile('grave')} />
+              <PileButton label="Exile" count={game.exile.length} testId="pile-exile" onClick={() => setPile('exile')} />
+              <PileButton label="Runes" count={game.runes.length} testId="pile-runes" onClick={() => setPile('runes')} />
+              <PileButton label="Neutrals" count={game.neutrals.length} testId="pile-neutrals" onClick={() => setPile('neutrals')} />
+              <PileButton label="Towers" count={game.towers.length} testId="pile-towers" onClick={() => setPile('towers')} />
+            </div>
+            <Seat
+              name={foe.name}
+              score={foeScore.total}
+              shapes={foeShapes}
+              handCount={foe.hand.length}
+              active={game.active === foeId}
+              testId="score-foe"
+              handTestId="hand-foe"
+              onHand={() => setHandOpen(foeId)}
+            />
           </div>
           <PlayerBoard
             label={you.name}
-            handCount={you.hand.length}
-            cards={[]}
-            revealed={false}
             teams={you.teams}
             combos={you.combos}
             game={game}
@@ -214,108 +220,176 @@ export function Table({
             onInspect={(next) => { setFocus(next); setPlacing(null); setMoving(null) }}
             onEmber={canAct ? (uid) => { setMoving(uid); setPlacing(null); setFocus({ kind: 'hero', uid }) } : undefined}
           />
+          {layout === 2 ? (
+            <PlayerBoard
+              label={foe.name}
+              teams={foe.teams}
+              combos={foe.combos}
+              game={game}
+              mine={false}
+              onInspect={(next) => { setFocus(next); setPlacing(null); setMoving(null) }}
+            />
+          ) : (
+            <section className="side" data-testid="opponent-board">
+              <div className="pager">
+                <button type="button" onClick={() => setPage((current) => (current + pages - 1) % pages)}>Previous</button>
+                <span>{safePage === 0 ? foe.name : `Open seat ${safePage + 1}`}</span>
+                <button type="button" onClick={() => setPage((current) => (current + 1) % pages)}>Next</button>
+              </div>
+              {safePage === 0 ? (
+                <PlayerBoard
+                  label={foe.name}
+                  teams={foe.teams}
+                  combos={foe.combos}
+                  game={game}
+                  mine={false}
+                  onInspect={(next) => { setFocus(next); setPlacing(null); setMoving(null) }}
+                />
+              ) : (
+                <div className="open-seat">
+                  <h2>Open seat</h2>
+                  <p className="quiet">This match has two players. A larger table pages the other board, and empty seats stay open.</p>
+                </div>
+              )}
+            </section>
+          )}
           {game.phased.length > 0 ? (
             <p className="aside-note">Set aside: {game.phased.map((entry) => display(entry.hero.defId).name).join(', ')}.</p>
           ) : null}
         </div>
-        <aside className="log" aria-label="Match log">
-          <h2>Log</h2>
-          <ol>
-            {game.log.slice(-16).map((line, index) => <li key={`${index}-${line}`}>{line}</li>)}
-          </ol>
-          <p className="log-last" data-testid="log-last">{lastLog}</p>
-        </aside>
-      </div>
-
-      <footer className="dock">
-        <Detail
-          game={game}
-          viewer={viewer}
-          canAct={canAct}
-          focus={focus}
-          placing={placing}
-          moving={moving}
-          comboReady={comboReady}
-          chosen={chosen}
-          onPlay={playFocused}
-          onPlace={() => onAction({ type: 'combo', uids: chosen.map((card) => card.uid) })}
-          onTeam={(team) => {
-            if (placing) onAction({ type: 'play', uid: placing, team })
-            setPlacing(null)
-          }}
-          onMove={(team) => {
-            if (moving) onAction({ type: 'move', uid: moving, team })
-            setMoving(null)
-          }}
-          onMorph={(uid) => onAction({ type: 'morph', uid })}
-          onCancel={() => { setPlacing(null); setMoving(null) }}
-        />
-        <div className="hand" data-testid="hand">
-          <div className="hand-label">
-            <span>Your hand</span>
-            <span>{you.hand.length}/{you.handLimit}</span>
+        <aside className="rail">
+          <div className="turn-chip">
+            <span>Turn {game.turn}</span>
+            {game.over ? 'Match over' : game.active === viewer ? 'Your turn' : `${foe.name}'s turn`}
+            <strong data-testid="actions">{game.players[game.active].actions}</strong>
+            <small>actions</small>
           </div>
-          {you.hand.length === 0 ? <p className="quiet">Your hand is empty. Draw, or end the turn.</p> : null}
-          <div className="hand-row">
-            {you.hand.map((card) => (
-              <CardFace
-                key={card.uid}
-                defId={card.defId}
-                selected={liveCombo.includes(card.uid) || (focus?.kind === 'hand' && focus.uid === card.uid)}
-                onClick={() => clickHand(card)}
-                testId={`hand-${card.defId}`}
-              />
+          <div className="actions">
+            <button type="button" className="primary" data-testid="draw" disabled={!canAct || !!drawReason} onClick={() => onAction({ type: 'draw' })}>
+              Draw
+            </button>
+            <button type="button" data-testid="end" disabled={!canAct && !stuck} onClick={() => onAction({ type: 'end' })}>
+              End turn
+            </button>
+            {drawReason ? <span className="quiet">{drawReason}</span> : <span className="quiet">Draw or play spends 1. A combo is free.</span>}
+            {plans.map((plan) => (
+              <button key={plan.label} type="button" className="combo" data-testid="combo" onClick={() => onAction({ type: 'combo', uids: plan.uids })}>
+                {plan.label} · free
+              </button>
+            ))}
+            {comboReady ? (
+              <button type="button" className="combo" onClick={() => onAction({ type: 'combo', uids: chosen.map((card) => card.uid) })}>
+                Place selected · free
+              </button>
+            ) : null}
+            {canAct && morphCasts(game).map((cast) => (
+              <button key={cast.uid} type="button" onClick={() => onAction({ type: 'morph', uid: cast.uid })}>{cast.label}</button>
             ))}
           </div>
-        </div>
-        <div className="actions">
-          <button type="button" className="primary" data-testid="draw" disabled={!canAct || !!drawReason} onClick={() => onAction({ type: 'draw' })}>
-            Draw
-          </button>
-          <button type="button" data-testid="end" disabled={!canAct && !stuck} onClick={() => onAction({ type: 'end' })}>
-            End turn
-          </button>
-          {drawReason ? <span className="quiet">{drawReason}</span> : <span className="quiet">Draw or play spends 1. A combo is free.</span>}
-          {plans.map((plan) => (
-            <button key={plan.label} type="button" className="combo" data-testid="combo" onClick={() => onAction({ type: 'combo', uids: plan.uids })}>
-              {plan.label} · free
-            </button>
-          ))}
-          {comboReady ? (
-            <button type="button" className="combo" onClick={() => onAction({ type: 'combo', uids: chosen.map((card) => card.uid) })}>
-              Place selected · free
-            </button>
-          ) : null}
-          {canAct && morphCasts(game).map((cast) => (
-            <button key={cast.uid} type="button" onClick={() => onAction({ type: 'morph', uid: cast.uid })}>{cast.label}</button>
-          ))}
-        </div>
-      </footer>
+          <Detail
+            game={game}
+            viewer={viewer}
+            canAct={canAct}
+            focus={focus}
+            placing={placing}
+            moving={moving}
+            comboReady={comboReady}
+            chosen={chosen}
+            onPlay={playFocused}
+            onPlace={() => onAction({ type: 'combo', uids: chosen.map((card) => card.uid) })}
+            onTeam={(team) => {
+              if (placing) onAction({ type: 'play', uid: placing, team })
+              setPlacing(null)
+            }}
+            onMove={(team) => {
+              if (moving) onAction({ type: 'move', uid: moving, team })
+              setMoving(null)
+            }}
+            onMorph={(uid) => onAction({ type: 'morph', uid })}
+            onCancel={() => { setPlacing(null); setMoving(null) }}
+          />
+          <div className="layout-picks" aria-label="Table size">
+            {([2, 4, 6, 8] as const).map((size) => (
+              <button key={size} type="button" className={layout === size ? 'on' : ''} data-testid={`layout-${size}`} onClick={() => { setLayout(size); setPage(0) }}>
+                {size} seats
+              </button>
+            ))}
+          </div>
+          {layout > 2 ? <p className="quiet">Two players are seated. The other seats page the opponent, then show open chairs.</p> : null}
+          <div className="log" aria-label="Match log">
+            <h2>Log</h2>
+            <ol>
+              {game.log.slice(-16).map((line, index) => <li key={`${index}-${line}`}>{line}</li>)}
+            </ol>
+            <p className="log-last" data-testid="log-last">{lastLog}</p>
+          </div>
+        </aside>
+      </div>
 
       {game.pending ? <Prompt key={promptKey} pending={game.pending} names={names} onChoose={(ids) => onAction({ type: 'choose', ids })} /> : null}
       {rules ? <Rules onClose={() => setRules(false)} /> : null}
       {pile ? <PileDialog game={game} pile={pile} onClose={() => setPile(null)} onRead={(defId) => { setPile(null); setFocus({ kind: 'card', defId }) }} /> : null}
+      {handOpen !== null ? (
+        <HandSheet
+          game={game}
+          viewer={viewer}
+          owner={handOpen}
+          revealed={handOpen === viewer || handRevealed(game, viewer, handOpen)}
+          selected={liveCombo}
+          focusUid={focus?.kind === 'hand' ? focus.uid : null}
+          comboReady={comboReady && handOpen === viewer}
+          onCard={handOpen === viewer ? clickHand : (card) => { setFocus({ kind: 'card', defId: card.defId }); setHandOpen(null) }}
+          onPlace={() => {
+            onAction({ type: 'combo', uids: chosen.map((card) => card.uid) })
+            setHandOpen(null)
+          }}
+          onClose={() => setHandOpen(null)}
+        />
+      ) : null}
       {game.over ? <Over game={game} names={names} onLobby={onLobby} /> : null}
     </div>
   )
 }
 
+function countShapes(game: Game, id: PlayerId): { core: number; mix: number } {
+  let core = 0
+  let mix = 0
+  for (const team of game.players[id].teams) {
+    const shape = teamShape(scoreTeam(game, team).why)
+    if (shape === 'core') core += 1
+    if (shape === 'mix') mix += 1
+  }
+  return { core, mix }
+}
+
 function Seat({
   name,
   score,
+  shapes,
+  handCount,
   active,
   testId,
+  handTestId,
+  onHand,
 }: {
   name: string
-  score: { teams: number; settings: number; total: number }
+  score: number
+  shapes: { core: number; mix: number }
+  handCount: number
   active: boolean
   testId: string
+  handTestId: string
+  onHand: () => void
 }) {
+  const teams = `${shapes.core} core · ${shapes.mix} mix`
   return (
     <div className={`seat${active ? ' active' : ''}`}>
       <span>{name}</span>
-      <strong data-testid={testId}>{score.total}</strong>
-      <small>{score.teams} teams · {score.settings} settings</small>
+      <strong data-testid={testId}>{score}</strong>
+      <small>{teams}</small>
+      <button type="button" className="hand-count" data-testid={handTestId} onClick={onHand}>
+        Hand <strong>{handCount}</strong>
+      </button>
     </div>
   )
 }
@@ -350,9 +424,6 @@ function SeatCover({
 
 function PlayerBoard({
   label,
-  handCount,
-  cards,
-  revealed,
   teams,
   combos,
   game,
@@ -361,9 +432,6 @@ function PlayerBoard({
   onEmber,
 }: {
   label: string
-  handCount: number
-  cards: CardInst[]
-  revealed: boolean
   teams: Game['players'][number]['teams']
   combos: Game['players'][number]['combos']
   game: Game
@@ -375,21 +443,8 @@ function PlayerBoard({
     <section className={`side${mine ? ' mine' : ''}`}>
       <header>
         <h2>{label}</h2>
-        {!mine ? <span>{revealed ? 'Hand revealed' : `${handCount} in hand`}</span> : <span>Your teams</span>}
+        <span>{mine ? 'Your teams' : 'Teams and settings'}</span>
       </header>
-      {!mine ? (
-        <div className="hand-row foe-hand">
-          {cards.map((card) => (
-            <CardFace
-              key={card.uid}
-              defId={revealed ? card.defId : ''}
-              faceDown={!revealed}
-              compact
-              onClick={revealed ? () => onInspect({ kind: 'card', defId: card.defId }) : undefined}
-            />
-          ))}
-        </div>
-      ) : null}
       {teams.length === 0 ? <p className="quiet">{mine ? 'Play a hero to open a team.' : 'No teams yet.'}</p> : null}
       <div className="teams">
         {teams.map((team, index) => {
@@ -405,7 +460,7 @@ function PlayerBoard({
                   <CardFace
                     key={hero.uid}
                     defId={hero.defId}
-                    compact
+                    peek
                     attrs={shownAttrs(game, hero)}
                     range={shownRange(hero)}
                     marks={heroMarks(hero, team)}
@@ -572,22 +627,73 @@ function Detail({
 function PileButton({
   label,
   count,
-  sealed = false,
   testId,
   onClick,
 }: {
   label: string
   count: number
-  sealed?: boolean
   testId: string
   onClick: () => void
 }) {
   return (
-    <button type="button" className="pile" data-testid={testId} onClick={onClick}>
-      <strong>{count}</strong>
+    <button type="button" className="pile-chip" data-testid={testId} onClick={onClick}>
       <span>{label}</span>
-      <small>{sealed ? 'Face down' : 'Open'}</small>
+      <strong>{count}</strong>
     </button>
+  )
+}
+
+function HandSheet({
+  game,
+  viewer,
+  owner,
+  revealed,
+  selected,
+  focusUid,
+  comboReady,
+  onCard,
+  onPlace,
+  onClose,
+}: {
+  game: Game
+  viewer: PlayerId
+  owner: PlayerId
+  revealed: boolean
+  selected: string[]
+  focusUid: string | null
+  comboReady: boolean
+  onCard: (card: CardInst) => void
+  onPlace: () => void
+  onClose: () => void
+}) {
+  const player = game.players[owner]
+  const mine = owner === viewer
+  return (
+    <div className="scrim" onClick={onClose}>
+      <section className="sheet" role="dialog" aria-modal="true" aria-labelledby="hand-title" onClick={(event) => event.stopPropagation()}>
+        <p className="eyebrow">{player.hand.length} / {player.handLimit}</p>
+        <h2 id="hand-title">{mine ? 'Your hand' : `${player.name}'s hand`}</h2>
+        {!revealed ? <p>The hand stays hidden until a reveal. The count is all you get.</p> : null}
+        {revealed && player.hand.length === 0 ? <p className="quiet">Nothing in hand.</p> : null}
+        {revealed ? (
+          <div className="hand-row">
+            {player.hand.map((card) => (
+              <CardFace
+                key={card.uid}
+                defId={card.defId}
+                selected={selected.includes(card.uid) || focusUid === card.uid}
+                onClick={() => onCard(card)}
+                testId={mine ? `hand-${card.defId}` : undefined}
+              />
+            ))}
+          </div>
+        ) : null}
+        {comboReady ? (
+          <button type="button" className="combo" onClick={onPlace}>Place these three · free</button>
+        ) : null}
+        <button type="button" className="primary" onClick={onClose}>Close</button>
+      </section>
+    </div>
   )
 }
 

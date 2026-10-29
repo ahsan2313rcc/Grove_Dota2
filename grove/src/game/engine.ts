@@ -285,6 +285,7 @@ function drawAction(state: Game): Game {
 function endTurn(state: Game): Game {
   const actor = state.active
   if (state.players[actor].hand.length > state.players[actor].handLimit) return askLimit(state, actor, 'end')
+  state = returnPhased(state, state.turn)
   state = clearEnd(state)
   return startTurn(state, foe(actor))
 }
@@ -315,12 +316,29 @@ function startTurn(state: Game, id: PlayerId): Game {
   return state
 }
 
-function combo(state: Game, uids: string[]): Game {
+function combo(state: Game, uids: string[], forced = false): Game {
   const actor = state.active
   if (cardsLocked(state, actor)) return log(state, 'Chronosphere stops you from playing cards.')
   if (uids.length !== 3) return state
   const cards = uids.map((uid) => state.players[actor].hand.find((card) => card.uid === uid))
   if (cards.some((card) => !card || card.kind !== 'setting')) return state
+  if (!forced) {
+    const nyx = state.players[foe(actor)].hand.filter((card) => card.defId === 'nyx_assassin')
+    if (nyx.length > 0) {
+      return ask(state, {
+        actor: foe(actor),
+        prompt: `${pname(state, foe(actor))} may discard Nyx Assassin to counter the setting combo, or pass.`,
+        mode: 'pick',
+        min: 1,
+        max: 1,
+        choices: [
+          { id: 'pass', label: 'Pass' },
+          ...nyx.map((card) => ({ id: `nyx:${card.uid}`, label: 'Spiked Carapace', defId: card.defId })),
+        ],
+        resume: { kind: 'counter-combo', uids, actor },
+      })
+    }
+  }
   const picked = cards as CardInst[]
   const same = picked.every((card) => card.defId === picked[0]?.defId)
   const points = same ? 3 : 5
@@ -373,6 +391,33 @@ function play(state: Game, uid: string, team: string): Game {
     if (reason) return log(state, reason)
   }
   if (!instant) state = setPlayer(state, actor, (player) => ({ ...player, actions: player.actions - 1 }))
+  return offerCounter(state, actor, uid, team)
+}
+
+function offerCounter(state: Game, actor: PlayerId, uid: string, team: string): Game {
+  const enemy = foe(actor)
+  const cards = state.players[enemy].hand.filter((card) => card.defId === 'nyx_assassin')
+  if (cards.length === 0) return resolvePlay(state, uid, team)
+  const played = findHand(state, uid)
+  const name = played ? display(played.card.defId).name : 'that card'
+  return ask(state, {
+    actor: enemy,
+    prompt: `${pname(state, enemy)} may discard Nyx Assassin to counter ${name}, or pass.`,
+    mode: 'pick',
+    min: 1,
+    max: 1,
+    choices: [
+      { id: 'pass', label: 'Pass' },
+      ...cards.map((card) => ({ id: `nyx:${card.uid}`, label: 'Spiked Carapace', defId: card.defId })),
+    ],
+    resume: { kind: 'counter', uid, team, actor },
+  })
+}
+
+function resolvePlay(state: Game, uid: string, team: string): Game {
+  const held = findHand(state, uid)
+  if (!held) return state
+  const actor = held.player.id
   if (held.card.kind === 'hero') return playHero(state, actor, held.card, team)
   if (held.card.kind === 'neutral' && held.card.defId !== 'tormentor') return playToken(state, actor, held.card, team)
   if (held.card.kind === 'item') return playItem(state, actor, held.card)
@@ -391,11 +436,8 @@ function playHero(state: Game, actor: PlayerId, card: CardInst, team: string): G
   next = putOnTeam(removeHand(next, actor, card.uid), actor, teamId, hero)
   const landed = arrived(next, card.uid)
   next = log(landed.state, `${pname(next, actor)} plays ${display(card.defId).name}.`)
+  if (card.defId === 'nyx_assassin') return next
   const fires = HEROES.some((entry) => entry.id === card.defId && entry.timing !== 'aura') && !next.silence
-  if (next.players[actor].orchid) {
-    next = setPlayer(next, actor, (player) => ({ ...player, orchid: false }))
-    return log(next, 'Orchid stops the ability.')
-  }
   if (!fires) return next
   const resume = { kind: 'cast' as const, actor, sourceUid: card.uid, defId: card.defId, picked: [], steps: 0 }
   if (landed.mined) return { ...next, after: { kind: 'alive', uid: card.uid, cast: resume } }
@@ -507,8 +549,10 @@ function moveEmber(state: Game, uid: string, team: string): Game {
 
 function morphCast(state: Game, uid: string): Game {
   const loc = findHero(state, uid)
-  if (!loc?.hero.held || loc.hero.controller !== state.active || loc.hero.castTurn === state.turn) return state
-  const copied = loc.hero.held.card.defId
+  const held = loc?.hero.held
+  if (!loc || !held || held.mode !== 'morph' || held.takenTurn !== state.turn) return state
+  if (loc.hero.controller !== state.active || loc.hero.castTurn === state.turn || loc.hero.muted || state.silence) return state
+  const copied = held.card.defId
   if (!HEROES.some((hero) => hero.id === copied && hero.timing !== 'aura')) return log(state, 'That hero has no ability to cast.')
   const marked = {
     ...state,
@@ -534,15 +578,25 @@ function satisfy(state: Game, ids: string[]): Game {
   if (resume.kind === 'cast') {
     return cast(next, { ...resume, steps: (resume.steps ?? 0) + 1, picked: [...resume.picked, ...ids] })
   }
-  if (resume.kind === 'nyx') {
+  if (resume.kind === 'counter') {
     const choice = ids[0]
-    if (!choice || choice === 'pass') return cast(next, resume.cast)
-    const uid = choice.slice(4)
-    const owner = foe(resume.cast.actor)
-    let dumped = discardUid(next, owner, uid)
-    const source = findHero(dumped, resume.cast.sourceUid)
-    if (source) dumped = enqueue(dumped, source.hero.uid, 'Spiked Carapace', false, true, owner)
-    return log(dumped, 'Spiked Carapace counters the ability.')
+    if (!choice || choice === 'pass') return resolvePlay(next, resume.uid, resume.team)
+    const nyxUid = choice.slice(4)
+    let dumped = discardUid(next, foe(resume.actor), nyxUid)
+    const card = dumped.players[resume.actor].hand.find((entry) => entry.uid === resume.uid)
+    if (card) dumped = toGrave(removeHand(dumped, resume.actor, card.uid), card, { type: 'hand', player: resume.actor })
+    return log(dumped, `Spiked Carapace counters ${card ? display(card.defId).name : 'the card'}.`)
+  }
+  if (resume.kind === 'counter-combo') {
+    const choice = ids[0]
+    if (!choice || choice === 'pass') return combo(next, resume.uids, true)
+    const nyxUid = choice.slice(4)
+    let dumped = discardUid(next, foe(resume.actor), nyxUid)
+    for (const uid of resume.uids) {
+      const card = dumped.players[resume.actor].hand.find((entry) => entry.uid === uid)
+      if (card) dumped = toGrave(removeHand(dumped, resume.actor, card.uid), card, { type: 'hand', player: resume.actor })
+    }
+    return log(dumped, 'Spiked Carapace counters the setting combo.')
   }
   if (resume.kind === 'pugna') {
     if (ids[0] === 'discard') {
@@ -676,7 +730,7 @@ function answerSave(state: Game, uid: string, dying: string, cause: string, forc
     actor,
     sourceUid: held.card.kind === 'hero' ? held.card.uid : held.card.uid,
     defId: held.card.defId,
-    picked: held.card.defId === 'bkb' || held.card.defId === 'blade_mail' ? [] : targetPick,
+    picked: targetPick,
     steps: 1,
     armed: true,
   })
@@ -684,6 +738,7 @@ function answerSave(state: Game, uid: string, dying: string, cause: string, forc
 }
 
 function finish(state: Game, reason: string): Game {
+  state = returnPhased(state, state.turn)
   const parts = [scoreState(state, 0), scoreState(state, 1)] as const
   return {
     ...state,
@@ -739,8 +794,10 @@ export function emberMoves(state: Game): { uid: string; name: string }[] {
 }
 
 export function morphCasts(state: Game): { uid: string; label: string }[] {
+  if (state.silence) return []
   return allLocs(state)
-    .filter((loc) => loc.hero.controller === state.active && loc.hero.held && loc.hero.castTurn !== state.turn)
+    .filter((loc) => loc.hero.controller === state.active && !loc.hero.muted && loc.hero.castTurn !== state.turn)
+    .filter((loc) => loc.hero.held?.mode === 'morph' && loc.hero.held.takenTurn === state.turn)
     .filter((loc) => HEROES.some((hero) => hero.id === loc.hero.held?.card.defId && hero.timing !== 'aura'))
     .map((loc) => ({ uid: loc.hero.uid, label: `Cast ${display(loc.hero.held?.card.defId ?? '').name}` }))
 }

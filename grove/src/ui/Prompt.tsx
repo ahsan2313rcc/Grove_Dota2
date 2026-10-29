@@ -41,9 +41,19 @@ export function Prompt({
         <div className="choices">
           {pending.choices.map((choice) => {
             const on = picked.includes(choice.id)
+            const face = choice.defId ? <CardFace defId={choice.defId} compact /> : null
+            if (!grouped && pending.max === 1) {
+              return (
+                <button key={choice.id} type="button" className={`choice${on ? ' on' : ''}`} onClick={() => toggle(choice.id)}>
+                  {face}
+                  <strong>{choice.label}</strong>
+                  {choice.hint ? <small>{choice.hint}</small> : null}
+                </button>
+              )
+            }
             return (
               <div key={choice.id} className={`choice${on ? ' on' : ''}`}>
-                {choice.defId ? <CardFace defId={choice.defId} compact /> : null}
+                {face}
                 <div className="choice-copy">
                   <strong>{choice.label}</strong>
                   {choice.hint ? <small>{choice.hint}</small> : null}
@@ -62,7 +72,7 @@ export function Prompt({
                     </div>
                   ) : (
                     <button type="button" onClick={() => toggle(choice.id)}>
-                      {pending.max === 1 ? 'Choose' : on ? 'Selected' : 'Select'}
+                      {on ? 'Selected' : 'Select'}
                     </button>
                   )}
                 </div>

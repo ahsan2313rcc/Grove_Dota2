@@ -49,6 +49,12 @@ function attackBonus(bodies: ScoreBody[]): { points: number; why: string } {
   return { points, why: ranges[0] === 'Melee' ? ' + Melee' : ' + Ranged' }
 }
 
+export function teamShape(why: string): 'core' | 'mix' | 'open' {
+  if (/^(Strength|Agility|Intelligence|Universal) /.test(why)) return 'core'
+  if (why.includes('attributes')) return 'mix'
+  return 'open'
+}
+
 function label(attr: Attr): string {
   if (attr === 'STR') return 'Strength'
   if (attr === 'AGI') return 'Agility'

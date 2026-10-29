@@ -4,6 +4,7 @@ import type { Attr, Range } from '../game/types.ts'
 export function CardFace({
   defId,
   compact = false,
+  peek = false,
   selected = false,
   faceDown = false,
   attrs,
@@ -14,6 +15,7 @@ export function CardFace({
 }: {
   defId: string
   compact?: boolean
+  peek?: boolean
   selected?: boolean
   faceDown?: boolean
   attrs?: Attr[]
@@ -41,8 +43,10 @@ export function CardFace({
   const shownAttrs = attrs ?? (info.attr ? [info.attr] : [])
   const shownRange = range === undefined ? info.range : range
   const kindLabel = info.kind === 'hero' ? 'Hero' : info.kind === 'item' ? 'Item' : info.kind === 'setting' ? 'Setting' : info.kind === 'rune' ? 'Rune' : info.kind === 'neutral' ? 'Neutral' : 'Tower'
-  const className = `card${selected ? ' selected' : ''}${compact ? ' compact' : ''}`
-  const body = (
+  const className = `card${selected ? ' selected' : ''}${compact ? ' compact' : ''}${peek ? ' peek' : ''}`
+  const body = peek ? (
+    <span className="card-name">{info.name}</span>
+  ) : (
     <>
       <span className="card-kicker">
         <span>{kindLabel}</span>

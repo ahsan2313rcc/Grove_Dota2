@@ -25,6 +25,6 @@ You have two actions. Draw one card, or play a hero, item, or reward. Instant ca
 
 Heroes score in teams of up to five.
 
-Each hero scores 1. One attribute, Universal included, adds +1 / +3 / +6 / +10 for 2 / 3 / 4 / 5 heroes, with no attack bonus. Universal does not fill in for a missing attribute. A mixed team adds +0 / +2 / +6 for 2 / 3 / 4 different attributes. Three, four, or five heroes of the same attack type add +1 / +2 / +3, except on a one-attribute team. Neutrals do not spoil that bonus. Meepo counts as two. Brewmaster alone is three attributes and scores 3. A hero with no attribute still scores 1.
+Each hero scores 1. A team earns either the same-attribute bonus or the attack bonus, not both. One attribute, Universal included, adds +1 / +3 / +6 / +10 for 2 / 3 / 4 / 5 heroes, with no attack bonus. Universal does not fill in for a missing attribute. A mixed team can also earn +0 / +2 / +6 for 2 / 3 / 4 different attributes, and that bonus stacks with attack. Three, four, or five heroes of the same attack type add +1 / +2 / +3. Neutrals do not spoil that bonus. Meepo counts as two. Brewmaster alone is three attributes and scores 3. A hero with no attribute still scores 1.
 
 The deck and the grave are shared. Discard goes from hand to grave. Destroy goes from the board to grave. Exile leaves the game. The hand limit is 7. The match ends when the deck is empty.

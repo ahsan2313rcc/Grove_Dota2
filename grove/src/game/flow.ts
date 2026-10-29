@@ -138,8 +138,8 @@ export function teamSize(team: Team): number {
 
 export function attrsOf(state: Game, hero: BoardHero): Attr[] {
   const loc = findHero(state, hero.uid)
-  if (loc?.team.gaze) return []
-  if (elderOrder(state, hero.controller)) return []
+  if (!hero.bkb && loc?.team.gaze) return []
+  if (!hero.bkb && elderOrder(state, hero.controller)) return []
   if (hero.attrMode === 'none') return []
   if (hero.attrMode === 'set') return hero.attrSet
   if (hero.defId === 'brewmaster') return ['STR', 'AGI', 'INT']
@@ -246,6 +246,8 @@ export function makeHero(card: CardInst, owner: PlayerId, controller: PlayerId, 
     shield: null,
     ward: null,
     hidden: null,
+    bkb: null,
+    muted: false,
     dawn: null,
     wk: card.defId === 'wraith_king',
     refract: card.defId === 'templar_assassin',
@@ -264,6 +266,7 @@ export function canTargetHero(state: Game, actor: PlayerId, hero: BoardHero, sou
   const loc = findHero(state, hero.uid)
   if (!loc) return false
   if (wardBlocks(hero, loc.team, source)) return false
+  if (hero.bkb && hero.controller !== actor) return false
   if (hero.controller === actor) return true
   if (hero.defId === 'riki' || hero.hidden) return false
   if (source === 'ability' && hero.defId === 'kez') return false
@@ -520,7 +523,7 @@ export function removeHero(state: Game, uid: string): { state: Game; hero: Board
 export function bounce(state: Game, uid: string, cause: string, ignoreRupture = false): Game {
   const loc = findHero(state, uid)
   if (!loc) return state
-  if (loc.player.bkb) return log(state, `${display(loc.hero.defId).name} cannot be returned to a hand.`)
+  if (loc.hero.bkb || loc.player.bkb) return log(state, `${display(loc.hero.defId).name} cannot be returned to a hand.`)
   if (loc.team.noLeave) return log(state, `Dream Coil holds ${display(loc.hero.defId).name} in place.`)
   if (loc.hero.rupture && !ignoreRupture) return enqueue(state, uid, 'Rupture', false, true, null)
   const owner = loc.hero.owner
@@ -543,7 +546,7 @@ function prevented(state: Game, loc: Loc, force: boolean, by: PlayerId | null): 
   }
   const name = display(loc.hero.defId).name
   if (state.naga) return `${name} cannot be destroyed.`
-  if (loc.player.bkb) return `${name} is protected by Black King Bar.`
+  if (loc.hero.bkb || loc.player.bkb) return `${name} is protected by Black King Bar.`
   if (loc.team.glyph) return `Glyph protects ${name}.`
   if (loc.hero.shield) return `Shield protects ${name}.`
   if (loc.hero.ward) return `${name} cannot be destroyed.`
@@ -807,6 +810,7 @@ export function expireStart(state: Game): Game {
           shield: drop(hero.shield),
           ward: drop(hero.ward),
           hidden: drop(hero.hidden),
+          bkb: drop(hero.bkb),
         })),
       })),
     })) as [Player, Player],
@@ -843,10 +847,11 @@ function expireBoards(state: Game): Game {
   }
 }
 
-export function returnPhased(state: Game): Game {
-  const due = state.phased.filter((entry) => entry.owner === state.active && entry.fromTurn < state.turn)
+export function returnPhased(state: Game, dueTurn?: number): Game {
+  const due = state.phased.filter((entry) => (dueTurn === undefined ? entry.fromTurn < state.turn : entry.fromTurn === dueTurn))
   if (due.length === 0) return state
-  let next = { ...state, phased: state.phased.filter((entry) => !due.includes(entry)) }
+  const dueIds = new Set(due)
+  let next = { ...state, phased: state.phased.filter((entry) => !dueIds.has(entry)) }
   for (const entry of due) {
     const hero = { ...entry.hero, controller: entry.owner }
     let teamId = entry.teamId

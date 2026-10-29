@@ -15,7 +15,7 @@ export function Rules({ onClose }: { onClose: () => void }) {
         <section>
           <h3>Teams</h3>
           <p>Heroes score in teams of up to five. Meepo counts as two. One neutral may sit in a team. Neutrals have no ability and no attack type.</p>
-          <p>Each hero scores 1. A team of one attribute, Universal included, adds +1, +3, +6, or +10 for two through five heroes. That team does not take an attack bonus. Universal is its own attribute and does not fill in for another. A mixed team adds +0, +2, or +6 for two, three, or four different attributes. Three, four, or five heroes of the same attack type add +1, +2, or +3 on any team that is not a single attribute. Neutrals have no attack type and do not spoil that bonus. Meepo counts as two. Brewmaster is Strength, Agility, and Intelligence, so alone he scores 3. A hero with no attribute still scores 1.</p>
+          <p>Each hero scores 1. A team earns either the same-attribute bonus or the attack bonus, not both. One attribute, Universal included, adds +1, +3, +6, or +10 for two through five heroes, and that team does not take an attack bonus. Universal is its own attribute and does not fill in for another. A mixed team can also earn the different-attribute bonus: +0, +2, or +6 for two, three, or four different attributes. That bonus stacks with attack. Three, four, or five heroes of the same attack type add +1, +2, or +3. Neutrals have no attack type and do not spoil that bonus. Meepo counts as two. Brewmaster is Strength, Agility, and Intelligence, so alone he scores 3. A hero with no attribute still scores 1.</p>
         </section>
         <section>
           <h3>Zones</h3>
@@ -23,7 +23,7 @@ export function Rules({ onClose }: { onClose: () => void }) {
         </section>
         <section>
           <h3>Answers</h3>
-          <p>The hand limit is 7. Some heroes answer only when the game asks: Nyx from hand can counter an enemy ability, Tormentor can destroy a hero that just entered, and a save can stop a destroy. Instants are free on your own turn.</p>
+          <p>The hand limit is 7. Nyx Assassin can be discarded from hand to counter any card, and the countered card goes to the grave. Tormentor can destroy a hero that just entered, and a save can stop a destroy. Instants are free on your own turn.</p>
         </section>
         <section>
           <h3>A few seats</h3>
@@ -34,6 +34,8 @@ export function Rules({ onClose }: { onClose: () => void }) {
             <li>Medusa’s gaze strips attributes from her team. Range stays.</li>
             <li>Elder Titan strips attributes from enemy heroes. They keep 1 point each, and a shared attack type still scores.</li>
             <li>Tidehunter returns every other hero to its owner’s hand. His own team stays.</li>
+            <li>Magnus gathers up to 5 enemy heroes into a new team. The rest stay.</li>
+            <li>Razor exiles an enemy hero while you control him. Morphling does the same, copies the attribute, and may cast the ability on the turn he takes it.</li>
             <li>Gate merges two teams you own. Overflow returns to hand and does not fire again.</li>
           </ul>
         </section>

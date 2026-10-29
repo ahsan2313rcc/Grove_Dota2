@@ -34,10 +34,12 @@ export interface BoardHero {
   shield: Timed | null
   ward: Timed | null
   hidden: Timed | null
+  bkb: Timed | null
+  muted: boolean
   dawn: { caster: PlayerId; turn: number } | null
   wk: boolean
   refract: boolean
-  held: { card: CardInst; owner: PlayerId; mode: 'morph' | 'razor' } | null
+  held: { card: CardInst; owner: PlayerId; mode: 'morph' | 'razor'; takenTurn: number } | null
   castTurn: number
 }
 
@@ -107,7 +109,8 @@ export interface CastResume {
 export type Resume =
   | CastResume
   | { kind: 'save'; uid: string; cause: string; force: boolean }
-  | { kind: 'nyx'; cast: CastResume }
+  | { kind: 'counter'; uid: string; team: string; actor: PlayerId }
+  | { kind: 'counter-combo'; uids: string[]; actor: PlayerId }
   | { kind: 'pugna'; cast: CastResume }
   | { kind: 'torment'; heroUid: string; cast: CastResume | null }
   | { kind: 'slark'; player: PlayerId; n: number }

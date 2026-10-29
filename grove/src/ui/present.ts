@@ -26,6 +26,8 @@ export function heroMarks(hero: BoardHero, team: Team): string[] {
   if (hero.shield) marks.push('Shield')
   if (hero.ward) marks.push('Ward')
   if (hero.hidden) marks.push('Hidden')
+  if (hero.bkb) marks.push('Black King Bar')
+  if (hero.muted) marks.push('Orchid')
   if (hero.rupture) marks.push('Rupture')
   if (hero.dawn) marks.push('Dawn')
   if (hero.refract) marks.push('Refraction')
@@ -59,9 +61,7 @@ export function statusLines(game: Game, viewer: PlayerId): string[] {
   if (game.silence) lines.push('Global Silence: hero abilities do not fire.')
   if (game.naga) lines.push('Song of the Siren: heroes cannot be destroyed.')
   if (itemsLocked(game, viewer)) lines.push('Poison Nova: you cannot play items.')
-  if (me.orchid) lines.push('Orchid: your next hero does not fire.')
   if (graveLocked(game, viewer)) lines.push('Muerta: you cannot take cards from the grave.')
-  if (me.bkb) lines.push('Black King Bar is active.')
   return lines
 }
 
