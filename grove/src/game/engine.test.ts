@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { chooseAiAction } from './ai.ts'
-import { apply, createGame, morphCasts } from './engine.ts'
-import { attrsOf } from './flow.ts'
+import { apply, createGame, morphCasts, teamsFor } from './engine.ts'
+import { attrsOf, blankTeam } from './flow.ts'
 import { scoreBodies } from './scoring.ts'
 import type { CardInst, Game, PlayerId } from './types.ts'
 
@@ -381,6 +381,19 @@ describe('heroes', () => {
     expect(game.active).toBe(0)
     expect(game.players[1].skip).toBe(false)
     expect(game.log.some((line) => line.includes('skips'))).toBe(true)
+  })
+})
+
+describe('teams', () => {
+  it('stops a 13th team', () => {
+    let game = ready()
+    const hero = game.players[0].hand.find((card) => card.kind === 'hero')
+    expect(hero).toBeTruthy()
+    const teams = Array.from({ length: 12 }, (_, i) => blankTeam(`t${i}`))
+    game = { ...game, players: [{ ...game.players[0], teams }, game.players[1]] }
+    const options = teamsFor(game, hero!.uid)
+    expect(options.find((option) => option.id === 'new')?.ok).toBe(false)
+    expect(options.find((option) => option.id === 'new')?.reason).toBe('12 teams is the limit.')
   })
 })
 

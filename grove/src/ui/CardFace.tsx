@@ -45,7 +45,16 @@ export function CardFace({
   const kindLabel = info.kind === 'hero' ? 'Hero' : info.kind === 'item' ? 'Item' : info.kind === 'setting' ? 'Setting' : info.kind === 'rune' ? 'Rune' : info.kind === 'neutral' ? 'Neutral' : 'Tower'
   const className = `card${selected ? ' selected' : ''}${compact ? ' compact' : ''}${peek ? ' peek' : ''}`
   const body = peek ? (
-    <span className="card-name">{info.name}</span>
+    <>
+      <span className="peek-marks">
+        {shownAttrs.map((attr) => (
+          <span key={attr} className={`sigil attr-${attr}`} title={attr}>{attr[0]}</span>
+        ))}
+        {shownRange === 'Melee' ? <span className="sigil sword" title="Melee" aria-label="Melee" /> : null}
+        {shownRange === 'Ranged' ? <span className="sigil bow" title="Ranged" aria-label="Ranged" /> : null}
+      </span>
+      <span className="card-name">{info.name}</span>
+    </>
   ) : (
     <>
       <span className="card-kicker">

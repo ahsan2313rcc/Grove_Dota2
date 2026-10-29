@@ -498,8 +498,7 @@ export function releaseHeld(state: Game, hero: BoardHero): Game {
   let cardState = state
   const made = makeHero(held.card, held.owner, held.owner, cardState)
   let teamId = ''
-  ;[cardState, teamId] = mint(cardState)
-  cardState = addTeam(cardState, held.owner, blankTeam(teamId))
+  ;[cardState, teamId] = seatTeam(cardState, held.owner)
   cardState = putOnTeam(cardState, held.owner, teamId, made)
   const landed = arrived(cardState, made.uid)
   return log(landed.state, `${display(held.card.defId).name} returns from under ${display(hero.defId).name}.`)
@@ -756,7 +755,19 @@ export function castable(defId: string): boolean {
   return CAST_IDS.has(defId)
 }
 
-export function newTeam(state: Game, id: PlayerId): [Game, string] {
+export const TEAM_CAP = 12
+
+export function newTeam(state: Game, id: PlayerId): [Game, string] | null {
+  if (state.players[id].teams.length >= TEAM_CAP) return null
+  const [next, teamId] = mint(state)
+  return [addTeam(next, id, blankTeam(teamId)), teamId]
+}
+
+export function seatTeam(state: Game, id: PlayerId): [Game, string] {
+  const made = newTeam(state, id)
+  if (made) return made
+  const existing = state.players[id].teams[0]
+  if (existing) return [state, existing.id]
   const [next, teamId] = mint(state)
   return [addTeam(next, id, blankTeam(teamId)), teamId]
 }
@@ -856,11 +867,11 @@ export function returnPhased(state: Game, dueTurn?: number): Game {
     const hero = { ...entry.hero, controller: entry.owner }
     let teamId = entry.teamId
     if (!teamById(next, teamId) || teamById(next, teamId)?.player.id !== entry.owner) {
-      ;[next, teamId] = newTeam(next, entry.owner)
+      ;[next, teamId] = seatTeam(next, entry.owner)
     }
     const team = teamById(next, teamId)
     if (!team || enterReason(next, team.team, heroWeight(hero), hero.token)) {
-      ;[next, teamId] = newTeam(next, entry.owner)
+      ;[next, teamId] = seatTeam(next, entry.owner)
     }
     next = putOnTeam(next, entry.owner, teamId, hero)
     next = log(next, `${display(hero.defId).name} returns from Eul's Scepter.`)
@@ -877,7 +888,7 @@ export function returnLassos(state: Game): Game {
     if (!loc) continue
     let moved = next
     let teamId = ''
-    ;[moved, teamId] = newTeam(moved, entry.owner)
+    ;[moved, teamId] = seatTeam(moved, entry.owner)
     const removed = removeHero(moved, entry.uid)
     if (!removed.hero) continue
     moved = putOnTeam(removed.state, entry.owner, teamId, { ...removed.hero, controller: entry.owner })

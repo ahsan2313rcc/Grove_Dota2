@@ -23,7 +23,7 @@ Add `?mode=ai&seed=58` to deal a known game. `npm test` runs the rules engine.
 
 You have two actions. Draw one card, or play a hero, item, or reward. Instant cards are free. Three settings at once are free: three of a kind score 3 and take the top of the matching face-down pile (River a rune, Jungle a neutral, Lane a tower). One River, one Jungle, and one Lane score 5.
 
-Heroes score in teams of up to five.
+Heroes score in teams of up to five. A player can field at most 12 teams.
 
 Each hero scores 1. A team earns either the same-attribute bonus or the attack bonus, not both. One attribute, Universal included, adds +1 / +3 / +6 / +10 for 2 / 3 / 4 / 5 heroes, with no attack bonus. Universal does not fill in for a missing attribute. A mixed team can also earn +0 / +2 / +6 for 2 / 3 / 4 different attributes, and that bonus stacks with attack. Three, four, or five heroes of the same attack type add +1 / +2 / +3. Neutrals do not spoil that bonus. Meepo counts as two. Brewmaster alone is three attributes and scores 3. A hero with no attribute still scores 1.
 

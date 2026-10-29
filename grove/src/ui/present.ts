@@ -1,5 +1,5 @@
 import { display } from '../game/catalog.ts'
-import { attrsOf, enterReason, findHero, graveLocked, itemsLocked, rangeOf, scoreTeam } from '../game/flow.ts'
+import { attrsOf, enterReason, findHero, graveLocked, itemsLocked, rangeOf, scoreTeam, TEAM_CAP } from '../game/flow.ts'
 import type { Attr, BoardHero, CardInst, Game, PlayerId, Range, Team } from '../game/types.ts'
 
 export function opponentOf(id: PlayerId): PlayerId {
@@ -76,7 +76,8 @@ export function emberTargets(game: Game, uid: string): { id: string; label: stri
       const scored = scoreTeam(game, team)
       return { id: team.id, label: `${scored.why} · ${scored.points}`, ok: !reason, reason: reason ?? undefined }
     })
-  options.push({ id: 'new', label: 'New team', ok: true, reason: undefined })
+  const capped = game.players[actor].teams.length >= TEAM_CAP
+  options.push({ id: 'new', label: 'New team', ok: !capped, reason: capped ? '12 teams is the limit.' : undefined })
   return options
 }
 

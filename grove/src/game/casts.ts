@@ -22,6 +22,8 @@ import {
   log,
   mostRecentEnemy,
   newTeam,
+  seatTeam,
+  TEAM_CAP,
   noteTargets,
   pname,
   pullTop,
@@ -134,7 +136,7 @@ function graveHeroes(state: Game): Choice[] {
 
 function ownTeams(state: Game, actor: PlayerId, withNew: boolean): Choice[] {
   const choices = teamChoices(state, actor, 'ability', (_team, player) => player.id === actor)
-  if (withNew) choices.push({ id: `new:${actor}`, label: 'New team' })
+  if (withNew && state.players[actor].teams.length < TEAM_CAP) choices.push({ id: `new:${actor}`, label: 'New team' })
   return choices
 }
 
@@ -399,7 +401,9 @@ function questions(state: Game, resume: CastResume): Ask {
         if (!loc) return fizzle('That hero is gone.')
         if (resume.defId === 'tiny' || resume.defId === 'force_staff') {
           const choices = teamChoices(state, actor, kind, (team, player) => player.id === loc.hero.owner && team.id !== loc.team.id)
-          choices.push({ id: `new:${loc.hero.owner}`, label: `New team for ${pname(state, loc.hero.owner)}` })
+          if (state.players[loc.hero.owner].teams.length < TEAM_CAP) {
+            choices.push({ id: `new:${loc.hero.owner}`, label: `New team for ${pname(state, loc.hero.owner)}` })
+          }
           return pose(actor, 'Choose a team its owner controls.', choices)
         }
         return pose(actor, 'Choose a team you own.', ownTeams(state, actor, true).filter((choice) => choice.id !== `team:${home?.team.id}` || resume.defId === 'lifestealer'))
@@ -1116,6 +1120,12 @@ function moveOnto(state: Game, uid: string, destPlayer: PlayerId, destTeam: stri
   let teamId = destTeam
   if (creating) {
     const created = newTeam(next, destPlayer)
+    if (!created) {
+      const home = teamById(next, loc.team.id)
+      if (home) return log(putOnTeam(next, loc.hero.controller, loc.team.id, pulled.hero), '12 teams is the limit.')
+      const parked = seatTeam(next, loc.hero.controller)
+      return log(putOnTeam(parked[0], loc.hero.controller, parked[1], pulled.hero), '12 teams is the limit.')
+    }
     next = created[0]
     teamId = created[1]
   }
@@ -1381,9 +1391,7 @@ function lapse(state: Game): Game {
     const hero = { ...mark.origin.hero, wk: mark.origin.hero.defId === 'wraith_king' }
     let teamId = mark.origin.teamId
     if (!teamById(next, teamId)) {
-      const created = newTeam(next, hero.controller)
-      next = created[0]
-      teamId = created[1]
+      ;[next, teamId] = seatTeam(next, hero.controller)
     }
     next = putOnTeam(next, hero.controller, teamId, hero)
     return log(next, `Time Lapse restores ${display(hero.defId).name}.`)
@@ -1456,9 +1464,7 @@ function splitTeam(state: Game, resume: CastResume): Game {
     if (members.length === 0) continue
     let dest = teamId
     if (!first) {
-      const created = newTeam(next, owner)
-      next = created[0]
-      dest = created[1]
+      ;[next, dest] = seatTeam(next, owner)
     }
     first = false
     for (const uid of members) {
@@ -1484,6 +1490,14 @@ function polarity(state: Game, enemy: PlayerId, uids: string[]): Game {
   const removed = extract(state, firstId)
   if (!removed.hero) return state
   const created = newTeam(removed.state, enemy)
+  if (!created) {
+    const home = findHero(state, firstId)?.team.id
+    if (home && teamById(removed.state, home)) {
+      return log(putOnTeam(removed.state, enemy, home, { ...removed.hero, controller: enemy }), '12 teams is the limit.')
+    }
+    const parked = seatTeam(removed.state, enemy)
+    return log(putOnTeam(parked[0], enemy, parked[1], { ...removed.hero, controller: enemy }), '12 teams is the limit.')
+  }
   let next = putOnTeam(created[0], enemy, created[1], { ...removed.hero, controller: enemy })
   next = arrived(next, firstId).state
   for (const uid of kept.slice(1)) next = moveOnto(next, uid, enemy, created[1])

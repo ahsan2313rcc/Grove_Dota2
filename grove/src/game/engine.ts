@@ -21,7 +21,7 @@ import {
   makeCard,
   makeHero,
   mint,
-  newTeam,
+  seatTeam,
   performDestroy,
   pname,
   putOnTeam,
@@ -36,6 +36,7 @@ import {
   strip,
   takeDraw,
   teamById,
+  TEAM_CAP,
   toExile,
   toGrave,
   viperDue,
@@ -44,7 +45,7 @@ import type { Action, CardInst, CardKind, Game, Player, PlayerId, Resume } from 
 
 export function createGame(opts: { seed?: number; mode: 'hotseat' | 'ai'; names?: [string, string] }): Game {
   const mode = opts.mode
-  const names = opts.names ?? (mode === 'ai' ? ['You', 'The Grove'] : ['Radiant', 'Dire'])
+  const names = opts.names ?? (mode === 'ai' ? ['You', 'The Grove'] : ['Player 1', 'Player 2'])
   let state = blank(opts.seed ?? (Date.now() % 100000), mode, names)
   const cards: CardInst[] = []
   for (const hero of HEROES) {
@@ -706,15 +707,11 @@ function answerSave(state: Game, uid: string, dying: string, cause: string, forc
     const destTeam = info.name === 'Dawnbreaker' && team ? team : ''
     let teamId = destTeam
     if (!teamId) {
-      const created = newTeam(next, actor)
-      next = created[0]
-      teamId = created[1]
+      ;[next, teamId] = seatTeam(next, actor)
     } else {
       const dest = teamById(next, teamId)
       if (!dest || enterReason(next, dest.team, 1, false)) {
-        const created = newTeam(next, actor)
-        next = created[0]
-        teamId = created[1]
+        ;[next, teamId] = seatTeam(next, actor)
       }
     }
     next = putOnTeam(next, actor, teamId, hero)
@@ -761,7 +758,8 @@ export function teamsFor(state: Game, uid: string): { id: string; label: string;
     const scored = scoreTeam(state, team)
     options.push({ id: team.id, label: `${scored.why} · ${scored.points}`, ok: !reason, reason: reason ?? undefined })
   }
-  options.push({ id: 'new', label: 'New team', ok: true })
+  const capped = state.players[actor].teams.length >= TEAM_CAP
+  options.push({ id: 'new', label: 'New team', ok: !capped, reason: capped ? '12 teams is the limit.' : undefined })
   return options
 }
 

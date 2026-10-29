@@ -15,17 +15,20 @@ type Focus =
   | { kind: 'card'; defId: string }
 
 type PileName = 'deck' | 'grave' | 'exile' | 'runes' | 'neutrals' | 'towers'
+type SeatCount = 2 | 4 | 6 | 8
 
 export function Table({
   game,
   seed,
   stuck,
+  seats = 2,
   onAction,
   onLobby,
 }: {
   game: Game
   seed: number
   stuck: boolean
+  seats?: SeatCount
   onAction: (action: Action) => void
   onLobby: () => void
 }) {
@@ -35,8 +38,9 @@ export function Table({
   const [moving, setMoving] = useState<string | null>(null)
   const [pile, setPile] = useState<PileName | null>(null)
   const [rules, setRules] = useState(false)
+  const [logOpen, setLogOpen] = useState(false)
   const [handOpen, setHandOpen] = useState<PlayerId | null>(null)
-  const [layout, setLayout] = useState<2 | 4 | 6 | 8>(2)
+  const [layout, setLayout] = useState<SeatCount>(seats)
   const [page, setPage] = useState(0)
   const [acked, setAcked] = useState('')
   const [leaveArmed, setLeaveArmed] = useState(false)
@@ -63,21 +67,18 @@ export function Table({
   const plans = canAct ? comboPlans(game) : []
   const lines = statusLines(game, viewer)
   const lastLog = game.log[game.log.length - 1] ?? ''
+  const showDetail = !!focus || !!placing || !!moving
 
   useEffect(() => {
-    document.querySelector('.side.mine')?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
+    document.querySelector('.lane.mine')?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
   }, [you.teams.length, you.combos.length])
-
-  useEffect(() => {
-    const logNode = document.querySelector('.log')
-    if (logNode) logNode.scrollTop = logNode.scrollHeight
-  }, [game.log.length])
 
   useEffect(() => {
     function onKey(event: KeyboardEvent) {
       if (event.key !== 'Escape') return
       setPile(null)
       setRules(false)
+      setLogOpen(false)
       setHandOpen(null)
       setPlacing(null)
       setMoving(null)
@@ -133,7 +134,6 @@ export function Table({
     setCombo([])
     setPlacing(null)
     setFocus({ kind: 'hand', uid: card.uid })
-    setHandOpen(null)
   }
 
   function playFocused(uid: string) {
@@ -152,16 +152,12 @@ export function Table({
       <header className="top">
         <div className="brand">
           <span className="leaf" aria-hidden="true" />
-          <div>
-            <p className="eyebrow">Dota, dealt as a card game</p>
-            <h1>Grove</h1>
-          </div>
-        </div>
-        <div className="top-meta">
-          <span>Seed {seed}</span>
+          <h1>Grove</h1>
+          <span className="top-seed">Seed {seed}</span>
         </div>
         <div className="top-actions">
           <button type="button" onClick={() => setRules(true)}>Rules</button>
+          <button type="button" data-testid="log-open" onClick={() => setLogOpen(true)}>Log</button>
           {game.over ? (
             <button type="button" className="primary" onClick={onLobby}>New match</button>
           ) : (
@@ -179,70 +175,62 @@ export function Table({
       ) : null}
       {stuck ? <p className="banner warn">The Grove paused. End its turn if it cannot move.</p> : null}
 
-      <div className="felt">
-        <div className="play">
-          <div className="score-row">
-            <Seat
-              name={you.name}
-              score={yourScore.total}
-              shapes={yourShapes}
-              handCount={you.hand.length}
-              active={game.active === viewer}
-              testId="score-you"
-              handTestId="hand"
-              onHand={() => setHandOpen(viewer)}
-            />
-            <div className="pile-row">
-              <PileButton label="Deck" count={game.deck.length} testId="pile-deck" onClick={() => setPile('deck')} />
-              <PileButton label="Grave" count={game.grave.length} testId="pile-grave" onClick={() => setPile('grave')} />
-              <PileButton label="Exile" count={game.exile.length} testId="pile-exile" onClick={() => setPile('exile')} />
-              <PileButton label="Runes" count={game.runes.length} testId="pile-runes" onClick={() => setPile('runes')} />
-              <PileButton label="Neutrals" count={game.neutrals.length} testId="pile-neutrals" onClick={() => setPile('neutrals')} />
-              <PileButton label="Towers" count={game.towers.length} testId="pile-towers" onClick={() => setPile('towers')} />
-            </div>
-            <Seat
+      <div className="stage">
+        <div className="board">
+          <Lane
+            name={you.name}
+            score={yourScore.total}
+            shapes={yourShapes}
+            handCount={you.hand.length}
+            active={game.active === viewer}
+            scoreTestId="score-you"
+            mine
+            showHand={false}
+            teams={you.teams}
+            combos={you.combos}
+            game={game}
+            onInspect={(next) => { setFocus(next); setPlacing(null); setMoving(null) }}
+            onEmber={canAct ? (uid) => { setMoving(uid); setPlacing(null); setFocus({ kind: 'hero', uid }) } : undefined}
+          />
+          {layout === 2 ? (
+            <Lane
               name={foe.name}
               score={foeScore.total}
               shapes={foeShapes}
               handCount={foe.hand.length}
               active={game.active === foeId}
-              testId="score-foe"
+              scoreTestId="score-foe"
               handTestId="hand-foe"
+              mine={false}
+              showHand
               onHand={() => setHandOpen(foeId)}
-            />
-          </div>
-          <PlayerBoard
-            label={you.name}
-            teams={you.teams}
-            combos={you.combos}
-            game={game}
-            mine
-            onInspect={(next) => { setFocus(next); setPlacing(null); setMoving(null) }}
-            onEmber={canAct ? (uid) => { setMoving(uid); setPlacing(null); setFocus({ kind: 'hero', uid }) } : undefined}
-          />
-          {layout === 2 ? (
-            <PlayerBoard
-              label={foe.name}
               teams={foe.teams}
               combos={foe.combos}
               game={game}
-              mine={false}
               onInspect={(next) => { setFocus(next); setPlacing(null); setMoving(null) }}
             />
           ) : (
-            <section className="side" data-testid="opponent-board">
+            <section className="lane foe" data-testid="opponent-board">
               <div className="pager">
                 <button type="button" onClick={() => setPage((current) => (current + pages - 1) % pages)}>Previous</button>
                 <span>{safePage === 0 ? foe.name : `Open seat ${safePage + 1}`}</span>
                 <button type="button" onClick={() => setPage((current) => (current + 1) % pages)}>Next</button>
               </div>
               {safePage === 0 ? (
-                <PlayerBoard
-                  label={foe.name}
+                <Lane
+                  name={foe.name}
+                  score={foeScore.total}
+                  shapes={foeShapes}
+                  handCount={foe.hand.length}
+                  active={game.active === foeId}
+                  scoreTestId="score-foe"
+                  handTestId="hand-foe"
+                  mine={false}
+                  showHand
+                  onHand={() => setHandOpen(foeId)}
                   teams={foe.teams}
                   combos={foe.combos}
                   game={game}
-                  mine={false}
                   onInspect={(next) => { setFocus(next); setPlacing(null); setMoving(null) }}
                 />
               ) : (
@@ -257,7 +245,8 @@ export function Table({
             <p className="aside-note">Set aside: {game.phased.map((entry) => display(entry.hero.defId).name).join(', ')}.</p>
           ) : null}
         </div>
-        <aside className="rail">
+
+        <aside className="hud">
           <div className="turn-chip">
             <span>Turn {game.turn}</span>
             {game.over ? 'Match over' : game.active === viewer ? 'Your turn' : `${foe.name}'s turn`}
@@ -271,7 +260,6 @@ export function Table({
             <button type="button" data-testid="end" disabled={!canAct && !stuck} onClick={() => onAction({ type: 'end' })}>
               End turn
             </button>
-            {drawReason ? <span className="quiet">{drawReason}</span> : <span className="quiet">Draw or play spends 1. A combo is free.</span>}
             {plans.map((plan) => (
               <button key={plan.label} type="button" className="combo" data-testid="combo" onClick={() => onAction({ type: 'combo', uids: plan.uids })}>
                 {plan.label} · free
@@ -286,48 +274,71 @@ export function Table({
               <button key={cast.uid} type="button" onClick={() => onAction({ type: 'morph', uid: cast.uid })}>{cast.label}</button>
             ))}
           </div>
-          <Detail
-            game={game}
-            viewer={viewer}
-            canAct={canAct}
-            focus={focus}
-            placing={placing}
-            moving={moving}
-            comboReady={comboReady}
-            chosen={chosen}
-            onPlay={playFocused}
-            onPlace={() => onAction({ type: 'combo', uids: chosen.map((card) => card.uid) })}
-            onTeam={(team) => {
-              if (placing) onAction({ type: 'play', uid: placing, team })
-              setPlacing(null)
-            }}
-            onMove={(team) => {
-              if (moving) onAction({ type: 'move', uid: moving, team })
-              setMoving(null)
-            }}
-            onMorph={(uid) => onAction({ type: 'morph', uid })}
-            onCancel={() => { setPlacing(null); setMoving(null) }}
-          />
+          <div className="pile-row">
+            <PileButton label="Deck" count={game.deck.length} testId="pile-deck" onClick={() => setPile('deck')} />
+            <PileButton label="Grave" count={game.grave.length} testId="pile-grave" onClick={() => setPile('grave')} />
+            <PileButton label="Exile" count={game.exile.length} testId="pile-exile" onClick={() => setPile('exile')} />
+            <PileButton label="Runes" count={game.runes.length} testId="pile-runes" onClick={() => setPile('runes')} />
+            <PileButton label="Neutrals" count={game.neutrals.length} testId="pile-neutrals" onClick={() => setPile('neutrals')} />
+            <PileButton label="Towers" count={game.towers.length} testId="pile-towers" onClick={() => setPile('towers')} />
+          </div>
           <div className="layout-picks" aria-label="Table size">
             {([2, 4, 6, 8] as const).map((size) => (
               <button key={size} type="button" className={layout === size ? 'on' : ''} data-testid={`layout-${size}`} onClick={() => { setLayout(size); setPage(0) }}>
-                {size} seats
+                {size}
               </button>
             ))}
           </div>
-          {layout > 2 ? <p className="quiet">Two players are seated. The other seats page the opponent, then show open chairs.</p> : null}
-          <div className="log" aria-label="Match log">
-            <h2>Log</h2>
-            <ol>
-              {game.log.slice(-16).map((line, index) => <li key={`${index}-${line}`}>{line}</li>)}
-            </ol>
-            <p className="log-last" data-testid="log-last">{lastLog}</p>
-          </div>
+          {showDetail ? (
+            <Detail
+              game={game}
+              viewer={viewer}
+              canAct={canAct}
+              focus={focus}
+              placing={placing}
+              moving={moving}
+              comboReady={comboReady}
+              chosen={chosen}
+              onPlay={playFocused}
+              onPlace={() => onAction({ type: 'combo', uids: chosen.map((card) => card.uid) })}
+              onTeam={(team) => {
+                if (placing) onAction({ type: 'play', uid: placing, team })
+                setPlacing(null)
+              }}
+              onMove={(team) => {
+                if (moving) onAction({ type: 'move', uid: moving, team })
+                setMoving(null)
+              }}
+              onMorph={(uid) => onAction({ type: 'morph', uid })}
+              onCancel={() => { setPlacing(null); setMoving(null) }}
+            />
+          ) : null}
+          <p className="log-last" data-testid="log-last">{lastLog}</p>
         </aside>
       </div>
 
+      <footer className="handbar" data-testid="hand">
+        <div className="hand-label">
+          <span>Your hand</span>
+          <span>{you.hand.length} / {you.handLimit}</span>
+        </div>
+        {you.hand.length === 0 ? <p className="quiet">Nothing in hand.</p> : null}
+        <div className="hand-row">
+          {you.hand.map((card) => (
+            <CardFace
+              key={card.uid}
+              defId={card.defId}
+              selected={liveCombo.includes(card.uid) || (focus?.kind === 'hand' && focus.uid === card.uid)}
+              onClick={() => clickHand(card)}
+              testId={`hand-${card.defId}`}
+            />
+          ))}
+        </div>
+      </footer>
+
       {game.pending ? <Prompt key={promptKey} pending={game.pending} names={names} onChoose={(ids) => onAction({ type: 'choose', ids })} /> : null}
       {rules ? <Rules onClose={() => setRules(false)} /> : null}
+      {logOpen ? <LogSheet log={game.log} onClose={() => setLogOpen(false)} /> : null}
       {pile ? <PileDialog game={game} pile={pile} onClose={() => setPile(null)} onRead={(defId) => { setPile(null); setFocus({ kind: 'card', defId }) }} /> : null}
       {handOpen !== null ? (
         <HandSheet
@@ -335,14 +346,7 @@ export function Table({
           viewer={viewer}
           owner={handOpen}
           revealed={handOpen === viewer || handRevealed(game, viewer, handOpen)}
-          selected={liveCombo}
-          focusUid={focus?.kind === 'hand' ? focus.uid : null}
-          comboReady={comboReady && handOpen === viewer}
-          onCard={handOpen === viewer ? clickHand : (card) => { setFocus({ kind: 'card', defId: card.defId }); setHandOpen(null) }}
-          onPlace={() => {
-            onAction({ type: 'combo', uids: chosen.map((card) => card.uid) })
-            setHandOpen(null)
-          }}
+          onCard={(card) => { setFocus({ kind: 'card', defId: card.defId }); setHandOpen(null) }}
           onClose={() => setHandOpen(null)}
         />
       ) : null}
@@ -362,35 +366,109 @@ function countShapes(game: Game, id: PlayerId): { core: number; mix: number } {
   return { core, mix }
 }
 
-function Seat({
+function Lane({
   name,
   score,
   shapes,
   handCount,
   active,
-  testId,
+  scoreTestId,
   handTestId,
+  mine,
+  showHand,
   onHand,
+  teams,
+  combos,
+  game,
+  onInspect,
+  onEmber,
 }: {
   name: string
   score: number
   shapes: { core: number; mix: number }
   handCount: number
   active: boolean
-  testId: string
-  handTestId: string
-  onHand: () => void
+  scoreTestId: string
+  handTestId?: string
+  mine: boolean
+  showHand: boolean
+  onHand?: () => void
+  teams: Game['players'][number]['teams']
+  combos: Game['players'][number]['combos']
+  game: Game
+  onInspect: (focus: Focus) => void
+  onEmber?: (uid: string) => void
 }) {
-  const teams = `${shapes.core} core · ${shapes.mix} mix`
   return (
-    <div className={`seat${active ? ' active' : ''}`}>
-      <span>{name}</span>
-      <strong data-testid={testId}>{score}</strong>
-      <small>{teams}</small>
-      <button type="button" className="hand-count" data-testid={handTestId} onClick={onHand}>
-        Hand <strong>{handCount}</strong>
-      </button>
-    </div>
+    <section className={`lane${mine ? ' mine' : ' foe'}${active ? ' active' : ''}`}>
+      <div className={`seat${active ? ' active' : ''}`}>
+        <span>{name}</span>
+        <strong data-testid={scoreTestId}>{score}</strong>
+        <small>{shapes.core} core · {shapes.mix} mix</small>
+        {showHand && onHand && handTestId ? (
+          <button type="button" className="hand-count" data-testid={handTestId} onClick={onHand}>
+            Hand <strong>{handCount}</strong>
+          </button>
+        ) : null}
+      </div>
+      <div className="lane-board">
+        {teams.length === 0 ? <p className="quiet">{mine ? 'Play a hero to open a team.' : 'No teams yet.'}</p> : null}
+        <div className="teams">
+          {teams.map((team, index) => {
+            const scored = scoreTeam(game, team)
+            return (
+              <article key={team.id} className="team" data-testid={mine ? `team-${index}` : undefined}>
+                <header>
+                  <strong>{scored.points}</strong>
+                  <span>{scored.why}</span>
+                </header>
+                <div className="team-heroes">
+                  {team.heroes.map((hero) => (
+                    <CardFace
+                      key={hero.uid}
+                      defId={hero.defId}
+                      peek
+                      attrs={shownAttrs(game, hero)}
+                      range={shownRange(hero)}
+                      marks={heroMarks(hero, team)}
+                      onClick={() => {
+                        onInspect({ kind: 'hero', uid: hero.uid })
+                        if (onEmber && hero.defId === 'ember_spirit') onEmber(hero.uid)
+                      }}
+                    />
+                  ))}
+                </div>
+                <footer>
+                  {team.glyph ? <em>Glyph</em> : null}
+                  {team.gaze ? <em>Gaze</em> : null}
+                  {team.noEnter ? <em>Sealed</em> : null}
+                  {team.mine ? <em>Mine</em> : null}
+                  {team.heroes.length === 0 ? <em>Empty</em> : null}
+                </footer>
+              </article>
+            )
+          })}
+        </div>
+        {combos.length > 0 ? (
+          <div className="combos">
+            {combos.map((entry) => (
+              <article key={entry.id} className="combo-chip">
+                <strong>{entry.points}</strong>
+                <span>{entry.kind === 'mixed' ? 'Mixed path' : `Three ${entry.kind}s`}</span>
+                {entry.protectedBy ? <em>Protected</em> : null}
+                <div className="combo-minis">
+                  {entry.cards.map((card) => (
+                    <button key={card.uid} type="button" className={`mini kind-${card.defId}`} onClick={() => onInspect({ kind: 'card', defId: card.defId })}>
+                      {display(card.defId).name}
+                    </button>
+                  ))}
+                </div>
+              </article>
+            ))}
+          </div>
+        ) : null}
+      </div>
+    </section>
   )
 }
 
@@ -419,88 +497,6 @@ function SeatCover({
       <p className="cover-scores">{names[0]} {scores[0]} · {names[1]} {scores[1]}</p>
       <button type="button" className="primary" data-testid={testId} onClick={onAction}>{action}</button>
     </div>
-  )
-}
-
-function PlayerBoard({
-  label,
-  teams,
-  combos,
-  game,
-  mine,
-  onInspect,
-  onEmber,
-}: {
-  label: string
-  teams: Game['players'][number]['teams']
-  combos: Game['players'][number]['combos']
-  game: Game
-  mine: boolean
-  onInspect: (focus: Focus) => void
-  onEmber?: (uid: string) => void
-}) {
-  return (
-    <section className={`side${mine ? ' mine' : ''}`}>
-      <header>
-        <h2>{label}</h2>
-        <span>{mine ? 'Your teams' : 'Teams and settings'}</span>
-      </header>
-      {teams.length === 0 ? <p className="quiet">{mine ? 'Play a hero to open a team.' : 'No teams yet.'}</p> : null}
-      <div className="teams">
-        {teams.map((team, index) => {
-          const scored = scoreTeam(game, team)
-          return (
-            <article key={team.id} className="team" data-testid={mine ? `team-${index}` : undefined}>
-              <header>
-                <strong>{scored.points}</strong>
-                <span>{scored.why}</span>
-              </header>
-              <div className="team-heroes">
-                {team.heroes.map((hero) => (
-                  <CardFace
-                    key={hero.uid}
-                    defId={hero.defId}
-                    peek
-                    attrs={shownAttrs(game, hero)}
-                    range={shownRange(hero)}
-                    marks={heroMarks(hero, team)}
-                    onClick={() => {
-                      onInspect({ kind: 'hero', uid: hero.uid })
-                      if (onEmber && hero.defId === 'ember_spirit') onEmber(hero.uid)
-                    }}
-                  />
-                ))}
-              </div>
-              <footer>
-                {team.glyph ? <em>Glyph</em> : null}
-                {team.gaze ? <em>Gaze</em> : null}
-                {team.noEnter ? <em>Sealed</em> : null}
-                {team.mine ? <em>Mine</em> : null}
-                {team.heroes.length === 0 ? <em>Empty</em> : null}
-              </footer>
-            </article>
-          )
-        })}
-      </div>
-      {combos.length > 0 ? (
-        <div className="combos">
-          {combos.map((combo) => (
-            <article key={combo.id} className="combo-chip">
-              <strong>{combo.points}</strong>
-              <span>{combo.kind === 'mixed' ? 'Mixed path' : `Three ${combo.kind}s`}</span>
-              {combo.protectedBy ? <em>Protected</em> : null}
-              <div className="combo-minis">
-                {combo.cards.map((card) => (
-                  <button key={card.uid} type="button" className={`mini kind-${card.defId}`} onClick={() => onInspect({ kind: 'card', defId: card.defId })}>
-                    {display(card.defId).name}
-                  </button>
-                ))}
-              </div>
-            </article>
-          ))}
-        </div>
-      ) : null}
-    </section>
   )
 }
 
@@ -568,9 +564,7 @@ function Detail({
       </div>
     )
   }
-  if (!focus) {
-    return <div className="detail quiet">Choose a card to read it. Three settings place as a free combo.</div>
-  }
+  if (!focus) return null
   if (focus.kind === 'card') {
     const info = display(focus.defId)
     return (
@@ -643,27 +637,35 @@ function PileButton({
   )
 }
 
+function LogSheet({ log, onClose }: { log: string[]; onClose: () => void }) {
+  return (
+    <div className="scrim" onClick={onClose}>
+      <section className="sheet" role="dialog" aria-modal="true" aria-labelledby="log-title" onClick={(event) => event.stopPropagation()}>
+        <p className="eyebrow">{log.length} lines</p>
+        <h2 id="log-title">Match log</h2>
+        {log.length === 0 ? <p className="quiet">Nothing logged yet.</p> : null}
+        <ol className="log-list">
+          {log.map((line, index) => <li key={`${index}-${line}`}>{line}</li>)}
+        </ol>
+        <button type="button" className="primary" onClick={onClose}>Close</button>
+      </section>
+    </div>
+  )
+}
+
 function HandSheet({
   game,
   viewer,
   owner,
   revealed,
-  selected,
-  focusUid,
-  comboReady,
   onCard,
-  onPlace,
   onClose,
 }: {
   game: Game
   viewer: PlayerId
   owner: PlayerId
   revealed: boolean
-  selected: string[]
-  focusUid: string | null
-  comboReady: boolean
   onCard: (card: CardInst) => void
-  onPlace: () => void
   onClose: () => void
 }) {
   const player = game.players[owner]
@@ -681,15 +683,10 @@ function HandSheet({
               <CardFace
                 key={card.uid}
                 defId={card.defId}
-                selected={selected.includes(card.uid) || focusUid === card.uid}
                 onClick={() => onCard(card)}
-                testId={mine ? `hand-${card.defId}` : undefined}
               />
             ))}
           </div>
-        ) : null}
-        {comboReady ? (
-          <button type="button" className="combo" onClick={onPlace}>Place these three · free</button>
         ) : null}
         <button type="button" className="primary" onClick={onClose}>Close</button>
       </section>
