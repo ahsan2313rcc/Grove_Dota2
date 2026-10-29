@@ -465,6 +465,74 @@ p { margin: 0; }
 .segment button.on { background: var(--gold); color: var(--ink); }
 .rules section { display: flex; flex-direction: column; gap: 6px; }
 .rules ul { margin: 0; padding-left: 1.1rem; }
+.glossary { width: min(920px, 100%); }
+.glossary-tabs, .glossary-tools, .glossary-marks {
+  display: flex; flex-wrap: wrap; gap: 6px; align-items: center;
+}
+.glossary-tabs button, .glossary-tools .layout-picks button {
+  padding: 0.35rem 0.7rem;
+  font-size: 0.82rem;
+}
+.glossary-tabs button.on { background: var(--gold); color: var(--ink); }
+.glossary-tools { justify-content: space-between; margin: 4px 0 2px; }
+.glossary-search {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  color: var(--cream-dim);
+  font-size: 0.82rem;
+  flex: 1 1 180px;
+}
+.glossary-search input {
+  border: 1px solid var(--line);
+  background: rgba(0, 0, 0, 0.25);
+  border-radius: 12px;
+  padding: 8px 12px;
+  color: var(--cream);
+}
+.glossary-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: min(52dvh, 520px);
+  overflow: auto;
+}
+.glossary-entry {
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.03);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.glossary-entry header {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: baseline;
+  justify-content: space-between;
+}
+.glossary-entry strong { font-family: Fraunces, Georgia, serif; font-size: 1.1rem; }
+.glossary-entry .spell { color: var(--gold); font-size: 0.9rem; }
+.glossary-entry p { color: var(--cream-dim); font-size: 0.9rem; }
+.glossary-entry .pill, .glossary-entry .free-pill {
+  border-radius: 999px;
+  padding: 1px 7px;
+  font-size: 0.72rem;
+}
+.glossary-entry .pill { background: rgba(255, 255, 255, 0.08); color: var(--cream); }
+.glossary-entry .pill.muted { color: var(--cream-dim); }
+.glossary-entry .attr-STR { background: rgba(157, 59, 50, 0.35); color: #f0c2b4; }
+.glossary-entry .attr-AGI { background: rgba(47, 109, 69, 0.35); color: #cfe8d6; }
+.glossary-entry .attr-INT { background: rgba(44, 92, 134, 0.35); color: #c9daf0; }
+.glossary-entry .attr-UNI { background: rgba(138, 106, 34, 0.35); color: #f0e0b0; }
+.glossary-entry[data-kind="river"] { border-color: rgba(31, 110, 120, 0.45); }
+.glossary-entry[data-kind="jungle"] { border-color: rgba(78, 106, 50, 0.45); }
+.glossary-entry[data-kind="lane"] { border-color: rgba(141, 90, 43, 0.45); }
 .over-scores { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .over-scores div { display: flex; flex-direction: column; }
 .cover {

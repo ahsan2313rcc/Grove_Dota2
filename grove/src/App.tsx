@@ -3,6 +3,7 @@ import { chooseAiAction } from './game/ai.ts'
 import { apply, createGame, type SeatSpec } from './game/engine.ts'
 import { log } from './game/flow.ts'
 import type { Action, Game } from './game/types.ts'
+import { Glossary } from './ui/Glossary.tsx'
 import { Table } from './ui/Table.tsx'
 
 export type SeatCount = 2 | 3 | 4 | 5 | 6 | 7 | 8
@@ -110,6 +111,7 @@ function Lobby({ onStart }: { onStart: (game: Game, seed: number) => void }) {
   const [count, setCount] = useState<SeatCount>(2)
   const [seats, setSeats] = useState<LobbySeat[]>(() => defaultSeats(2))
   const [fault, setFault] = useState('')
+  const [glossary, setGlossary] = useState(false)
 
   function setPlayerCount(next: SeatCount) {
     setCount(next)
@@ -198,12 +200,14 @@ function Lobby({ onStart }: { onStart: (game: Game, seed: number) => void }) {
               : 'Keep at least one human seat.'}
         </p>
         <button type="button" className="primary block" data-testid="play-solo" onClick={start}>Start match</button>
+        <button type="button" className="block" data-testid="glossary-open" onClick={() => setGlossary(true)}>Glossary</button>
         <label>
           Seed
           <input data-testid="seed" inputMode="numeric" placeholder="Random" value={seedText} onChange={(event) => setSeedText(event.target.value)} />
         </label>
         {fault ? <p className="warn">{fault}</p> : null}
       </form>
+      {glossary ? <Glossary onClose={() => setGlossary(false)} /> : null}
     </main>
   )
 }

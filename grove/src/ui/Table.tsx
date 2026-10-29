@@ -7,6 +7,7 @@ import type { Action, CardInst, Game, PlayerId } from '../game/types.ts'
 import { CardFace } from './CardFace.tsx'
 import { Prompt } from './Prompt.tsx'
 import { emberTargets, handRevealed, heroMarks, isCombo, playBlock, shownAttrs, shownRange, statusLines } from './present.ts'
+import { Glossary } from './Glossary.tsx'
 import { Rules } from './Rules.tsx'
 
 type Focus =
@@ -37,6 +38,7 @@ export function Table({
   const [moving, setMoving] = useState<string | null>(null)
   const [pile, setPile] = useState<PileName | null>(null)
   const [rules, setRules] = useState(false)
+  const [glossary, setGlossary] = useState(false)
   const [logOpen, setLogOpen] = useState(false)
   const [handOpen, setHandOpen] = useState<PlayerId | null>(null)
   const [page, setPage] = useState(0)
@@ -84,6 +86,7 @@ export function Table({
       if (event.key !== 'Escape') return
       setPile(null)
       setRules(false)
+      setGlossary(false)
       setLogOpen(false)
       setHandOpen(null)
       setPlacing(null)
@@ -163,6 +166,7 @@ export function Table({
         </div>
         <div className="top-actions">
           <button type="button" onClick={() => setRules(true)}>Rules</button>
+          <button type="button" data-testid="glossary-open" onClick={() => setGlossary(true)}>Glossary</button>
           <button type="button" data-testid="log-open" onClick={() => setLogOpen(true)}>Log</button>
           {game.over ? (
             <button type="button" className="primary" onClick={onLobby}>New match</button>
@@ -333,6 +337,7 @@ export function Table({
 
       {game.pending ? <Prompt key={promptKey} pending={game.pending} names={names} onChoose={(ids) => onAction({ type: 'choose', ids })} /> : null}
       {rules ? <Rules onClose={() => setRules(false)} /> : null}
+      {glossary ? <Glossary onClose={() => setGlossary(false)} /> : null}
       {logOpen ? <LogSheet log={game.log} onClose={() => setLogOpen(false)} /> : null}
       {pile ? <PileDialog game={game} pile={pile} onClose={() => setPile(null)} onRead={(defId) => { setPile(null); setFocus({ kind: 'card', defId }) }} /> : null}
       {handOpen !== null ? (
