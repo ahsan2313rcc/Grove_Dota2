@@ -73,6 +73,83 @@ p { margin: 0; }
   gap: 6px;
   overflow: hidden;
 }
+.shell.debug .stage {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(260px, 320px);
+  gap: 10px;
+  overflow: hidden;
+}
+.shell.debug .board {
+  min-width: 0;
+}
+.shell.debug .hud { display: none; }
+.debug-pill {
+  border: 1px solid var(--gold-deep);
+  color: var(--gold);
+  border-radius: 999px;
+  padding: 2px 8px;
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.debug-rail {
+  min-height: 0;
+  overflow: auto;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  background: rgba(8, 16, 13, 0.88);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+}
+.debug-head h2 { font-size: 1.25rem; }
+.debug-speeds { display: flex; flex-wrap: wrap; gap: 4px; }
+.debug-speeds button { padding: 0.3rem 0.55rem; font-size: 0.78rem; }
+.debug-speeds button.on { background: var(--gold); color: var(--ink); }
+.debug-piles {
+  margin: 0;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+.debug-piles div {
+  padding: 6px 8px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.debug-piles dt { color: var(--cream-dim); font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.08em; }
+.debug-piles dd { margin: 0; color: var(--gold); font-family: Fraunces, Georgia, serif; font-size: 1.1rem; }
+.debug-block h3 { font-size: 0.95rem; margin-bottom: 6px; }
+.debug-standings, .debug-teams, .debug-log {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.debug-standings li, .debug-teams li {
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.debug-standings li.on { border-color: var(--gold-deep); }
+.debug-standing-top { display: flex; justify-content: space-between; gap: 8px; }
+.debug-standing-top span, .debug-teams strong { color: var(--gold); font-family: Fraunces, Georgia, serif; }
+.debug-standings small, .debug-teams span, .debug-log { color: var(--cream-dim); font-size: 0.78rem; }
+.debug-log {
+  max-height: 220px;
+  overflow: auto;
+  padding-left: 1rem;
+  list-style: decimal;
+}
 
 .top, .top-actions, .actions, .inline-choices, .hand-label {
   display: flex; align-items: center; gap: 8px;
@@ -567,6 +644,12 @@ p { margin: 0; }
     min-height: 100dvh;
     overflow: visible;
   }
+  .shell.debug .stage {
+    display: flex;
+    flex-direction: column;
+    overflow: visible;
+  }
+  .debug-rail { order: 2; max-height: none; }
   .stage {
     overflow: visible;
     flex: none;

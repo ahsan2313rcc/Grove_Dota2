@@ -7,6 +7,7 @@ import type { Action, CardInst, Game, PlayerId } from '../game/types.ts'
 import { CardFace } from './CardFace.tsx'
 import { Prompt } from './Prompt.tsx'
 import { emberTargets, handRevealed, heroMarks, isCombo, playBlock, shownAttrs, shownRange, statusLines } from './present.ts'
+import { DebugRail, type DebugSpeed } from './DebugRail.tsx'
 import { Glossary } from './Glossary.tsx'
 import { Rules } from './Rules.tsx'
 
@@ -23,12 +24,20 @@ export function Table({
   game,
   seed,
   stuck,
+  debug = false,
+  debugSpeed = 1,
+  onDebugSpeed,
+  onDebugStep,
   onAction,
   onLobby,
 }: {
   game: Game
   seed: number
   stuck: boolean
+  debug?: boolean
+  debugSpeed?: DebugSpeed
+  onDebugSpeed?: (speed: DebugSpeed) => void
+  onDebugStep?: () => void
   onAction: (action: Action) => void
   onLobby: () => void
 }) {
@@ -50,10 +59,12 @@ export function Table({
   const primaryHuman = humans[0] ?? 0
   const pendingHuman = game.pending && !game.players[game.pending.actor]?.ai ? game.pending.actor : null
   const activeHuman = game.players[game.active] && !game.players[game.active]!.ai ? game.active : null
-  const needsHandoff = pendingHuman !== null && acked !== promptKey
-  const viewer: PlayerId = pendingHuman !== null && acked === promptKey
-    ? pendingHuman
-    : (activeHuman ?? primaryHuman)
+  const needsHandoff = !debug && pendingHuman !== null && acked !== promptKey
+  const viewer: PlayerId = debug
+    ? game.active
+    : pendingHuman !== null && acked === promptKey
+      ? pendingHuman
+      : (activeHuman ?? primaryHuman)
   const you = game.players[viewer]!
   const chairs = game.players.map((player) => ({
     key: `p-${player.id}`,
@@ -63,7 +74,7 @@ export function Table({
   const pageCount = Math.max(1, Math.ceil(chairs.length / PAGE_SIZE))
   const safePage = ((page % pageCount) + pageCount) % pageCount
   const visible = chairs.slice(safePage * PAGE_SIZE, safePage * PAGE_SIZE + PAGE_SIZE)
-  const canAct = !game.over && !game.veil && !game.pending && game.active === viewer && !you.ai
+  const canAct = !debug && !game.over && !game.veil && !game.pending && game.active === viewer && !you.ai
   const handIds = new Set(you.hand.map((card) => card.uid))
   const liveCombo = combo.filter((uid) => handIds.has(uid))
   if (liveCombo.length !== combo.length) setCombo(liveCombo)
@@ -75,7 +86,7 @@ export function Table({
   const lastLog = game.log[game.log.length - 1] ?? ''
   const showDetail = !!focus || !!placing || !!moving
   const activeName = game.players[game.active]?.name ?? 'Player'
-  const whoseTurn = game.over ? 'Match over' : game.active === viewer ? 'Your turn' : `${activeName}'s turn`
+  const whoseTurn = game.over ? 'Match over' : debug ? `${activeName}'s turn` : game.active === viewer ? 'Your turn' : `${activeName}'s turn`
 
   useEffect(() => {
     document.querySelector('.lane.mine')?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
@@ -129,6 +140,10 @@ export function Table({
   const drawReason = !canAct ? null : game.deck.length === 0 ? 'The deck is empty.' : you.actions < 1 ? 'No actions left.' : you.hand.length >= you.handLimit ? 'Your hand is full.' : null
 
   function clickHand(card: CardInst) {
+    if (debug) {
+      setFocus({ kind: 'hand', uid: card.uid })
+      return
+    }
     setMoving(null)
     if (card.kind === 'setting') {
       setPlacing(null)
@@ -157,12 +172,13 @@ export function Table({
   }
 
   return (
-    <div className="shell">
+    <div className={`shell${debug ? ' debug' : ''}`}>
       <header className="top">
         <div className="brand">
           <span className="leaf" aria-hidden="true" />
           <h1>Grove</h1>
-          <span className="top-seed">Seed {seed}</span>
+          <span className="top-seed">{debug ? `ahsan-${seed}` : `Seed ${seed}`}</span>
+          {debug ? <span className="debug-pill">Debug</span> : null}
         </div>
         <div className="top-actions">
           <button type="button" onClick={() => setRules(true)}>Rules</button>
@@ -248,77 +264,88 @@ export function Table({
           ) : null}
         </div>
 
-        <aside className="hud">
-          <div className="turn-chip">
-            <span className="turn-line">
-              <span>T{game.turn}</span>
-              <span className="quiet">{whoseTurn}</span>
-            </span>
-            <span className="action-line">
-              <strong data-testid="actions">{game.players[game.active].actions}</strong>
-              <small>left</small>
-            </span>
-          </div>
-          <div className="actions">
-            <button type="button" className="primary" data-testid="draw" disabled={!canAct || !!drawReason} onClick={() => onAction({ type: 'draw' })}>
-              Draw
-            </button>
-            <button type="button" data-testid="end" disabled={!canAct && !stuck} onClick={() => onAction({ type: 'end' })}>
-              End turn
-            </button>
-            {plans.map((plan) => (
-              <button key={plan.label} type="button" className="combo" data-testid="combo" onClick={() => onAction({ type: 'combo', uids: plan.uids })}>
-                {plan.label} · free
+        {debug && onDebugSpeed && onDebugStep ? (
+          <DebugRail
+            game={game}
+            seed={seed}
+            stuck={stuck}
+            speed={debugSpeed}
+            onSpeed={onDebugSpeed}
+            onStep={onDebugStep}
+          />
+        ) : (
+          <aside className="hud">
+            <div className="turn-chip">
+              <span className="turn-line">
+                <span>T{game.turn}</span>
+                <span className="quiet">{whoseTurn}</span>
+              </span>
+              <span className="action-line">
+                <strong data-testid="actions">{game.players[game.active].actions}</strong>
+                <small>left</small>
+              </span>
+            </div>
+            <div className="actions">
+              <button type="button" className="primary" data-testid="draw" disabled={!canAct || !!drawReason} onClick={() => onAction({ type: 'draw' })}>
+                Draw
               </button>
-            ))}
-            {comboReady ? (
-              <button type="button" className="combo" onClick={() => onAction({ type: 'combo', uids: chosen.map((card) => card.uid) })}>
-                Place selected · free
+              <button type="button" data-testid="end" disabled={!canAct && !stuck} onClick={() => onAction({ type: 'end' })}>
+                End turn
               </button>
+              {plans.map((plan) => (
+                <button key={plan.label} type="button" className="combo" data-testid="combo" onClick={() => onAction({ type: 'combo', uids: plan.uids })}>
+                  {plan.label} · free
+                </button>
+              ))}
+              {comboReady ? (
+                <button type="button" className="combo" onClick={() => onAction({ type: 'combo', uids: chosen.map((card) => card.uid) })}>
+                  Place selected · free
+                </button>
+              ) : null}
+              {canAct && morphCasts(game).map((cast) => (
+                <button key={cast.uid} type="button" onClick={() => onAction({ type: 'morph', uid: cast.uid })}>{cast.label}</button>
+              ))}
+            </div>
+            <div className="pile-row">
+              <PileButton label="Deck" count={game.deck.length} testId="pile-deck" onClick={() => setPile('deck')} />
+              <PileButton label="Grave" count={game.grave.length} testId="pile-grave" onClick={() => setPile('grave')} />
+              <PileButton label="Exile" count={game.exile.length} testId="pile-exile" onClick={() => setPile('exile')} />
+              <PileButton label="Runes" count={game.runes.length} testId="pile-runes" onClick={() => setPile('runes')} />
+              <PileButton label="Neutrals" count={game.neutrals.length} testId="pile-neutrals" onClick={() => setPile('neutrals')} />
+              <PileButton label="Towers" count={game.towers.length} testId="pile-towers" onClick={() => setPile('towers')} />
+            </div>
+            {showDetail ? (
+              <Detail
+                game={game}
+                viewer={viewer}
+                canAct={canAct}
+                focus={focus}
+                placing={placing}
+                moving={moving}
+                comboReady={comboReady}
+                chosen={chosen}
+                onPlay={playFocused}
+                onPlace={() => onAction({ type: 'combo', uids: chosen.map((card) => card.uid) })}
+                onTeam={(team) => {
+                  if (placing) onAction({ type: 'play', uid: placing, team })
+                  setPlacing(null)
+                }}
+                onMove={(team) => {
+                  if (moving) onAction({ type: 'move', uid: moving, team })
+                  setMoving(null)
+                }}
+                onMorph={(uid) => onAction({ type: 'morph', uid })}
+                onCancel={() => { setPlacing(null); setMoving(null) }}
+              />
             ) : null}
-            {canAct && morphCasts(game).map((cast) => (
-              <button key={cast.uid} type="button" onClick={() => onAction({ type: 'morph', uid: cast.uid })}>{cast.label}</button>
-            ))}
-          </div>
-          <div className="pile-row">
-            <PileButton label="Deck" count={game.deck.length} testId="pile-deck" onClick={() => setPile('deck')} />
-            <PileButton label="Grave" count={game.grave.length} testId="pile-grave" onClick={() => setPile('grave')} />
-            <PileButton label="Exile" count={game.exile.length} testId="pile-exile" onClick={() => setPile('exile')} />
-            <PileButton label="Runes" count={game.runes.length} testId="pile-runes" onClick={() => setPile('runes')} />
-            <PileButton label="Neutrals" count={game.neutrals.length} testId="pile-neutrals" onClick={() => setPile('neutrals')} />
-            <PileButton label="Towers" count={game.towers.length} testId="pile-towers" onClick={() => setPile('towers')} />
-          </div>
-          {showDetail ? (
-            <Detail
-              game={game}
-              viewer={viewer}
-              canAct={canAct}
-              focus={focus}
-              placing={placing}
-              moving={moving}
-              comboReady={comboReady}
-              chosen={chosen}
-              onPlay={playFocused}
-              onPlace={() => onAction({ type: 'combo', uids: chosen.map((card) => card.uid) })}
-              onTeam={(team) => {
-                if (placing) onAction({ type: 'play', uid: placing, team })
-                setPlacing(null)
-              }}
-              onMove={(team) => {
-                if (moving) onAction({ type: 'move', uid: moving, team })
-                setMoving(null)
-              }}
-              onMorph={(uid) => onAction({ type: 'morph', uid })}
-              onCancel={() => { setPlacing(null); setMoving(null) }}
-            />
-          ) : null}
-          <p className="log-last" data-testid="log-last">{lastLog}</p>
-        </aside>
+            <p className="log-last" data-testid="log-last">{lastLog}</p>
+          </aside>
+        )}
       </div>
 
       <footer className="handbar" data-testid="hand">
         <div className="hand-label">
-          <span>Your hand</span>
+          <span>{debug ? `${activeName}'s hand` : 'Your hand'}</span>
           <span>{you.hand.length} / {you.handLimit}</span>
         </div>
         {you.hand.length === 0 ? <p className="quiet">Nothing in hand.</p> : null}
@@ -335,7 +362,7 @@ export function Table({
         </div>
       </footer>
 
-      {game.pending ? <Prompt key={promptKey} pending={game.pending} names={names} onChoose={(ids) => onAction({ type: 'choose', ids })} /> : null}
+      {!debug && game.pending ? <Prompt key={promptKey} pending={game.pending} names={names} onChoose={(ids) => onAction({ type: 'choose', ids })} /> : null}
       {rules ? <Rules onClose={() => setRules(false)} /> : null}
       {glossary ? <Glossary onClose={() => setGlossary(false)} /> : null}
       {logOpen ? <LogSheet log={game.log} onClose={() => setLogOpen(false)} /> : null}
@@ -345,7 +372,7 @@ export function Table({
           game={game}
           viewer={viewer}
           owner={handOpen}
-          revealed={handOpen === viewer || handRevealed(game, viewer, handOpen)}
+          revealed={debug || handOpen === viewer || handRevealed(game, viewer, handOpen)}
           onCard={(card) => { setFocus({ kind: 'card', defId: card.defId }); setHandOpen(null) }}
           onClose={() => setHandOpen(null)}
         />

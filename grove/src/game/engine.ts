@@ -55,7 +55,6 @@ export function createGame(opts: {
   const seats = opts.seats ?? legacySeats(opts.mode ?? 'hotseat', opts.names)
   if (seats.length < 2 || seats.length > 8) throw new Error('Grove seats 2 to 8 players.')
   const humans = seats.filter((seat) => !seat.ai).length
-  if (humans < 1) throw new Error('At least one human player is required.')
   const mode: 'hotseat' | 'ai' = humans >= 2 ? 'hotseat' : 'ai'
   let state = blank(opts.seed ?? (Date.now() % 100000), mode, seats)
   const cards: CardInst[] = []
