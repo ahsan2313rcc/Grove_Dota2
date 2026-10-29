@@ -216,10 +216,16 @@ export function Table({
   const primaryHuman = humans[0] ?? 0
   const pendingHuman = game.pending && !game.players[game.pending.actor]?.ai ? game.pending.actor : null
   const activeHuman = game.players[game.active] && !game.players[game.active]!.ai ? game.active : null
-  const needsHandoff = !debug && pendingHuman !== null && acked !== promptKey
+  // Only pass-the-device when another human must answer — not when you target an enemy on your own turn.
+  const needsHandoff =
+    !debug
+    && humans.length > 1
+    && pendingHuman !== null
+    && acked !== promptKey
+    && pendingHuman !== activeHuman
   const viewer: PlayerId = debug
     ? game.active
-    : pendingHuman !== null && acked === promptKey
+    : pendingHuman !== null && (acked === promptKey || pendingHuman === activeHuman || humans.length === 1)
       ? pendingHuman
       : (activeHuman ?? primaryHuman)
   const you = game.players[viewer]!
