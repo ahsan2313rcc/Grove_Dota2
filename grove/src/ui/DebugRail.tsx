@@ -217,7 +217,7 @@ export function DebugRail({
 
       <div className="debug-block">
         <h3>Shape compare</h3>
-        <p className="quiet debug-legend">Core = mono-attribute team / three-of-a-kind settings. Mixed = multi-attribute team / mixed path. Size rows are per-match rates for 3/4/5-hero core and 3/4-hero mix teams.</p>
+        <p className="quiet debug-legend">Core = mono-attribute team / three-of-a-kind settings. Mixed = multi-attribute team / mixed path. Core ×3/×4/×5 = hero count. Mixed · 3/4 attrs = attribute count (floors ~6 / ~8 with attack).</p>
         <table className="debug-table">
           <thead>
             <tr><th>Shape</th><th>n</th><th>/match</th><th>Avg pts</th></tr>

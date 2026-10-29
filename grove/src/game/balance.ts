@@ -605,8 +605,8 @@ export function summarizeReports(reports: MatchReport[], filter: StratFilter = A
       shapeRow('core_team_4', 'Core team ×4', shapeTotals.coreTeams4, shapeTotals.coreTeamPoints4, matchCount),
       shapeRow('core_team_5', 'Core team ×5', shapeTotals.coreTeams5, shapeTotals.coreTeamPoints5, matchCount),
       shapeRow('mix_team', 'Mixed team', shapeTotals.mixTeams, shapeTotals.mixTeamPoints, matchCount),
-      shapeRow('mix_team_3', 'Mixed team ×3', shapeTotals.mixTeams3, shapeTotals.mixTeamPoints3, matchCount),
-      shapeRow('mix_team_4', 'Mixed team ×4', shapeTotals.mixTeams4, shapeTotals.mixTeamPoints4, matchCount),
+      shapeRow('mix_team_3', 'Mixed · 3 attrs', shapeTotals.mixTeams3, shapeTotals.mixTeamPoints3, matchCount),
+      shapeRow('mix_team_4', 'Mixed · 4 attrs', shapeTotals.mixTeams4, shapeTotals.mixTeamPoints4, matchCount),
       shapeRow('core_setting', 'Core setting', shapeTotals.coreSettings, shapeTotals.coreSettingPoints, matchCount),
       shapeRow('mix_setting', 'Mixed setting', shapeTotals.mixSettings, shapeTotals.mixSettingPoints, matchCount),
     ],
@@ -752,13 +752,22 @@ function relBucket(kind: PlayKind, defId: string): RelBucket {
   return 'other'
 }
 
+function mixAttrCount(why: string): number {
+  if (why.startsWith('Four attributes')) return 4
+  if (why.startsWith('Three attributes')) return 3
+  if (why.startsWith('Two attributes')) return 2
+  return 0
+}
+
 function shapeCounts(game: Game): ShapeCounts {
   const shapes = EMPTY_SHAPES()
   for (const player of game.players) {
     for (const team of player.teams) {
       const scored = scoreTeam(game, team)
       const shape = teamShape(scored.why)
+      // Core tiers are by hero count; mix tiers are by attribute count (+2 / +4).
       const size = team.heroes.reduce((sum, hero) => sum + (hero.defId === 'meepo' ? 2 : 1), 0)
+      const mixAttrs = mixAttrCount(scored.why)
       if (shape === 'core') {
         shapes.coreTeams += 1
         shapes.coreTeamPoints += scored.points
@@ -775,10 +784,10 @@ function shapeCounts(game: Game): ShapeCounts {
       } else if (shape === 'mix') {
         shapes.mixTeams += 1
         shapes.mixTeamPoints += scored.points
-        if (size === 3) {
+        if (mixAttrs === 3) {
           shapes.mixTeams3 += 1
           shapes.mixTeamPoints3 += scored.points
-        } else if (size === 4) {
+        } else if (mixAttrs >= 4) {
           shapes.mixTeams4 += 1
           shapes.mixTeamPoints4 += scored.points
         }
