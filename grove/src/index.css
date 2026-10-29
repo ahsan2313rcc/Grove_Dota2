@@ -150,6 +150,131 @@ p { margin: 0; }
   padding-left: 1rem;
   list-style: decimal;
 }
+.debug-batch {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 8px;
+}
+.debug-batch label,
+.debug-focus {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.78rem;
+  color: var(--cream-dim);
+}
+.debug-batch input,
+.debug-focus select {
+  width: 100%;
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--cream);
+  padding: 0.4rem 0.55rem;
+}
+.debug-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.78rem;
+}
+.debug-table th,
+.debug-table td {
+  text-align: left;
+  padding: 4px 6px;
+  border-bottom: 1px solid var(--line);
+  vertical-align: top;
+}
+.debug-table th {
+  color: var(--cream-dim);
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-size: 0.68rem;
+}
+.debug-table td strong {
+  display: block;
+  font-size: 0.82rem;
+}
+.debug-table td small {
+  color: var(--cream-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-size: 0.65rem;
+}
+.debug-graph {
+  color: var(--gold);
+}
+.debug-graph svg {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+.debug-axis {
+  stroke: var(--line);
+  stroke-width: 1;
+}
+.debug-graph-meta {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 4px;
+  color: var(--cream-dim);
+  font-size: 0.72rem;
+}
+.debug-results {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.78rem;
+  color: var(--cream-dim);
+}
+.shell.debug.stats-only .stage.stats-stage {
+  display: block;
+  overflow: auto;
+}
+.shell.debug.stats-only .debug-rail {
+  max-width: 720px;
+  margin: 0 auto;
+  width: 100%;
+  max-height: none;
+}
+.debug-lobby {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.debug-lobby legend {
+  padding: 0 6px;
+  color: var(--gold);
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+.debug-lobby label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.82rem;
+}
+.debug-lobby input[type='number'] {
+  width: 100%;
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--cream);
+  padding: 0.4rem 0.55rem;
+}
+.check-row {
+  flex-direction: row !important;
+  align-items: center;
+  gap: 8px !important;
+}
 
 .top, .top-actions, .actions, .inline-choices, .hand-label {
   display: flex; align-items: center; gap: 8px;

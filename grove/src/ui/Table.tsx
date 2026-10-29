@@ -7,7 +7,8 @@ import type { Action, CardInst, Game, PlayerId } from '../game/types.ts'
 import { CardFace } from './CardFace.tsx'
 import { Prompt } from './Prompt.tsx'
 import { emberTargets, handRevealed, heroMarks, isCombo, playBlock, shownAttrs, shownRange, statusLines } from './present.ts'
-import { DebugRail, type DebugSpeed } from './DebugRail.tsx'
+import type { BalanceSummary, MatchReport } from '../game/balance.ts'
+import { DebugRail, type DebugSpeed, type DebugView } from './DebugRail.tsx'
 import { Glossary } from './Glossary.tsx'
 import { Rules } from './Rules.tsx'
 
@@ -26,18 +27,42 @@ export function Table({
   stuck,
   debug = false,
   debugSpeed = 1,
+  debugView = 'watch',
+  debugBatchSize = 4,
+  debugFocus = 0,
+  debugRunCount = 1,
+  debugFinished = 0,
+  debugRunningBatch = false,
+  debugSummary,
+  debugReports = [],
   onDebugSpeed,
   onDebugStep,
+  onDebugView,
+  onDebugBatchSize,
+  onDebugFocus,
+  onDebugRunBatch,
   onAction,
   onLobby,
 }: {
-  game: Game
+  game: Game | null
   seed: number
   stuck: boolean
   debug?: boolean
   debugSpeed?: DebugSpeed
+  debugView?: DebugView
+  debugBatchSize?: number
+  debugFocus?: number
+  debugRunCount?: number
+  debugFinished?: number
+  debugRunningBatch?: boolean
+  debugSummary?: BalanceSummary
+  debugReports?: MatchReport[]
   onDebugSpeed?: (speed: DebugSpeed) => void
   onDebugStep?: () => void
+  onDebugView?: (view: DebugView) => void
+  onDebugBatchSize?: (size: number) => void
+  onDebugFocus?: (index: number) => void
+  onDebugRunBatch?: () => void
   onAction: (action: Action) => void
   onLobby: () => void
 }) {
@@ -53,6 +78,104 @@ export function Table({
   const [page, setPage] = useState(0)
   const [acked, setAcked] = useState('')
   const [leaveArmed, setLeaveArmed] = useState(false)
+  const statsOnly = debug && debugView === 'stats'
+  const emptySummary: BalanceSummary = debugSummary ?? {
+    matches: 0,
+    finished: 0,
+    seats: 0,
+    avgTurns: 0,
+    avgFinalSpread: 0,
+    avgWinnerScore: 0,
+    cards: [],
+    contested: [],
+    avgPtsByTurn: [],
+    avgCardsByTurn: [],
+    kindSwing: [],
+  }
+
+  const teamCount = game?.players[game.active]?.teams.length ?? 0
+  const comboCount = game?.players[game.active]?.combos.length ?? 0
+
+  useEffect(() => {
+    function onKey(event: KeyboardEvent) {
+      if (event.key !== 'Escape') return
+      setPile(null)
+      setRules(false)
+      setGlossary(false)
+      setLogOpen(false)
+      setHandOpen(null)
+      setPlacing(null)
+      setMoving(null)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
+
+  useEffect(() => {
+    if (!game || statsOnly) return
+    document.querySelector('.lane.mine')?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
+  }, [game, statsOnly, teamCount, comboCount])
+
+  if (debug && onDebugSpeed && onDebugStep && onDebugView && onDebugBatchSize && onDebugFocus && onDebugRunBatch && (statsOnly || !game)) {
+    return (
+      <div className="shell debug stats-only">
+        <header className="top">
+          <div className="brand">
+            <span className="leaf" aria-hidden="true" />
+            <h1>Grove</h1>
+            <span className="top-seed">ahsan-{seed}</span>
+            <span className="debug-pill">Debug</span>
+          </div>
+          <div className="top-actions">
+            <button type="button" onClick={() => setRules(true)}>Rules</button>
+            <button type="button" data-testid="glossary-open" onClick={() => setGlossary(true)}>Glossary</button>
+            <button type="button" className="primary" onClick={onLobby}>Leave</button>
+          </div>
+        </header>
+        <div className="stage stats-stage">
+          <DebugRail
+            game={game}
+            seed={seed}
+            stuck={stuck}
+            speed={debugSpeed}
+            view={debugView}
+            batchSize={debugBatchSize}
+            focus={debugFocus}
+            runCount={debugRunCount}
+            finishedCount={debugFinished}
+            runningBatch={debugRunningBatch}
+            summary={emptySummary}
+            reports={debugReports}
+            onSpeed={onDebugSpeed}
+            onStep={onDebugStep}
+            onView={onDebugView}
+            onBatchSize={onDebugBatchSize}
+            onFocus={onDebugFocus}
+            onRunBatch={onDebugRunBatch}
+          />
+        </div>
+        {rules ? <Rules onClose={() => setRules(false)} /> : null}
+        {glossary ? <Glossary onClose={() => setGlossary(false)} /> : null}
+      </div>
+    )
+  }
+
+  if (!game) {
+    return (
+      <div className="shell">
+        <header className="top">
+          <div className="brand">
+            <span className="leaf" aria-hidden="true" />
+            <h1>Grove</h1>
+          </div>
+          <div className="top-actions">
+            <button type="button" className="primary" onClick={onLobby}>Back to lobby</button>
+          </div>
+        </header>
+      </div>
+    )
+  }
+
   const names = game.players.map((player) => player.name)
   const promptKey = game.pending ? `${game.turn}:${game.pending.actor}:${game.pending.prompt}:${game.pending.choices.length}` : ''
   const humans = game.players.filter((player) => !player.ai).map((player) => player.id)
@@ -87,25 +210,6 @@ export function Table({
   const showDetail = !!focus || !!placing || !!moving
   const activeName = game.players[game.active]?.name ?? 'Player'
   const whoseTurn = game.over ? 'Match over' : debug ? `${activeName}'s turn` : game.active === viewer ? 'Your turn' : `${activeName}'s turn`
-
-  useEffect(() => {
-    document.querySelector('.lane.mine')?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
-  }, [you.teams.length, you.combos.length])
-
-  useEffect(() => {
-    function onKey(event: KeyboardEvent) {
-      if (event.key !== 'Escape') return
-      setPile(null)
-      setRules(false)
-      setGlossary(false)
-      setLogOpen(false)
-      setHandOpen(null)
-      setPlacing(null)
-      setMoving(null)
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [])
 
   if (game.mode === 'hotseat' && game.veil && !game.players[game.active]?.ai) {
     return (
@@ -161,6 +265,7 @@ export function Table({
   }
 
   function playFocused(uid: string) {
+    if (!game) return
     const card = you.hand.find((entry) => entry.uid === uid)
     if (!card || !canAct || playBlock(game, viewer, card)) return
     if (needsTeam(card.defId, card.kind)) {
@@ -264,14 +369,26 @@ export function Table({
           ) : null}
         </div>
 
-        {debug && onDebugSpeed && onDebugStep ? (
+        {debug && onDebugSpeed && onDebugStep && onDebugView && onDebugBatchSize && onDebugFocus && onDebugRunBatch ? (
           <DebugRail
             game={game}
             seed={seed}
             stuck={stuck}
             speed={debugSpeed}
+            view={debugView}
+            batchSize={debugBatchSize}
+            focus={debugFocus}
+            runCount={debugRunCount}
+            finishedCount={debugFinished}
+            runningBatch={debugRunningBatch}
+            summary={emptySummary}
+            reports={debugReports}
             onSpeed={onDebugSpeed}
             onStep={onDebugStep}
+            onView={onDebugView}
+            onBatchSize={onDebugBatchSize}
+            onFocus={onDebugFocus}
+            onRunBatch={onDebugRunBatch}
           />
         ) : (
           <aside className="hud">

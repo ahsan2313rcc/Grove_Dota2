@@ -1,10 +1,11 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { chooseAiAction } from './game/ai.ts'
+import { BalanceTracker, runMatchFast, summarizeReports, type MatchReport } from './game/balance.ts'
 import { apply, createGame, type SeatSpec } from './game/engine.ts'
 import { log } from './game/flow.ts'
 import type { Action, Game } from './game/types.ts'
 import { Glossary } from './ui/Glossary.tsx'
-import { type DebugSpeed } from './ui/DebugRail.tsx'
+import { type DebugSpeed, type DebugView } from './ui/DebugRail.tsx'
 import { Table } from './ui/Table.tsx'
 
 export type SeatCount = 2 | 3 | 4 | 5 | 6 | 7 | 8
@@ -13,6 +14,13 @@ const SEAT_OPTIONS: SeatCount[] = [2, 3, 4, 5, 6, 7, 8]
 const BASE_TICK_MS = 420
 
 type LobbySeat = { name: string; kind: 'human' | 'ai' }
+
+type LiveRun = {
+  seed: number
+  game: Game
+  tracker: BalanceTracker
+  stuck: boolean
+}
 
 function defaultSeats(count: SeatCount): LobbySeat[] {
   return Array.from({ length: count }, (_, index) => {
@@ -32,7 +40,53 @@ function parseSeedInput(raw: string): { seed: number; debug: boolean } | null {
   return null
 }
 
-function readStart(): { game: Game; seed: number; debug: boolean } | null {
+function aiRoster(count: number): SeatSpec[] {
+  return Array.from({ length: count }, (_, index) => ({
+    name: index === 0 ? 'AI 1' : index === 1 ? 'The Grove' : `AI ${index + 1}`,
+    ai: true,
+  }))
+}
+
+function makeRun(seed: number, seats: number): LiveRun {
+  const game = createGame({ seed, seats: aiRoster(seats) })
+  const tracker = new BalanceTracker(seed)
+  tracker.start(game)
+  return { seed, game, tracker, stuck: false }
+}
+
+function advanceTracked(run: LiveRun): LiveRun {
+  const game = run.game
+  if (game.over) return run
+  if (game.veil) {
+    const next = apply(game, { type: 'ready' })
+    run.tracker.observe(game, { type: 'ready' }, next)
+    return { ...run, game: next, stuck: false }
+  }
+  if (game.pending) {
+    if (game.players[game.pending.actor]?.ai || game.autoAll) {
+      const next = { ...game, pending: null, log: [...game.log, 'Forced past a stuck choice.'] }
+      return { ...run, game: next, stuck: false }
+    }
+    return run
+  }
+  if (!game.players[game.active]?.ai) return run
+  const action = chooseAiAction(game)
+  let next = apply(game, action)
+  if (next.pending && (next.players[next.pending.actor]?.ai || next.autoAll)) {
+    next = { ...next, pending: null, log: [...next.log, 'Forced past a stuck choice.'] }
+  }
+  run.tracker.observe(game, action, next)
+  const same = next === game
+    || (next.active === game.active
+      && next.turn === game.turn
+      && next.log.at(-1) === game.log.at(-1)
+      && next.deck.length === game.deck.length
+      && !next.pending
+      && next.veil === game.veil)
+  return { ...run, game: next, stuck: same }
+}
+
+function readStart(): { debug: boolean; seed: number; seats: SeatCount; runs: LiveRun[]; view: DebugView } | null {
   const params = new URLSearchParams(window.location.search)
   const mode = params.get('mode')
   if (mode !== 'ai' && mode !== 'hotseat' && mode !== 'debug') return null
@@ -42,114 +96,261 @@ function readStart(): { game: Game; seed: number; debug: boolean } | null {
   const debug = mode === 'debug' || !!parsed?.debug
   const seatRaw = Number(params.get('seats'))
   const count: SeatCount = SEAT_OPTIONS.includes(seatRaw as SeatCount) ? seatRaw as SeatCount : 2
-  const seats: SeatSpec[] = debug || mode === 'ai'
-    ? Array.from({ length: count }, (_, index) => ({
-      name: index === 0 ? (debug ? 'AI 1' : 'You') : index === 1 ? 'The Grove' : `Player ${index + 1}`,
-      ai: debug ? true : index !== 0,
-    }))
-    : Array.from({ length: count }, (_, index) => ({
-      name: index === 0 ? 'Player 1' : `Player ${index + 1}`,
-      ai: false,
-    }))
-  if (debug) {
-    for (let index = 0; index < seats.length; index += 1) {
-      seats[index] = { name: seats[index]?.name || `AI ${index + 1}`, ai: true }
-    }
+  const view: DebugView = params.get('view') === 'stats' ? 'stats' : 'watch'
+  if (!debug) {
+    const seats: SeatSpec[] = mode === 'hotseat'
+      ? Array.from({ length: count }, (_, index) => ({ name: `Player ${index + 1}`, ai: false }))
+      : Array.from({ length: count }, (_, index) => ({
+        name: index === 0 ? 'You' : index === 1 ? 'The Grove' : `Player ${index + 1}`,
+        ai: index !== 0,
+      }))
+    const game = createGame({ seed, seats })
+    const tracker = new BalanceTracker(seed)
+    tracker.start(game)
+    return { debug: false, seed, seats: count, runs: [{ seed, game, tracker, stuck: false }], view: 'watch' }
   }
-  return { game: createGame({ seed, seats }), seed, debug }
-}
-
-function advanceAi(game: Game): Game {
-  if (game.over) return game
-  if (game.veil) return apply(game, { type: 'ready' })
-  if (game.pending) return game
-  if (!game.players[game.active]?.ai) return game
-  return apply(game, chooseAiAction(game))
+  const batch = Math.max(1, Math.min(8, Number(params.get('batch')) || 1))
+  const runs = Array.from({ length: batch }, (_, index) => makeRun(seed + index, count))
+  return { debug: true, seed, seats: count, runs, view }
 }
 
 export default function App() {
   const boot = useState(readStart)[0]
-  const [game, setGame] = useState<Game | null>(boot?.game ?? null)
-  const [seed, setSeed] = useState(boot?.seed ?? 1)
   const [debug, setDebug] = useState(boot?.debug ?? false)
+  const [seed, setSeed] = useState(boot?.seed ?? 1)
+  const [seatCount, setSeatCount] = useState<SeatCount>(boot?.seats ?? 2)
+  const [runs, setRuns] = useState<LiveRun[]>(boot?.runs ?? [])
+  const [focus, setFocus] = useState(0)
   const [debugSpeed, setDebugSpeed] = useState<DebugSpeed>(1)
+  const [debugView, setDebugView] = useState<DebugView>(boot?.view ?? 'watch')
+  const [batchSize, setBatchSize] = useState(4)
+  const [reports, setReports] = useState<MatchReport[]>([])
+  const [runningBatch, setRunningBatch] = useState(false)
   const [match, setMatch] = useState(boot ? 1 : 0)
-  const [stuck, setStuck] = useState(false)
-  const repeats = useRef(0)
+  const [batchDone, setBatchDone] = useState(0)
+  const batchToken = useRef(0)
+
+  const live = runs[Math.min(focus, Math.max(0, runs.length - 1))] ?? null
+  const game = live?.game ?? null
+  const stuck = live?.stuck ?? false
+
+  const summary = useMemo(() => {
+    const liveReports = runs.map((run) => run.tracker.snapshot(run.game))
+    return summarizeReports([...reports, ...liveReports])
+  }, [reports, runs])
+
+  const finishedCount = reports.filter((report) => report.over).length + runs.filter((run) => run.game.over).length
+  const runCount = runningBatch ? batchSize : Math.max(runs.length, 1)
 
   useEffect(() => {
-    if (!game || game.over || stuck) return
-    if (debug && debugSpeed === 0) return
-    if (!game.players[game.active]?.ai && !game.veil) return
-    if (game.pending && !game.players[game.pending.actor]?.ai) return
-    const delay = debug ? Math.round(BASE_TICK_MS / debugSpeed) : BASE_TICK_MS
+    if (!debug || debugView === 'stats' || runningBatch) return
+    if (runs.length === 0) return
+    if (debugSpeed === 0) return
+    const open = runs.some((run) => !run.game.over && !run.stuck)
+    if (!open) return
+    const delay = Math.round(BASE_TICK_MS / debugSpeed)
     const timer = window.setTimeout(() => {
-      let next: Game
-      try {
-        next = advanceAi(game)
-      } catch (error) {
-        const text = error instanceof Error ? error.message : 'The Grove could not finish a play.'
-        setGame(log(game, text))
-        return
-      }
-      const same = next === game || (next.active === game.active && next.turn === game.turn && next.log.at(-1) === game.log.at(-1) && next.deck.length === game.deck.length && !next.pending && next.veil === game.veil)
-      if (same) {
-        repeats.current += 1
-        if (repeats.current > 3) setStuck(true)
-        else setGame(next)
-        return
-      }
-      repeats.current = 0
-      setGame(next)
+      setRuns((current) => current.map((run) => {
+        if (run.game.over || run.stuck) return run
+        try {
+          return advanceTracked(run)
+        } catch (error) {
+          const text = error instanceof Error ? error.message : 'The Grove could not finish a play.'
+          return { ...run, game: log(run.game, text), stuck: true }
+        }
+      }))
     }, delay)
     return () => window.clearTimeout(timer)
-  }, [game, stuck, debug, debugSpeed])
+  }, [debug, debugView, debugSpeed, runs, runningBatch])
+
+  useEffect(() => {
+    if (debug) return
+    if (!game || game.over || game.veil || game.pending || stuck) return
+    if (!game.players[game.active]?.ai) return
+    const timer = window.setTimeout(() => {
+      setRuns((current) => {
+        const run = current[0]
+        if (!run) return current
+        try {
+          return [advanceTracked(run)]
+        } catch (error) {
+          const text = error instanceof Error ? error.message : 'The Grove could not finish a play.'
+          return [{ ...run, game: log(run.game, text), stuck: true }]
+        }
+      })
+    }, BASE_TICK_MS)
+    return () => window.clearTimeout(timer)
+  }, [debug, game, stuck])
 
   function send(action: Action) {
-    setStuck(false)
-    repeats.current = 0
-    setGame((current) => {
-      if (!current) return current
+    if (!live || debug) return
+    setRuns((current) => {
+      const run = current[0]
+      if (!run) return current
       try {
-        return apply(current, action)
+        const next = apply(run.game, action)
+        run.tracker.observe(run.game, action, next)
+        return [{ ...run, game: next, stuck: false }]
       } catch (error) {
         const text = error instanceof Error ? error.message : 'That play could not resolve.'
-        return log(current, text)
+        return [{ ...run, game: log(run.game, text) }]
       }
     })
   }
 
   function stepDebug() {
-    if (!game || game.over) return
-    setStuck(false)
-    repeats.current = 0
-    try {
-      setGame(advanceAi(game))
-    } catch (error) {
-      const text = error instanceof Error ? error.message : 'The Grove could not finish a play.'
-      setGame(log(game, text))
-    }
+    setRuns((current) => current.map((run, index) => {
+      if (index !== focus) return run
+      if (run.game.over) return run
+      try {
+        return advanceTracked(run)
+      } catch (error) {
+        const text = error instanceof Error ? error.message : 'The Grove could not finish a play.'
+        return { ...run, game: log(run.game, text), stuck: true }
+      }
+    }))
   }
 
   function leave() {
+    batchToken.current += 1
     window.history.replaceState({}, '', window.location.pathname)
-    setGame(null)
+    setRuns([])
+    setReports([])
     setDebug(false)
     setDebugSpeed(1)
-    setStuck(false)
+    setDebugView('watch')
+    setFocus(0)
+    setRunningBatch(false)
+    setBatchDone(0)
   }
 
-  if (!game) {
+  async function runBatch() {
+    if (runningBatch) return
+    const token = ++batchToken.current
+    setRunningBatch(true)
+    setDebugView('stats')
+    setBatchDone(0)
+    const baseSeed = seed
+    const seats = seatCount
+    const total = batchSize
+    const collected: MatchReport[] = []
+    for (let index = 0; index < total; index += 1) {
+      if (batchToken.current !== token) return
+      const report = runMatchFast(baseSeed + index, seats)
+      collected.push(report)
+      setBatchDone(index + 1)
+      setReports((current) => [...current, report])
+      await new Promise((resolve) => window.setTimeout(resolve, 0))
+    }
+    if (batchToken.current !== token) return
+    setRuns([])
+    setFocus(0)
+    setRunningBatch(false)
+  }
+
+  function startWatchFromStats() {
+    if (runningBatch) return
+    const created = [makeRun(seed, seatCount)]
+    setRuns(created)
+    setFocus(0)
+    setDebugView('watch')
+    setDebugSpeed(1)
+    setMatch((value) => value + 1)
+  }
+
+  function onDebugView(view: DebugView) {
+    if (view === 'watch' && runs.length === 0 && !runningBatch) {
+      startWatchFromStats()
+      return
+    }
+    setDebugView(view)
+  }
+
+  function startDebugSession(nextSeed: number, seats: SeatCount, parallel: number, background: boolean) {
+    const count = Math.max(1, Math.min(8, parallel))
+    setMatch((value) => value + 1)
+    setSeed(nextSeed)
+    setSeatCount(seats)
+    setDebug(true)
+    setDebugSpeed(1)
+    setFocus(0)
+    setReports([])
+    setBatchSize(Math.max(count, 4))
+    setBatchDone(0)
+    if (background) {
+      setRuns([])
+      setDebugView('stats')
+      setBatchSize(count)
+      window.setTimeout(() => {
+        void (async () => {
+          const token = ++batchToken.current
+          setRunningBatch(true)
+          const collected: MatchReport[] = []
+          for (let index = 0; index < count; index += 1) {
+            if (batchToken.current !== token) return
+            const report = runMatchFast(nextSeed + index, seats)
+            collected.push(report)
+            setBatchDone(index + 1)
+            setReports((current) => [...current, report])
+            await new Promise((resolve) => window.setTimeout(resolve, 0))
+          }
+          if (batchToken.current !== token) return
+          setRunningBatch(false)
+        })()
+      }, 0)
+      return
+    }
+    const created = Array.from({ length: count }, (_, index) => makeRun(nextSeed + index, seats))
+    setDebugView('watch')
+    setRuns(created)
+  }
+
+  if (runs.length === 0 && !debug) {
     return (
       <Lobby
-        onStart={(next, nextSeed, nextDebug) => {
+        onStart={(next, nextSeed, nextDebug, seats, parallel, background) => {
+          if (nextDebug) {
+            startDebugSession(nextSeed, seats, parallel, background)
+            return
+          }
           setMatch((value) => value + 1)
           setSeed(nextSeed)
-          setDebug(nextDebug)
-          setDebugSpeed(1)
-          setStuck(false)
-          setGame(next)
+          setSeatCount(seats)
+          setDebug(false)
+          const tracker = new BalanceTracker(nextSeed)
+          tracker.start(next)
+          setRuns([{ seed: nextSeed, game: next, tracker, stuck: false }])
+          setFocus(0)
         }}
+      />
+    )
+  }
+
+  if (debug) {
+    return (
+      <Table
+        key={match}
+        game={game}
+        seed={seed}
+        stuck={stuck}
+        debug
+        debugSpeed={debugSpeed}
+        debugView={debugView}
+        debugBatchSize={batchSize}
+        debugFocus={focus}
+        debugRunCount={runCount}
+        debugFinished={runningBatch ? batchDone : finishedCount}
+        debugRunningBatch={runningBatch}
+        debugSummary={summary}
+        debugReports={reports}
+        onDebugSpeed={setDebugSpeed}
+        onDebugStep={stepDebug}
+        onDebugView={onDebugView}
+        onDebugBatchSize={setBatchSize}
+        onDebugFocus={setFocus}
+        onDebugRunBatch={runBatch}
+        onAction={send}
+        onLobby={leave}
       />
     )
   }
@@ -157,23 +358,25 @@ export default function App() {
   return (
     <Table
       key={match}
-      game={game}
+      game={game!}
       seed={seed}
       stuck={stuck}
-      debug={debug}
-      debugSpeed={debugSpeed}
-      onDebugSpeed={setDebugSpeed}
-      onDebugStep={stepDebug}
       onAction={send}
       onLobby={leave}
     />
   )
 }
 
-function Lobby({ onStart }: { onStart: (game: Game, seed: number, debug: boolean) => void }) {
+function Lobby({
+  onStart,
+}: {
+  onStart: (game: Game, seed: number, debug: boolean, seats: SeatCount, parallel: number, background: boolean) => void
+}) {
   const [seedText, setSeedText] = useState('')
   const [count, setCount] = useState<SeatCount>(2)
   const [seats, setSeats] = useState<LobbySeat[]>(() => defaultSeats(2))
+  const [parallel, setParallel] = useState(1)
+  const [background, setBackground] = useState(false)
   const [fault, setFault] = useState('')
   const [glossary, setGlossary] = useState(false)
 
@@ -198,7 +401,7 @@ function Lobby({ onStart }: { onStart: (game: Game, seed: number, debug: boolean
       ai: debug ? true : seat.kind === 'ai',
     }))
     try {
-      onStart(createGame({ seed, seats: roster }), seed, debug)
+      onStart(createGame({ seed, seats: roster }), seed, debug, count, debug ? parallel : 1, debug && background)
     } catch (error) {
       setFault(error instanceof Error ? error.message : 'The deck could not be dealt.')
     }
@@ -254,9 +457,41 @@ function Lobby({ onStart }: { onStart: (game: Game, seed: number, debug: boolean
             </li>
           ))}
         </ul>
+        {debugPreview ? (
+          <fieldset className="debug-lobby">
+            <legend>Debug runs</legend>
+            <label>
+              Parallel games
+              <input
+                data-testid="lobby-parallel"
+                type="number"
+                min={1}
+                max={8}
+                value={parallel}
+                onChange={(event) => setParallel(Math.max(1, Math.min(8, Number(event.target.value) || 1)))}
+              />
+            </label>
+            <label className="check-row">
+              <input
+                data-testid="lobby-background"
+                type="checkbox"
+                checked={background}
+                onChange={(event) => setBackground(event.target.checked)}
+              />
+              Run in background (stats only)
+            </label>
+            <p className="quiet">
+              {background
+                ? `Simulates ${parallel} AI match${parallel === 1 ? '' : 'es'} and opens the balance tables.`
+                : parallel > 1
+                  ? `Watches game 1 of ${parallel}. Switch focus in the debug rail.`
+                  : 'AI seats auto-play. Balance swings accumulate in the debug rail.'}
+            </p>
+          </fieldset>
+        ) : null}
         <p className="quiet">
           {debugPreview
-            ? 'Debug seed detected. Every seat becomes AI and the match auto-plays.'
+            ? 'Debug seed detected. AI seats auto-play and balance stats accumulate on the right.'
             : humans >= 2
               ? 'Multiple humans pass the seat automatically.'
               : humans === 1
