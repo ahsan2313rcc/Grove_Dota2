@@ -15,7 +15,12 @@ type Focus =
   | { kind: 'card'; defId: string }
 
 type PileName = 'deck' | 'grave' | 'exile' | 'runes' | 'neutrals' | 'towers'
-type SeatCount = 2 | 4 | 6 | 8
+type SeatCount = 2 | 3 | 4 | 5 | 6 | 7 | 8
+type Chair =
+  | { kind: 'player'; key: string; id: PlayerId; mine: boolean }
+  | { kind: 'open'; key: string; label: string }
+
+const PAGE_SIZE = 4
 
 export function Table({
   game,
@@ -40,7 +45,6 @@ export function Table({
   const [rules, setRules] = useState(false)
   const [logOpen, setLogOpen] = useState(false)
   const [handOpen, setHandOpen] = useState<PlayerId | null>(null)
-  const [layout, setLayout] = useState<SeatCount>(seats)
   const [page, setPage] = useState(0)
   const [acked, setAcked] = useState('')
   const [leaveArmed, setLeaveArmed] = useState(false)
@@ -51,12 +55,10 @@ export function Table({
   const you = game.players[viewer]
   const foeId = opponentOf(viewer)
   const foe = game.players[foeId]
-  const yourScore = scoreState(game, viewer)
-  const foeScore = scoreState(game, foeId)
-  const yourShapes = countShapes(game, viewer)
-  const foeShapes = countShapes(game, foeId)
-  const pages = Math.max(1, layout - 1)
-  const safePage = page % pages
+  const chairs = buildChairs(seats, viewer, foeId)
+  const pageCount = Math.max(1, Math.ceil(chairs.length / PAGE_SIZE))
+  const safePage = ((page % pageCount) + pageCount) % pageCount
+  const visible = chairs.slice(safePage * PAGE_SIZE, safePage * PAGE_SIZE + PAGE_SIZE)
   const canAct = !game.over && !game.veil && !game.pending && game.active === viewer
   const handIds = new Set(you.hand.map((card) => card.uid))
   const liveCombo = combo.filter((uid) => handIds.has(uid))
@@ -68,6 +70,7 @@ export function Table({
   const lines = statusLines(game, viewer)
   const lastLog = game.log[game.log.length - 1] ?? ''
   const showDetail = !!focus || !!placing || !!moving
+  const whoseTurn = game.over ? 'Match over' : game.active === viewer ? 'Your turn' : `${foe.name}'s turn`
 
   useEffect(() => {
     document.querySelector('.lane.mine')?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
@@ -177,70 +180,65 @@ export function Table({
 
       <div className="stage">
         <div className="board">
-          <Lane
-            name={you.name}
-            score={yourScore.total}
-            shapes={yourShapes}
-            handCount={you.hand.length}
-            active={game.active === viewer}
-            scoreTestId="score-you"
-            mine
-            showHand={false}
-            teams={you.teams}
-            combos={you.combos}
-            game={game}
-            onInspect={(next) => { setFocus(next); setPlacing(null); setMoving(null) }}
-            onEmber={canAct ? (uid) => { setMoving(uid); setPlacing(null); setFocus({ kind: 'hero', uid }) } : undefined}
-          />
-          {layout === 2 ? (
-            <Lane
-              name={foe.name}
-              score={foeScore.total}
-              shapes={foeShapes}
-              handCount={foe.hand.length}
-              active={game.active === foeId}
-              scoreTestId="score-foe"
-              handTestId="hand-foe"
-              mine={false}
-              showHand
-              onHand={() => setHandOpen(foeId)}
-              teams={foe.teams}
-              combos={foe.combos}
-              game={game}
-              onInspect={(next) => { setFocus(next); setPlacing(null); setMoving(null) }}
-            />
-          ) : (
-            <section className="lane foe" data-testid="opponent-board">
-              <div className="pager">
-                <button type="button" onClick={() => setPage((current) => (current + pages - 1) % pages)}>Previous</button>
-                <span>{safePage === 0 ? foe.name : `Open seat ${safePage + 1}`}</span>
-                <button type="button" onClick={() => setPage((current) => (current + 1) % pages)}>Next</button>
-              </div>
-              {safePage === 0 ? (
-                <Lane
-                  name={foe.name}
-                  score={foeScore.total}
-                  shapes={foeShapes}
-                  handCount={foe.hand.length}
-                  active={game.active === foeId}
-                  scoreTestId="score-foe"
-                  handTestId="hand-foe"
-                  mine={false}
-                  showHand
-                  onHand={() => setHandOpen(foeId)}
-                  teams={foe.teams}
-                  combos={foe.combos}
-                  game={game}
-                  onInspect={(next) => { setFocus(next); setPlacing(null); setMoving(null) }}
-                />
-              ) : (
-                <div className="open-seat">
-                  <h2>Open seat</h2>
-                  <p className="quiet">This match has two players. A larger table pages the other board, and empty seats stay open.</p>
-                </div>
-              )}
-            </section>
-          )}
+          <div className="board-frame">
+            {pageCount > 1 ? (
+              <button
+                type="button"
+                className="board-arrow"
+                data-testid="board-prev"
+                aria-label="Previous players"
+                onClick={() => setPage((current) => (current + pageCount - 1) % pageCount)}
+              >
+                ‹
+              </button>
+            ) : null}
+            <div className="board-grid" data-testid="board-grid" data-count={visible.length} data-page={safePage}>
+              {visible.map((chair) => {
+                if (chair.kind === 'open') {
+                  return <OpenSeat key={chair.key} label={chair.label} />
+                }
+                const player = game.players[chair.id]
+                const scored = scoreState(game, chair.id)
+                const shapes = countShapes(game, chair.id)
+                return (
+                  <Lane
+                    key={chair.key}
+                    name={player.name}
+                    score={scored.total}
+                    shapes={shapes}
+                    handCount={player.hand.length}
+                    active={game.active === chair.id}
+                    scoreTestId={chair.mine ? 'score-you' : 'score-foe'}
+                    handTestId={chair.mine ? undefined : 'hand-foe'}
+                    mine={chair.mine}
+                    showHand={!chair.mine}
+                    onHand={chair.mine ? undefined : () => setHandOpen(chair.id)}
+                    teams={player.teams}
+                    combos={player.combos}
+                    game={game}
+                    onInspect={(next) => { setFocus(next); setPlacing(null); setMoving(null) }}
+                    onEmber={chair.mine && canAct ? (uid) => { setMoving(uid); setPlacing(null); setFocus({ kind: 'hero', uid }) } : undefined}
+                  />
+                )
+              })}
+            </div>
+            {pageCount > 1 ? (
+              <button
+                type="button"
+                className="board-arrow"
+                data-testid="board-next"
+                aria-label="Next players"
+                onClick={() => setPage((current) => (current + 1) % pageCount)}
+              >
+                ›
+              </button>
+            ) : null}
+          </div>
+          {pageCount > 1 ? (
+            <p className="board-page quiet" data-testid="board-page">
+              Players {safePage * PAGE_SIZE + 1}–{Math.min((safePage + 1) * PAGE_SIZE, chairs.length)} of {chairs.length}
+            </p>
+          ) : null}
           {game.phased.length > 0 ? (
             <p className="aside-note">Set aside: {game.phased.map((entry) => display(entry.hero.defId).name).join(', ')}.</p>
           ) : null}
@@ -248,10 +246,14 @@ export function Table({
 
         <aside className="hud">
           <div className="turn-chip">
-            <span>Turn {game.turn}</span>
-            {game.over ? 'Match over' : game.active === viewer ? 'Your turn' : `${foe.name}'s turn`}
-            <strong data-testid="actions">{game.players[game.active].actions}</strong>
-            <small>actions</small>
+            <span className="turn-line">
+              <span>T{game.turn}</span>
+              <span className="quiet">{whoseTurn}</span>
+            </span>
+            <span className="action-line">
+              <strong data-testid="actions">{game.players[game.active].actions}</strong>
+              <small>left</small>
+            </span>
           </div>
           <div className="actions">
             <button type="button" className="primary" data-testid="draw" disabled={!canAct || !!drawReason} onClick={() => onAction({ type: 'draw' })}>
@@ -281,13 +283,6 @@ export function Table({
             <PileButton label="Runes" count={game.runes.length} testId="pile-runes" onClick={() => setPile('runes')} />
             <PileButton label="Neutrals" count={game.neutrals.length} testId="pile-neutrals" onClick={() => setPile('neutrals')} />
             <PileButton label="Towers" count={game.towers.length} testId="pile-towers" onClick={() => setPile('towers')} />
-          </div>
-          <div className="layout-picks" aria-label="Table size">
-            {([2, 4, 6, 8] as const).map((size) => (
-              <button key={size} type="button" className={layout === size ? 'on' : ''} data-testid={`layout-${size}`} onClick={() => { setLayout(size); setPage(0) }}>
-                {size}
-              </button>
-            ))}
           </div>
           {showDetail ? (
             <Detail
@@ -355,6 +350,17 @@ export function Table({
   )
 }
 
+function buildChairs(seats: SeatCount, viewer: PlayerId, foeId: PlayerId): Chair[] {
+  const chairs: Chair[] = [
+    { kind: 'player', key: `p-${viewer}`, id: viewer, mine: true },
+    { kind: 'player', key: `p-${foeId}`, id: foeId, mine: false },
+  ]
+  for (let index = 3; index <= seats; index += 1) {
+    chairs.push({ kind: 'open', key: `open-${index}`, label: `Seat ${index}` })
+  }
+  return chairs
+}
+
 function countShapes(game: Game, id: PlayerId): { core: number; mix: number } {
   let core = 0
   let mix = 0
@@ -364,6 +370,21 @@ function countShapes(game: Game, id: PlayerId): { core: number; mix: number } {
     if (shape === 'mix') mix += 1
   }
   return { core, mix }
+}
+
+function OpenSeat({ label }: { label: string }) {
+  return (
+    <section className="lane open" data-testid="open-seat">
+      <div className="seat">
+        <span>{label}</span>
+        <strong>—</strong>
+        <small>Open chair</small>
+      </div>
+      <div className="lane-board">
+        <p className="quiet">Waiting for a player. This match seats two; extra chairs stay empty.</p>
+      </div>
+    </section>
+  )
 }
 
 function Lane({

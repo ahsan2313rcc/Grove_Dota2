@@ -5,7 +5,9 @@ import { log } from './game/flow.ts'
 import type { Action, Game } from './game/types.ts'
 import { Table } from './ui/Table.tsx'
 
-type SeatCount = 2 | 4 | 6 | 8
+export type SeatCount = 2 | 3 | 4 | 5 | 6 | 7 | 8
+
+const SEAT_OPTIONS: SeatCount[] = [2, 3, 4, 5, 6, 7, 8]
 
 function readStart(): { game: Game; seed: number; seats: SeatCount } | null {
   const params = new URLSearchParams(window.location.search)
@@ -14,7 +16,7 @@ function readStart(): { game: Game; seed: number; seats: SeatCount } | null {
   const raw = Number(params.get('seed'))
   const seed = params.get('seed') && Number.isFinite(raw) ? Math.floor(raw) || 1 : Math.floor(Date.now() % 100000) || 1
   const seatRaw = Number(params.get('seats'))
-  const seats: SeatCount = seatRaw === 4 || seatRaw === 6 || seatRaw === 8 ? seatRaw : 2
+  const seats: SeatCount = SEAT_OPTIONS.includes(seatRaw as SeatCount) ? seatRaw as SeatCount : 2
   return { game: createGame({ seed, mode }), seed, seats }
 }
 
@@ -129,14 +131,17 @@ function Lobby({ onStart }: { onStart: (game: Game, seed: number, seats: SeatCou
           Other player
           <input value={otherName} onChange={(event) => setOtherName(event.target.value)} maxLength={24} data-testid="name-other" />
         </label>
-        <div className="layout-picks" aria-label="Table size">
-          {([2, 4, 6, 8] as const).map((size) => (
-            <button key={size} type="button" className={seats === size ? 'on' : ''} data-testid={`lobby-seats-${size}`} onClick={() => setSeats(size)}>
-              {size} seats
-            </button>
-          ))}
-        </div>
-        <p className="quiet">This match seats two. Extra chairs page the other board.</p>
+        <fieldset className="player-count">
+          <legend>Players</legend>
+          <div className="layout-picks" role="group" aria-label="How many players">
+            {SEAT_OPTIONS.map((size) => (
+              <button key={size} type="button" className={seats === size ? 'on' : ''} data-testid={`lobby-seats-${size}`} onClick={() => setSeats(size)}>
+                {size}
+              </button>
+            ))}
+          </div>
+          <p className="quiet">This match seats two. Extra chairs stay open on the table. Up to four regions show at once.</p>
+        </fieldset>
         <button type="button" className="primary block" data-testid="play-solo" onClick={() => start('ai')}>Play the Grove</button>
         <p className="quiet">You go first against the Grove.</p>
         <button type="button" className="block" data-testid="play-hotseat" onClick={() => start('hotseat')}>Pass and play</button>
