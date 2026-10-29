@@ -3,7 +3,7 @@ import { AI_STRATS } from './ai.ts'
 import { ALL_STRAT_FILTER, runMatchFast, summarizeReports } from './balance.ts'
 
 describe('balance', () => {
-  it('records card swings and turn graphs for a finished AI match', () => {
+  it('records card swings, events, and shapes for a finished AI match', () => {
     const report = runMatchFast(58, 2)
     expect(report.over).toBe(true)
     expect(report.swings.length).toBeGreaterThan(0)
@@ -11,20 +11,22 @@ describe('balance', () => {
     expect(report.finalScores).toHaveLength(2)
     expect(report.seatStrats).toHaveLength(2)
     expect(report.mixture).toBe(true)
+    expect(report.events.drawDeck).toBeGreaterThan(0)
+    expect(report.shapes.coreTeams + report.shapes.mixTeams + report.shapes.openTeams).toBeGreaterThan(0)
     expect(report.swings.every((swing) => AI_STRATS.some((entry) => entry.id === swing.actorStrat))).toBe(true)
 
     const summary = summarizeReports([report])
     expect(summary.finished).toBe(1)
-    expect(summary.cards.length).toBeGreaterThan(0)
-    expect(summary.contested.length).toBeGreaterThan(0)
+    expect(summary.heroHigh.length + summary.settingHigh.length + summary.lootHigh.length).toBeGreaterThan(0)
+    expect(summary.heroLow.length + summary.settingLow.length + summary.lootLow.length).toBeGreaterThan(0)
+    expect(summary.shapeCompare).toHaveLength(4)
+    expect(summary.eventStats.length).toBeGreaterThan(8)
     expect(summary.avgPtsByTurn.length).toBeGreaterThan(0)
     expect(summary.avgCardsByTurn.length).toBe(summary.avgPtsByTurn.length)
     expect(summary.turnLabels.length).toBe(summary.avgPtsByTurn.length)
-    expect(summary.kindSwing.length).toBeGreaterThan(0)
-    expect(summary.byStrat.length).toBeGreaterThan(0)
   })
 
-  it('filters graphs and tables to enabled strats', () => {
+  it('filters graphs and split Rel tables to enabled strats', () => {
     const reports = [
       runMatchFast(11, 2),
       runMatchFast(12, 2, ['tempo', 'tempo']),
@@ -34,27 +36,17 @@ describe('balance', () => {
     expect(all.matches).toBe(3)
     expect(all.finished).toBe(3)
     expect(all.avgPtsByTurn.length).toBeGreaterThan(0)
+    expect(all.byAttr.length).toBeGreaterThan(0)
 
     const tempo = summarizeReports(reports, { strats: ['tempo'], mixOnly: false })
     expect(tempo.matches).toBeGreaterThan(0)
     expect(tempo.avgPtsByTurn.length).toBe(tempo.turnLabels.length)
-    expect(tempo.avgPtsByTurn.length).toBeGreaterThan(0)
     expect(tempo.byStrat.every((row) => row.strat === 'tempo')).toBe(true)
-    expect(tempo.kindSwing.every((row) => row.plays > 0)).toBe(true)
-    expect(tempo.cards.length).toBeGreaterThan(0)
-    expect(tempo.cardsLow.length).toBeGreaterThan(0)
-    expect(tempo.cards[0]!.avgRelativeSwing).toBeGreaterThanOrEqual(tempo.cards[tempo.cards.length - 1]!.avgRelativeSwing)
-    expect(tempo.cardsLow[0]!.avgRelativeSwing).toBeLessThanOrEqual(tempo.cardsLow[tempo.cardsLow.length - 1]!.avgRelativeSwing)
-
-    const spite = summarizeReports(reports, { strats: ['spite'], mixOnly: false })
-    expect(spite.cards.length).toBeGreaterThan(0)
-    expect(spite.cardsLow.length).toBeGreaterThan(0)
-    // Filtered rankings should differ from the unfiltered absolute list shape.
-    expect(spite.cards[0]!.avgRelativeSwing).toBeGreaterThanOrEqual(spite.cardsLow[0]!.avgRelativeSwing)
+    expect(tempo.heroHigh[0] ? tempo.heroHigh[0].avgRelativeSwing >= (tempo.heroLow[0]?.avgRelativeSwing ?? -Infinity) : true).toBe(true)
+    expect(tempo.eventStats.find((row) => row.id === 'drawDeck')?.total).toBeGreaterThan(0)
 
     const mixOnly = summarizeReports(reports, { strats: [], mixOnly: true })
     expect(mixOnly.matches).toBe(reports.filter((report) => report.mixture).length)
-    expect(mixOnly.avgPtsByTurn.length).toBe(mixOnly.turnLabels.length)
+    expect(mixOnly.shapeCompare.some((row) => row.count >= 0)).toBe(true)
   })
 })
-

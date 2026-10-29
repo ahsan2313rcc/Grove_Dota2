@@ -93,12 +93,21 @@ export function Table({
     avgWinnerScore: 0,
     cards: [],
     cardsLow: [],
+    heroHigh: [],
+    heroLow: [],
+    settingHigh: [],
+    settingLow: [],
+    lootHigh: [],
+    lootLow: [],
     contested: [],
     avgPtsByTurn: [],
     avgCardsByTurn: [],
     turnLabels: [],
     kindSwing: [],
     byStrat: [],
+    shapeCompare: [],
+    eventStats: [],
+    byAttr: [],
   }
 
   const teamCount = game?.players[game.active]?.teams.length ?? 0

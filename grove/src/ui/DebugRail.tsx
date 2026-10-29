@@ -216,6 +216,67 @@ export function DebugRail({
       </div>
 
       <div className="debug-block">
+        <h3>Shape compare</h3>
+        <p className="quiet debug-legend">Core = mono-attribute team / three-of-a-kind settings. Mixed = multi-attribute team / mixed path.</p>
+        <table className="debug-table">
+          <thead>
+            <tr><th>Shape</th><th>n</th><th>/match</th><th>Avg pts</th></tr>
+          </thead>
+          <tbody>
+            {summary.shapeCompare.map((row) => (
+              <tr key={row.id}>
+                <td>{row.label}</td>
+                <td>{row.count}</td>
+                <td>{fmt(row.avgCount)}</td>
+                <td>{fmt(row.avgPoints)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      <div className="debug-block">
+        <h3>Event counts</h3>
+        <table className="debug-table">
+          <thead>
+            <tr><th>Event</th><th>Total</th><th>/match</th></tr>
+          </thead>
+          <tbody>
+            {summary.eventStats.map((row) => (
+              <tr key={row.id}>
+                <td>{row.label}</td>
+                <td>{row.total}</td>
+                <td>{fmt(row.perMatch)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      <div className="debug-block">
+        <h3>Heroes by attribute</h3>
+        {summary.byAttr.length === 0 ? (
+          <p className="quiet">No hero plays yet.</p>
+        ) : (
+          <table className="debug-table">
+            <thead>
+              <tr><th>Attr</th><th>n</th><th>Self</th><th>Rel</th></tr>
+            </thead>
+            <tbody>
+              {summary.byAttr.map((row) => (
+                <tr key={row.attr}>
+                  <td>{attrLabel(row.attr)}</td>
+                  <td>{row.plays}</td>
+                  <td>{signed(row.avgActorSwing)}</td>
+                  <td>{signed(row.avgRelativeSwing)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+
+      <div className="debug-block">
         <h3>Swing by kind</h3>
         <p className="quiet debug-legend">Self = your score change. Rel = Self minus average opponent score change.</p>
         <table className="debug-table">
@@ -235,17 +296,9 @@ export function DebugRail({
         </table>
       </div>
 
-      <div className="debug-block">
-        <h3>Highest Rel</h3>
-        <p className="quiet debug-legend">Best average Rel under the active filter.</p>
-        <CardTable rows={summary.cards} empty="No positive swings in this filter." />
-      </div>
-
-      <div className="debug-block">
-        <h3>Lowest Rel</h3>
-        <p className="quiet debug-legend">Worst average Rel under the active filter.</p>
-        <CardTable rows={summary.cardsLow} empty="No negative swings in this filter." />
-      </div>
+      <RelPair title="Heroes" high={summary.heroHigh} low={summary.heroLow} />
+      <RelPair title="Settings" high={summary.settingHigh} low={summary.settingLow} />
+      <RelPair title="Items / runes / neutrals / towers" high={summary.lootHigh} low={summary.lootLow} />
 
       <div className="debug-block">
         <h3>Most contested</h3>
@@ -315,6 +368,24 @@ export function DebugRail({
   )
 }
 
+function RelPair({ title, high, low }: { title: string; high: CardBalanceRow[]; low: CardBalanceRow[] }) {
+  return (
+    <div className="debug-block">
+      <h3>{title}</h3>
+      <div className="debug-rel-grid">
+        <div>
+          <h4>Highest Rel</h4>
+          <CardTable rows={high} empty="No plays in this filter." />
+        </div>
+        <div>
+          <h4>Lowest Rel</h4>
+          <CardTable rows={low} empty="No plays in this filter." />
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function CardTable({ rows, empty = 'No card plays yet.' }: { rows: CardBalanceRow[]; empty?: string }) {
   if (rows.length === 0) return <p className="quiet">{empty}</p>
   return (
@@ -327,7 +398,11 @@ function CardTable({ rows, empty = 'No card plays yet.' }: { rows: CardBalanceRo
           <tr key={`${row.kind}-${row.defId}-${row.plays}-${fmt(row.avgRelativeSwing)}`}>
             <td>
               <strong>{row.name}</strong>
-              <small>{row.kind}</small>
+              <small>
+                {row.kind}
+                {row.attr ? ` · ${attrLabel(row.attr)}` : ''}
+                {row.instant ? ' · instant' : ''}
+              </small>
             </td>
             <td>{row.plays}</td>
             <td>{signed(row.avgActorSwing)}</td>
@@ -337,6 +412,14 @@ function CardTable({ rows, empty = 'No card plays yet.' }: { rows: CardBalanceRo
       </tbody>
     </table>
   )
+}
+
+function attrLabel(attr: string): string {
+  if (attr === 'STR') return 'Strength'
+  if (attr === 'AGI') return 'Agility'
+  if (attr === 'INT') return 'Intelligence'
+  if (attr === 'UNI') return 'Universal'
+  return attr
 }
 
 function toggleStrat(filter: StratFilter, strat: AiStrat): StratFilter {

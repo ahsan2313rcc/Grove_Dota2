@@ -1,10 +1,12 @@
 import { chooseAiAction, cycleStrat, DEFAULT_STRAT } from './ai.ts'
-import { display } from './catalog.ts'
+import { display, HERO_BY_ID } from './catalog.ts'
 import { apply, createGame, type SeatSpec } from './engine.ts'
-import { scoreState } from './flow.ts'
-import type { Action, AiStrat, CardKind, Game } from './types.ts'
+import { scoreState, scoreTeam } from './flow.ts'
+import { teamShape } from './scoring.ts'
+import type { Action, AiStrat, Attr, CardInst, CardKind, Game } from './types.ts'
 
 export type PlayKind = CardKind | 'combo' | 'draw' | 'morph' | 'move' | 'other'
+export type RelBucket = 'hero' | 'setting' | 'loot' | 'other'
 
 /** Empty `strats` means every personality. `mixOnly` keeps mixture matches only. */
 export type StratFilter = {
@@ -13,10 +15,6 @@ export type StratFilter = {
 }
 
 export const ALL_STRAT_FILTER: StratFilter = { strats: [], mixOnly: false }
-
-export function stratFilterActive(filter: StratFilter): boolean {
-  return filter.mixOnly || filter.strats.length > 0
-}
 
 export function allowsStrat(filter: StratFilter, strat: AiStrat): boolean {
   return filter.strats.length === 0 || filter.strats.includes(strat)
@@ -30,6 +28,9 @@ export interface SwingEvent {
   defId: string
   name: string
   kind: PlayKind
+  bucket: RelBucket
+  attr: Attr | null
+  instant: boolean
   actorSwing: number
   relativeSwing: number
   fieldSwing: number
@@ -45,6 +46,36 @@ export interface RoundEvent {
   endScore: number
 }
 
+export interface EventCounts {
+  drawDeck: number
+  drawGrave: number
+  discard: number
+  exile: number
+  destroy: number
+  playHero: number
+  playItem: number
+  playInstant: number
+  playSetting: number
+  playRune: number
+  playNeutral: number
+  playTower: number
+  playMorph: number
+  playMove: number
+  drawAction: number
+}
+
+export interface ShapeCounts {
+  coreTeams: number
+  mixTeams: number
+  openTeams: number
+  coreSettings: number
+  mixSettings: number
+  coreTeamPoints: number
+  mixTeamPoints: number
+  coreSettingPoints: number
+  mixSettingPoints: number
+}
+
 export interface MatchReport {
   seed: number
   seats: number
@@ -57,6 +88,8 @@ export interface MatchReport {
   winnerStrat: AiStrat | null
   swings: SwingEvent[]
   rounds: RoundEvent[]
+  events: EventCounts
+  shapes: ShapeCounts
   over: boolean
 }
 
@@ -64,6 +97,9 @@ export interface CardBalanceRow {
   defId: string
   name: string
   kind: PlayKind
+  bucket: RelBucket
+  attr: Attr | null
+  instant: boolean
   plays: number
   avgActorSwing: number
   avgRelativeSwing: number
@@ -82,6 +118,29 @@ export interface StratBalanceRow {
   plays: number
 }
 
+export interface ShapeCompareRow {
+  id: 'core_team' | 'mix_team' | 'core_setting' | 'mix_setting'
+  label: string
+  count: number
+  avgCount: number
+  totalPoints: number
+  avgPoints: number
+}
+
+export interface EventStatRow {
+  id: keyof EventCounts
+  label: string
+  total: number
+  perMatch: number
+}
+
+export interface AttrStatRow {
+  attr: Attr | 'none'
+  plays: number
+  avgActorSwing: number
+  avgRelativeSwing: number
+}
+
 export interface BalanceSummary {
   matches: number
   finished: number
@@ -92,18 +151,58 @@ export interface BalanceSummary {
   avgWinnerScore: number
   cards: CardBalanceRow[]
   cardsLow: CardBalanceRow[]
+  heroHigh: CardBalanceRow[]
+  heroLow: CardBalanceRow[]
+  settingHigh: CardBalanceRow[]
+  settingLow: CardBalanceRow[]
+  lootHigh: CardBalanceRow[]
+  lootLow: CardBalanceRow[]
   contested: CardBalanceRow[]
   avgPtsByTurn: number[]
   avgCardsByTurn: number[]
   turnLabels: number[]
   kindSwing: { kind: PlayKind; plays: number; avgActorSwing: number; avgRelativeSwing: number }[]
   byStrat: StratBalanceRow[]
+  shapeCompare: ShapeCompareRow[]
+  eventStats: EventStatRow[]
+  byAttr: AttrStatRow[]
 }
+
+const EMPTY_EVENTS = (): EventCounts => ({
+  drawDeck: 0,
+  drawGrave: 0,
+  discard: 0,
+  exile: 0,
+  destroy: 0,
+  playHero: 0,
+  playItem: 0,
+  playInstant: 0,
+  playSetting: 0,
+  playRune: 0,
+  playNeutral: 0,
+  playTower: 0,
+  playMorph: 0,
+  playMove: 0,
+  drawAction: 0,
+})
+
+const EMPTY_SHAPES = (): ShapeCounts => ({
+  coreTeams: 0,
+  mixTeams: 0,
+  openTeams: 0,
+  coreSettings: 0,
+  mixSettings: 0,
+  coreTeamPoints: 0,
+  mixTeamPoints: 0,
+  coreSettingPoints: 0,
+  mixSettingPoints: 0,
+})
 
 export class BalanceTracker {
   readonly seed: number
   private swings: SwingEvent[] = []
   private rounds: RoundEvent[] = []
+  private events: EventCounts = EMPTY_EVENTS()
   private actions = 0
   private turnActor = 0
   private turnNo = 1
@@ -126,6 +225,7 @@ export class BalanceTracker {
   observe(before: Game, action: Action, after: Game) {
     if (!this.started) this.start(before)
     this.actions += 1
+    const actor = before.active
 
     if (after.turn !== this.turnNo || after.active !== this.turnActor) {
       this.flushRound(before)
@@ -135,11 +235,14 @@ export class BalanceTracker {
       this.turnStartScores = totals(after)
     }
 
+    this.tallyEvents(before, after, actor)
+
     if (action.type === 'play') {
       const held = before.players[before.active]?.hand.find((card) => card.uid === action.uid)
       if (held) {
         this.turnCards += 1
         this.recordSwing(before, after, before.active, held.defId, held.kind)
+        this.tallyPlay(held.kind, display(held.defId).instant)
       }
     } else if (action.type === 'combo') {
       this.turnCards += 1
@@ -148,15 +251,19 @@ export class BalanceTracker {
         .filter((id): id is string => !!id)
       const mixed = new Set(ids).size > 1
       this.recordSwing(before, after, before.active, mixed ? 'mixed_path' : (ids[0] ?? 'setting'), 'combo')
+      this.events.playSetting += 1
     } else if (action.type === 'morph') {
       this.turnCards += 1
       const loc = before.players.flatMap((player) => player.teams.flatMap((team) => team.heroes)).find((hero) => hero.uid === action.uid)
       this.recordSwing(before, after, before.active, loc?.defId ?? 'morphling', 'morph')
+      this.events.playMorph += 1
     } else if (action.type === 'draw') {
       this.turnCards += 1
       this.recordSwing(before, after, before.active, 'draw', 'draw')
+      this.events.drawAction += 1
     } else if (action.type === 'move') {
       this.recordSwing(before, after, before.active, 'ember_spirit', 'move')
+      this.events.playMove += 1
     }
 
     if (after.over) this.flushRound(after)
@@ -169,6 +276,50 @@ export class BalanceTracker {
   finish(game: Game): MatchReport {
     if (!game.over) this.flushRound(game)
     return this.report(game, false)
+  }
+
+  private tallyPlay(kind: CardKind, instant: boolean) {
+    if (kind === 'hero') this.events.playHero += 1
+    if (kind === 'item') this.events.playItem += 1
+    if (kind === 'rune') this.events.playRune += 1
+    if (kind === 'neutral') this.events.playNeutral += 1
+    if (kind === 'tower') this.events.playTower += 1
+    if (instant) this.events.playInstant += 1
+  }
+
+  private tallyEvents(before: Game, after: Game, actor: number) {
+    const beforeHand = cardMap(before.players[actor]?.hand ?? [])
+    const afterHand = cardMap(after.players[actor]?.hand ?? [])
+    const beforeGrave = cardMap(before.grave)
+    const afterGrave = cardMap(after.grave)
+    const beforeDeck = cardMap(before.deck)
+    const beforeExile = cardMap(before.exile)
+    const afterExile = cardMap(after.exile)
+    const beforeBoard = boardMap(before)
+    const afterBoard = boardMap(after)
+
+    for (const [uid] of afterHand) {
+      if (beforeHand.has(uid)) continue
+      if (beforeDeck.has(uid)) this.events.drawDeck += 1
+      else if (beforeGrave.has(uid)) this.events.drawGrave += 1
+    }
+
+    for (const [uid] of beforeHand) {
+      if (afterHand.has(uid)) continue
+      if (afterGrave.has(uid)) this.events.discard += 1
+      if (afterExile.has(uid) && !beforeExile.has(uid)) this.events.exile += 1
+    }
+
+    for (const [uid] of beforeBoard) {
+      if (afterBoard.has(uid)) continue
+      if (afterGrave.has(uid)) this.events.destroy += 1
+      if (afterExile.has(uid) && !beforeExile.has(uid)) this.events.exile += 1
+    }
+
+    for (const [uid] of afterExile) {
+      if (beforeExile.has(uid)) continue
+      if (beforeGrave.has(uid) && !afterGrave.has(uid)) this.events.exile += 1
+    }
   }
 
   private report(game: Game, includeOpenRound: boolean): MatchReport {
@@ -202,6 +353,8 @@ export class BalanceTracker {
       winnerStrat: winners.length === 1 ? (seatStrats[winners[0]!] ?? null) : null,
       swings: this.swings.slice(),
       rounds,
+      events: { ...this.events },
+      shapes: shapeCounts(game),
       over: !!game.over,
     }
   }
@@ -232,8 +385,12 @@ export class BalanceTracker {
     const oppAfter = mean(afterTotals.filter((_, id) => id !== actor))
     const relativeSwing = actorSwing - (oppAfter - oppBefore)
     const fieldSwing = afterTotals.reduce((sum, score, id) => sum + Math.abs(score - (beforeTotals[id] ?? 0)), 0)
-    const name = defId === 'draw' ? 'Draw' : defId === 'mixed_path' ? 'Mixed path' : display(defId).name
+    const info = defId === 'draw' || defId === 'mixed_path' ? null : display(defId)
+    const name = defId === 'draw' ? 'Draw' : defId === 'mixed_path' ? 'Mixed path' : (info?.name ?? defId)
     const shownKind: PlayKind = kind === 'combo' ? 'combo' : kind
+    const bucket = relBucket(shownKind, defId)
+    const attr = shownKind === 'hero' ? (HERO_BY_ID[defId]?.attr ?? info?.attr ?? null) : null
+    const instant = !!info?.instant || (shownKind === 'hero' && HERO_BY_ID[defId]?.timing === 'instant')
     this.swings.push({
       seed: this.seed,
       turn: before.turn,
@@ -242,6 +399,9 @@ export class BalanceTracker {
       defId,
       name,
       kind: shownKind,
+      bucket,
+      attr,
+      instant,
       actorSwing,
       relativeSwing,
       fieldSwing,
@@ -256,14 +416,20 @@ export function summarizeReports(reports: MatchReport[], filter: StratFilter = A
     return filter.strats.some((strat) => report.seatStrats.includes(strat))
   })
   const finished = scoped.filter((report) => report.over)
-  const cardMap = new Map<string, { defId: string; name: string; kind: PlayKind; plays: number; actor: number; relative: number; abs: number }>()
+  const cardMap = new Map<string, { defId: string; name: string; kind: PlayKind; bucket: RelBucket; attr: Attr | null; instant: boolean; plays: number; actor: number; relative: number; abs: number }>()
   const kindMap = new Map<PlayKind, { plays: number; actor: number; relative: number }>()
+  const attrMap = new Map<Attr | 'none', { plays: number; actor: number; relative: number }>()
   const ptsByTurn = new Map<number, number[]>()
   const cardsByTurn = new Map<number, number[]>()
   const stratMap = new Map<AiStrat, { seats: number; wins: number; finishes: number; score: number; actor: number; relative: number; plays: number }>()
+  const eventTotals = EMPTY_EVENTS()
+  const shapeTotals = EMPTY_SHAPES()
   const filteringPlays = filter.strats.length > 0
 
   for (const report of scoped) {
+    addEvents(eventTotals, report.events)
+    addShapes(shapeTotals, report.shapes)
+
     for (const strat of report.seatStrats) {
       if (!allowsStrat(filter, strat)) continue
       const row = stratMap.get(strat) ?? { seats: 0, wins: 0, finishes: 0, score: 0, actor: 0, relative: 0, plays: 0 }
@@ -285,7 +451,18 @@ export function summarizeReports(reports: MatchReport[], filter: StratFilter = A
     for (const swing of report.swings) {
       if (!allowsStrat(filter, swing.actorStrat)) continue
       const key = `${swing.kind}:${swing.defId}`
-      const row = cardMap.get(key) ?? { defId: swing.defId, name: swing.name, kind: swing.kind, plays: 0, actor: 0, relative: 0, abs: 0 }
+      const row = cardMap.get(key) ?? {
+        defId: swing.defId,
+        name: swing.name,
+        kind: swing.kind,
+        bucket: swing.bucket,
+        attr: swing.attr,
+        instant: swing.instant,
+        plays: 0,
+        actor: 0,
+        relative: 0,
+        abs: 0,
+      }
       row.plays += 1
       row.actor += swing.actorSwing
       row.relative += swing.relativeSwing
@@ -297,6 +474,15 @@ export function summarizeReports(reports: MatchReport[], filter: StratFilter = A
       kind.actor += swing.actorSwing
       kind.relative += swing.relativeSwing
       kindMap.set(swing.kind, kind)
+
+      if (swing.bucket === 'hero') {
+        const attrKey = swing.attr ?? 'none'
+        const attrRow = attrMap.get(attrKey) ?? { plays: 0, actor: 0, relative: 0 }
+        attrRow.plays += 1
+        attrRow.actor += swing.actorSwing
+        attrRow.relative += swing.relativeSwing
+        attrMap.set(attrKey, attrRow)
+      }
 
       const stratRow = stratMap.get(swing.actorStrat) ?? { seats: 0, wins: 0, finishes: 0, score: 0, actor: 0, relative: 0, plays: 0 }
       stratRow.plays += 1
@@ -320,6 +506,9 @@ export function summarizeReports(reports: MatchReport[], filter: StratFilter = A
     defId: row.defId,
     name: row.name,
     kind: row.kind,
+    bucket: row.bucket,
+    attr: row.attr,
+    instant: row.instant,
     plays: row.plays,
     avgActorSwing: row.actor / row.plays,
     avgRelativeSwing: row.relative / row.plays,
@@ -328,20 +517,14 @@ export function summarizeReports(reports: MatchReport[], filter: StratFilter = A
   }))
 
   const ranked = cards.filter((row) => row.kind !== 'draw' && row.plays >= 1)
-  const cardsHigh = [...ranked]
-    .sort((a, b) => b.avgRelativeSwing - a.avgRelativeSwing || b.plays - a.plays)
-    .slice(0, 12)
-  const cardsLow = [...ranked]
-    .sort((a, b) => a.avgRelativeSwing - b.avgRelativeSwing || b.plays - a.plays)
-    .slice(0, 12)
-
-  const contested = [...ranked]
-    .sort((a, b) => b.plays - a.plays || b.avgAbsSwing - a.avgAbsSwing)
-    .slice(0, 16)
+  const heroRows = ranked.filter((row) => row.bucket === 'hero')
+  const settingRows = ranked.filter((row) => row.bucket === 'setting')
+  const lootRows = ranked.filter((row) => row.bucket === 'loot')
 
   const spreads = finished.map((report) => Math.max(...report.finalScores) - Math.min(...report.finalScores))
   const winnerScores = finished.map((report) => Math.max(...report.finalScores))
   const turnSeries = seriesFromTurnBuckets(ptsByTurn, cardsByTurn, filteringPlays)
+  const matchCount = Math.max(1, scoped.length)
 
   return {
     matches: scoped.length,
@@ -351,9 +534,17 @@ export function summarizeReports(reports: MatchReport[], filter: StratFilter = A
     avgTurns: average(finished.map((report) => report.turns)),
     avgFinalSpread: average(spreads),
     avgWinnerScore: average(winnerScores),
-    cards: cardsHigh,
-    cardsLow,
-    contested,
+    cards: rankHigh(ranked),
+    cardsLow: rankLow(ranked),
+    heroHigh: rankHigh(heroRows),
+    heroLow: rankLow(heroRows),
+    settingHigh: rankHigh(settingRows),
+    settingLow: rankLow(settingRows),
+    lootHigh: rankHigh(lootRows),
+    lootLow: rankLow(lootRows),
+    contested: [...ranked]
+      .sort((a, b) => b.plays - a.plays || b.avgAbsSwing - a.avgAbsSwing)
+      .slice(0, 16),
     avgPtsByTurn: turnSeries.pts,
     avgCardsByTurn: turnSeries.cards,
     turnLabels: turnSeries.labels,
@@ -377,7 +568,67 @@ export function summarizeReports(reports: MatchReport[], filter: StratFilter = A
         plays: row.plays,
       }))
       .sort((a, b) => b.wins - a.wins || b.avgScore - a.avgScore),
+    shapeCompare: [
+      shapeRow('core_team', 'Core team', shapeTotals.coreTeams, shapeTotals.coreTeamPoints, matchCount),
+      shapeRow('mix_team', 'Mixed team', shapeTotals.mixTeams, shapeTotals.mixTeamPoints, matchCount),
+      shapeRow('core_setting', 'Core setting', shapeTotals.coreSettings, shapeTotals.coreSettingPoints, matchCount),
+      shapeRow('mix_setting', 'Mixed setting', shapeTotals.mixSettings, shapeTotals.mixSettingPoints, matchCount),
+    ],
+    eventStats: [
+      eventRow('drawDeck', 'Draw from deck', eventTotals.drawDeck, matchCount),
+      eventRow('drawGrave', 'Draw from grave', eventTotals.drawGrave, matchCount),
+      eventRow('drawAction', 'Draw actions', eventTotals.drawAction, matchCount),
+      eventRow('discard', 'Discard', eventTotals.discard, matchCount),
+      eventRow('destroy', 'Destroy', eventTotals.destroy, matchCount),
+      eventRow('exile', 'Exile', eventTotals.exile, matchCount),
+      eventRow('playHero', 'Hero plays', eventTotals.playHero, matchCount),
+      eventRow('playItem', 'Item plays', eventTotals.playItem, matchCount),
+      eventRow('playInstant', 'Instant plays', eventTotals.playInstant, matchCount),
+      eventRow('playSetting', 'Setting combos', eventTotals.playSetting, matchCount),
+      eventRow('playRune', 'Rune plays', eventTotals.playRune, matchCount),
+      eventRow('playNeutral', 'Neutral plays', eventTotals.playNeutral, matchCount),
+      eventRow('playTower', 'Tower plays', eventTotals.playTower, matchCount),
+      eventRow('playMorph', 'Morph casts', eventTotals.playMorph, matchCount),
+      eventRow('playMove', 'Ember moves', eventTotals.playMove, matchCount),
+    ],
+    byAttr: [...attrMap.entries()]
+      .map(([attr, row]) => ({
+        attr,
+        plays: row.plays,
+        avgActorSwing: row.actor / row.plays,
+        avgRelativeSwing: row.relative / row.plays,
+      }))
+      .sort((a, b) => b.plays - a.plays || Math.abs(b.avgRelativeSwing) - Math.abs(a.avgRelativeSwing)),
   }
+}
+
+function rankHigh(rows: CardBalanceRow[]): CardBalanceRow[] {
+  return [...rows].sort((a, b) => b.avgRelativeSwing - a.avgRelativeSwing || b.plays - a.plays).slice(0, 12)
+}
+
+function rankLow(rows: CardBalanceRow[]): CardBalanceRow[] {
+  return [...rows].sort((a, b) => a.avgRelativeSwing - b.avgRelativeSwing || b.plays - a.plays).slice(0, 12)
+}
+
+function shapeRow(
+  id: ShapeCompareRow['id'],
+  label: string,
+  count: number,
+  points: number,
+  matches: number,
+): ShapeCompareRow {
+  return {
+    id,
+    label,
+    count,
+    avgCount: count / matches,
+    totalPoints: points,
+    avgPoints: count ? points / count : 0,
+  }
+}
+
+function eventRow(id: keyof EventCounts, label: string, total: number, matches: number): EventStatRow {
+  return { id, label, total, perMatch: total / matches }
 }
 
 function seriesFromTurnBuckets(
@@ -456,6 +707,64 @@ export function runMatchFast(seed: number, seats: number, strats?: AiStrat[], gu
     }
   }
   return tracker.finish(game)
+}
+
+function relBucket(kind: PlayKind, defId: string): RelBucket {
+  if (kind === 'hero' || kind === 'morph') return 'hero'
+  if (kind === 'combo' || kind === 'setting' || defId === 'mixed_path' || defId === 'river' || defId === 'jungle' || defId === 'lane') return 'setting'
+  if (kind === 'item' || kind === 'rune' || kind === 'neutral' || kind === 'tower') return 'loot'
+  return 'other'
+}
+
+function shapeCounts(game: Game): ShapeCounts {
+  const shapes = EMPTY_SHAPES()
+  for (const player of game.players) {
+    for (const team of player.teams) {
+      const scored = scoreTeam(game, team)
+      const shape = teamShape(scored.why)
+      if (shape === 'core') {
+        shapes.coreTeams += 1
+        shapes.coreTeamPoints += scored.points
+      } else if (shape === 'mix') {
+        shapes.mixTeams += 1
+        shapes.mixTeamPoints += scored.points
+      } else {
+        shapes.openTeams += 1
+      }
+    }
+    for (const combo of player.combos) {
+      if (combo.kind === 'mixed') {
+        shapes.mixSettings += 1
+        shapes.mixSettingPoints += combo.points
+      } else {
+        shapes.coreSettings += 1
+        shapes.coreSettingPoints += combo.points
+      }
+    }
+  }
+  return shapes
+}
+
+function cardMap(cards: CardInst[]): Map<string, CardInst> {
+  return new Map(cards.map((card) => [card.uid, card]))
+}
+
+function boardMap(game: Game): Map<string, string> {
+  const map = new Map<string, string>()
+  for (const player of game.players) {
+    for (const team of player.teams) {
+      for (const hero of team.heroes) map.set(hero.uid, hero.defId)
+    }
+  }
+  return map
+}
+
+function addEvents(target: EventCounts, source: EventCounts) {
+  for (const key of Object.keys(target) as (keyof EventCounts)[]) target[key] += source[key]
+}
+
+function addShapes(target: ShapeCounts, source: ShapeCounts) {
+  for (const key of Object.keys(target) as (keyof ShapeCounts)[]) target[key] += source[key]
 }
 
 function totals(game: Game): number[] {
