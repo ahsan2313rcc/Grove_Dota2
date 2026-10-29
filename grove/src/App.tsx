@@ -11,6 +11,7 @@ import {
 } from './game/balance.ts'
 import { apply, createGame, type SeatSpec } from './game/engine.ts'
 import { log } from './game/flow.ts'
+import { getScoreRules, resetScoreRules, setScoreRules, type ScoreRules } from './game/scoring.ts'
 import type { Action, AiStrat, Game } from './game/types.ts'
 import { Glossary } from './ui/Glossary.tsx'
 import { type DebugSpeed, type DebugView } from './ui/DebugRail.tsx'
@@ -131,6 +132,7 @@ export default function App() {
   const [batchDone, setBatchDone] = useState(0)
   const [stratFilter, setStratFilter] = useState<StratFilter>(ALL_STRAT_FILTER)
   const [debugStrats, setDebugStrats] = useState<AiStrat[]>(() => Array.from({ length: boot?.seats ?? 2 }, (_, index) => cycleStrat(index)))
+  const [scoreRules, setScoreRulesState] = useState<ScoreRules>(() => getScoreRules())
   const batchToken = useRef(0)
 
   const live = runs[Math.min(focus, Math.max(0, runs.length - 1))] ?? null
@@ -227,6 +229,41 @@ export default function App() {
     setBatchDone(0)
     setStratFilter(ALL_STRAT_FILTER)
     setDebugStrats(Array.from({ length: 2 }, (_, index) => cycleStrat(index)))
+    setScoreRulesState(resetScoreRules())
+  }
+
+  function resetDebug() {
+    if (runningBatch) return
+    batchToken.current += 1
+    setReports([])
+    setBatchDone(0)
+    setFocus(0)
+    setRunningBatch(false)
+    setMatch((value) => value + 1)
+    if (debugView === 'stats') {
+      setRuns([])
+      return
+    }
+    const count = Math.max(1, Math.min(8, runs.length || 1))
+    setRuns(Array.from({ length: count }, (_, index) => makeRun(seed + index, seatCount, debugStrats)))
+  }
+
+  function applyScoreRules(next: ScoreRules) {
+    if (runningBatch) return
+    const applied = setScoreRules(next)
+    setScoreRulesState(applied)
+    batchToken.current += 1
+    setReports([])
+    setBatchDone(0)
+    setFocus(0)
+    setRunningBatch(false)
+    setMatch((value) => value + 1)
+    if (debugView === 'stats') {
+      setRuns([])
+      return
+    }
+    const count = Math.max(1, Math.min(8, runs.length || 1))
+    setRuns(Array.from({ length: count }, (_, index) => makeRun(seed + index, seatCount, debugStrats)))
   }
 
   async function runBatch() {
@@ -360,6 +397,7 @@ export default function App() {
         debugSummary={summary}
         debugReports={reports}
         debugStratFilter={stratFilter}
+        debugScoreRules={scoreRules}
         onDebugSpeed={setDebugSpeed}
         onDebugStep={stepDebug}
         onDebugView={onDebugView}
@@ -367,6 +405,8 @@ export default function App() {
         onDebugFocus={setFocus}
         onDebugRunBatch={runBatch}
         onDebugStratFilter={setStratFilter}
+        onDebugScoreRules={applyScoreRules}
+        onDebugReset={resetDebug}
         onAction={send}
         onLobby={leave}
       />

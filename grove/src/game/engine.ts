@@ -1,5 +1,6 @@
 import { HEROES, ITEMS, REWARDS, SETTINGS, display } from './catalog.ts'
 import { cast, finishIo, finishKunkka } from './casts.ts'
+import { getScoreRules } from './scoring.ts'
 import {
   addHand,
   allLocs,
@@ -366,7 +367,8 @@ function combo(state: Game, uids: string[], forced = false): Game {
   }
   const picked = cards as CardInst[]
   const same = picked.every((card) => card.defId === picked[0]?.defId)
-  const points = 5
+  const rules = getScoreRules()
+  const points = same ? rules.coreCombo : rules.mixCombo
   const kind = same ? (picked[0]?.defId as 'river' | 'jungle' | 'lane') : 'mixed'
   let next = state
   for (const uid of uids) next = removeHand(next, actor, uid)
@@ -805,13 +807,14 @@ export function teamsFor(state: Game, uid: string): { id: string; label: string;
 export function comboPlans(state: Game): { uids: string[]; label: string; detail: string }[] {
   const hand = state.players[state.active].hand.filter((card) => card.kind === 'setting')
   const plans: { uids: string[]; label: string; detail: string }[] = []
+  const rules = getScoreRules()
   for (const kind of ['river', 'jungle', 'lane'] as const) {
     const matches = hand.filter((card) => card.defId === kind)
     if (matches.length >= 3) {
       plans.push({
         uids: matches.slice(0, 3).map((card) => card.uid),
         label: `Three ${kind}s`,
-        detail: 'core · 5 and a reward',
+        detail: `core · ${rules.coreCombo} and a reward`,
       })
     }
   }
@@ -819,7 +822,7 @@ export function comboPlans(state: Game): { uids: string[]; label: string; detail
   const jungle = hand.find((card) => card.defId === 'jungle')
   const lane = hand.find((card) => card.defId === 'lane')
   if (river && jungle && lane) {
-    plans.push({ uids: [river.uid, jungle.uid, lane.uid], label: 'River, Jungle, Lane', detail: 'mixed · 5' })
+    plans.push({ uids: [river.uid, jungle.uid, lane.uid], label: 'River, Jungle, Lane', detail: `mixed · ${rules.mixCombo}` })
   }
   return plans
 }

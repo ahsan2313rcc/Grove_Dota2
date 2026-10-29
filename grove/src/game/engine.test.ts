@@ -1,9 +1,13 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
 import { chooseAiAction } from './ai.ts'
 import { apply, createGame, morphCasts, teamsFor } from './engine.ts'
 import { attrsOf, blankTeam } from './flow.ts'
-import { scoreBodies } from './scoring.ts'
+import { DEFAULT_SCORE_RULES, resetScoreRules, scoreBodies, setScoreRules } from './scoring.ts'
 import type { CardInst, Game, PlayerId } from './types.ts'
+
+afterEach(() => {
+  resetScoreRules()
+})
 
 describe('scoring', () => {
   it('scores mono teams, mixed teams, and empty attributes', () => {
@@ -42,6 +46,27 @@ describe('scoring', () => {
     expect(scoreBodies([{ attrs: [], range: 'Melee', count: 4 }]).points).toBe(6)
     expect(scoreBodies([{ attrs: [], range: 'Melee', count: 5 }]).points).toBe(8)
     expect(scoreBodies([{ attrs: ['STR', 'AGI', 'INT'], range: 'Melee', count: 1 }]).points).toBe(3)
+  })
+
+  it('applies debug score rules including attack on core', () => {
+    setScoreRules({
+      ...DEFAULT_SCORE_RULES,
+      heroPoints: 1,
+      coreBonus: [0, 0, 0, 0, 0],
+      attackBonus: [0, 0, 1, 2, 3],
+      attackOnCore: true,
+      coreCombo: 7,
+      mixCombo: 4,
+    })
+    expect(scoreBodies([{ attrs: ['STR'], range: 'Melee', count: 3 }]).points).toBe(4)
+    expect(scoreBodies([{ attrs: ['STR'], range: 'Melee', count: 3 }]).why).toContain('Melee')
+    let game = ready()
+    game = give(game, 'river', 0)
+    game = give(game, 'river', 0)
+    game = give(game, 'river', 0)
+    const rivers = game.players[0].hand.filter((card) => card.defId === 'river').slice(0, 3).map((card) => card.uid)
+    game = apply(game, { type: 'combo', uids: rivers })
+    expect(game.players[0].combos[0]?.points).toBe(7)
   })
 })
 

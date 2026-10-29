@@ -164,13 +164,53 @@ p { margin: 0; }
   color: var(--cream-dim);
 }
 .debug-batch input,
-.debug-focus select {
+.debug-focus select,
+.debug-score input,
+.debug-score-row input {
   width: 100%;
   background: rgba(0, 0, 0, 0.25);
   border: 1px solid var(--line);
   border-radius: 8px;
   color: var(--cream);
   padding: 0.4rem 0.55rem;
+}
+.debug-score {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.debug-score label,
+.debug-score-row label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.72rem;
+  color: var(--cream-dim);
+}
+.debug-score-label {
+  margin: 8px 0 4px;
+  font-size: 0.72rem;
+}
+.debug-score-row {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 6px;
+  margin-bottom: 4px;
+}
+.debug-score-row[data-testid="score-mix-bonus"] {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+.debug-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 10px 0;
+  font-size: 0.8rem;
+  color: var(--cream-dim);
+}
+.debug-check input {
+  width: auto;
 }
 .debug-table {
   width: 100%;
