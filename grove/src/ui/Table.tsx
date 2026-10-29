@@ -92,6 +92,7 @@ export function Table({
     avgFinalSpread: 0,
     avgWinnerScore: 0,
     cards: [],
+    cardsLow: [],
     contested: [],
     avgPtsByTurn: [],
     avgCardsByTurn: [],

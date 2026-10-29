@@ -236,8 +236,15 @@ export function DebugRail({
       </div>
 
       <div className="debug-block">
-        <h3>Highest |Rel|</h3>
-        <CardTable rows={summary.cards} />
+        <h3>Highest Rel</h3>
+        <p className="quiet debug-legend">Best average Rel under the active filter.</p>
+        <CardTable rows={summary.cards} empty="No positive swings in this filter." />
+      </div>
+
+      <div className="debug-block">
+        <h3>Lowest Rel</h3>
+        <p className="quiet debug-legend">Worst average Rel under the active filter.</p>
+        <CardTable rows={summary.cardsLow} empty="No negative swings in this filter." />
       </div>
 
       <div className="debug-block">
@@ -308,8 +315,8 @@ export function DebugRail({
   )
 }
 
-function CardTable({ rows }: { rows: CardBalanceRow[] }) {
-  if (rows.length === 0) return <p className="quiet">No card plays yet.</p>
+function CardTable({ rows, empty = 'No card plays yet.' }: { rows: CardBalanceRow[]; empty?: string }) {
+  if (rows.length === 0) return <p className="quiet">{empty}</p>
   return (
     <table className="debug-table">
       <thead>
@@ -317,7 +324,7 @@ function CardTable({ rows }: { rows: CardBalanceRow[] }) {
       </thead>
       <tbody>
         {rows.slice(0, 12).map((row) => (
-          <tr key={`${row.kind}-${row.defId}`}>
+          <tr key={`${row.kind}-${row.defId}-${row.plays}-${fmt(row.avgRelativeSwing)}`}>
             <td>
               <strong>{row.name}</strong>
               <small>{row.kind}</small>

@@ -91,6 +91,7 @@ export interface BalanceSummary {
   avgFinalSpread: number
   avgWinnerScore: number
   cards: CardBalanceRow[]
+  cardsLow: CardBalanceRow[]
   contested: CardBalanceRow[]
   avgPtsByTurn: number[]
   avgCardsByTurn: number[]
@@ -315,21 +316,26 @@ export function summarizeReports(reports: MatchReport[], filter: StratFilter = A
     }
   }
 
-  const cards = [...cardMap.values()]
-    .map((row) => ({
-      defId: row.defId,
-      name: row.name,
-      kind: row.kind,
-      plays: row.plays,
-      avgActorSwing: row.actor / row.plays,
-      avgRelativeSwing: row.relative / row.plays,
-      avgAbsSwing: row.abs / row.plays,
-      totalActorSwing: row.actor,
-    }))
-    .sort((a, b) => b.avgAbsSwing - a.avgAbsSwing || b.plays - a.plays)
+  const cards = [...cardMap.values()].map((row) => ({
+    defId: row.defId,
+    name: row.name,
+    kind: row.kind,
+    plays: row.plays,
+    avgActorSwing: row.actor / row.plays,
+    avgRelativeSwing: row.relative / row.plays,
+    avgAbsSwing: row.abs / row.plays,
+    totalActorSwing: row.actor,
+  }))
 
-  const contested = [...cards]
-    .filter((row) => row.kind !== 'draw')
+  const ranked = cards.filter((row) => row.kind !== 'draw' && row.plays >= 1)
+  const cardsHigh = [...ranked]
+    .sort((a, b) => b.avgRelativeSwing - a.avgRelativeSwing || b.plays - a.plays)
+    .slice(0, 12)
+  const cardsLow = [...ranked]
+    .sort((a, b) => a.avgRelativeSwing - b.avgRelativeSwing || b.plays - a.plays)
+    .slice(0, 12)
+
+  const contested = [...ranked]
     .sort((a, b) => b.plays - a.plays || b.avgAbsSwing - a.avgAbsSwing)
     .slice(0, 16)
 
@@ -345,7 +351,8 @@ export function summarizeReports(reports: MatchReport[], filter: StratFilter = A
     avgTurns: average(finished.map((report) => report.turns)),
     avgFinalSpread: average(spreads),
     avgWinnerScore: average(winnerScores),
-    cards: cards.slice(0, 24),
+    cards: cardsHigh,
+    cardsLow,
     contested,
     avgPtsByTurn: turnSeries.pts,
     avgCardsByTurn: turnSeries.cards,

@@ -41,9 +41,20 @@ describe('balance', () => {
     expect(tempo.avgPtsByTurn.length).toBeGreaterThan(0)
     expect(tempo.byStrat.every((row) => row.strat === 'tempo')).toBe(true)
     expect(tempo.kindSwing.every((row) => row.plays > 0)).toBe(true)
+    expect(tempo.cards.length).toBeGreaterThan(0)
+    expect(tempo.cardsLow.length).toBeGreaterThan(0)
+    expect(tempo.cards[0]!.avgRelativeSwing).toBeGreaterThanOrEqual(tempo.cards[tempo.cards.length - 1]!.avgRelativeSwing)
+    expect(tempo.cardsLow[0]!.avgRelativeSwing).toBeLessThanOrEqual(tempo.cardsLow[tempo.cardsLow.length - 1]!.avgRelativeSwing)
+
+    const spite = summarizeReports(reports, { strats: ['spite'], mixOnly: false })
+    expect(spite.cards.length).toBeGreaterThan(0)
+    expect(spite.cardsLow.length).toBeGreaterThan(0)
+    // Filtered rankings should differ from the unfiltered absolute list shape.
+    expect(spite.cards[0]!.avgRelativeSwing).toBeGreaterThanOrEqual(spite.cardsLow[0]!.avgRelativeSwing)
 
     const mixOnly = summarizeReports(reports, { strats: [], mixOnly: true })
     expect(mixOnly.matches).toBe(reports.filter((report) => report.mixture).length)
     expect(mixOnly.avgPtsByTurn.length).toBe(mixOnly.turnLabels.length)
   })
 })
+
