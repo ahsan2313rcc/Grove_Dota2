@@ -178,7 +178,7 @@ export const HEROES: HeroDef[] = [
 ]
 
 export const ITEMS: ItemDef[] = [
-  { id: 'tp_scroll', name: 'Town Portal Scroll', copies: 3, instant: false, text: 'Move a hero into a team you control.' },
+  { id: 'tp_scroll', name: 'Town Portal Scroll', copies: 3, instant: false, text: 'Move a hero you control to another team.' },
   { id: 'ward', name: 'Ward', copies: 3, instant: false, text: "Reveal an opponent's hand until the end of this turn." },
   { id: 'clarity', name: 'Clarity', copies: 3, instant: false, text: 'Search the deck for a setting and put it into your hand. Shuffle.' },
   { id: 'gloves', name: 'Gloves of Haste', copies: 3, instant: false, text: "Steal a random card from an opponent's hand." },

@@ -422,9 +422,14 @@ function questions(state: Game, resume: CastResume): Ask {
       if (at > 1) return ready()
       return pose(actor, 'Choose the team they enter.', ownTeams(state, actor, true))
     case 'tp_scroll':
-      if (at === 0) return pose(actor, 'Choose a hero.', heroChoices(state, actor, kind, () => true))
+      if (at === 0) return pose(actor, 'Choose a hero you control.', ownHeroes(state, actor, kind))
       if (at > 1) return ready()
-      return pose(actor, 'Choose a team you control.', ownTeams(state, actor, true))
+      {
+        const uid = heroIds(resume.picked)[0]
+        const loc = uid ? findHero(state, uid) : null
+        const choices = ownTeams(state, actor, true).filter((choice) => choice.id !== `team:${loc?.team.id}`)
+        return pose(actor, 'Choose another team.', choices)
+      }
     case 'marci':
       if (at === 0) {
         return pose(actor, 'Choose an allied hero.', ownHeroes(state, actor, kind).filter((choice) => {
