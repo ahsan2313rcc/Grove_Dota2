@@ -213,6 +213,17 @@ p { margin: 0; }
   stroke: var(--line);
   stroke-width: 1;
 }
+.debug-axis-zero {
+  stroke: var(--cream-dim);
+  stroke-width: 1;
+  stroke-dasharray: 3 3;
+  opacity: 0.7;
+}
+.debug-axis-label {
+  fill: var(--cream-dim);
+  font-size: 9px;
+  font-family: ui-sans-serif, system-ui, sans-serif;
+}
 .debug-graph-meta {
   display: flex;
   justify-content: space-between;
@@ -220,6 +231,11 @@ p { margin: 0; }
   margin-top: 4px;
   color: var(--cream-dim);
   font-size: 0.72rem;
+}
+.debug-legend {
+  margin: 0 0 8px;
+  font-size: 0.72rem;
+  line-height: 1.35;
 }
 .debug-results {
   list-style: none;

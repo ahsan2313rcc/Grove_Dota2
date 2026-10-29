@@ -105,26 +105,26 @@ export function DebugRail({
               data-testid="debug-batch-size"
               type="number"
               min={1}
-              max={64}
+              max={1024}
               value={batchSize}
-              onChange={(event) => onBatchSize(Math.max(1, Math.min(64, Number(event.target.value) || 1)))}
+              onChange={(event) => onBatchSize(Math.max(1, Math.min(1024, Number(event.target.value) || 1)))}
             />
           </label>
           <button type="button" className="primary" data-testid="debug-run-batch" disabled={runningBatch} onClick={onRunBatch}>
             {runningBatch ? 'Running…' : `Run ${batchSize} in background`}
           </button>
         </div>
-        {runCount > 1 ? (
+        {runCount > 1 && !runningBatch && game ? (
           <div className="debug-focus">
             <span className="quiet">Watching</span>
             <select data-testid="debug-focus" value={focus} onChange={(event) => onFocus(Number(event.target.value))}>
-              {Array.from({ length: runCount }, (_, index) => (
+              {Array.from({ length: Math.min(runCount, 8) }, (_, index) => (
                 <option key={index} value={index}>Game {index + 1} · seed {seed + index}</option>
               ))}
             </select>
           </div>
         ) : null}
-        <p className="quiet">{finishedCount} finished · {summary.matches} traced</p>
+        <p className="quiet">{finishedCount} finished · {summary.matches} traced · max 1024</p>
       </div>
 
       <div className="debug-block">
@@ -139,19 +139,20 @@ export function DebugRail({
 
       <div className="debug-block">
         <h3>Avg points / turn</h3>
-        <Sparkline values={summary.avgPtsByTurn} testId="graph-pts" />
+        <Sparkline values={summary.avgPtsByTurn} testId="graph-pts" yLabel="pts" />
       </div>
 
       <div className="debug-block">
         <h3>Avg cards / turn</h3>
-        <Sparkline values={summary.avgCardsByTurn} testId="graph-cards" />
+        <Sparkline values={summary.avgCardsByTurn} testId="graph-cards" yLabel="cards" baselineZero />
       </div>
 
       <div className="debug-block">
         <h3>Swing by kind</h3>
+        <p className="quiet debug-legend">Self = your score change. Rel = Self minus average opponent score change.</p>
         <table className="debug-table">
           <thead>
-            <tr><th>Kind</th><th>Plays</th><th>Avg Δ</th><th>Rel Δ</th></tr>
+            <tr><th>Kind</th><th>Plays</th><th>Self</th><th>Rel</th></tr>
           </thead>
           <tbody>
             {summary.kindSwing.map((row) => (
@@ -167,7 +168,7 @@ export function DebugRail({
       </div>
 
       <div className="debug-block">
-        <h3>Highest |rel swing|</h3>
+        <h3>Highest |Rel|</h3>
         <CardTable rows={summary.cards} />
       </div>
 
@@ -240,7 +241,7 @@ function CardTable({ rows }: { rows: CardBalanceRow[] }) {
   return (
     <table className="debug-table">
       <thead>
-        <tr><th>Card</th><th>n</th><th>Δ</th><th>Rel</th></tr>
+        <tr><th>Card</th><th>n</th><th>Self</th><th>Rel</th></tr>
       </thead>
       <tbody>
         {rows.slice(0, 12).map((row) => (
@@ -259,31 +260,71 @@ function CardTable({ rows }: { rows: CardBalanceRow[] }) {
   )
 }
 
-function Sparkline({ values, testId }: { values: number[]; testId: string }) {
-  const width = 260
-  const height = 72
+function Sparkline({
+  values,
+  testId,
+  yLabel,
+  baselineZero = false,
+}: {
+  values: number[]
+  testId: string
+  yLabel: string
+  baselineZero?: boolean
+}) {
+  const left = 36
+  const right = 8
+  const top = 8
+  const bottom = 18
+  const width = 280
+  const height = 96
+  const plotW = width - left - right
+  const plotH = height - top - bottom
   if (values.length === 0) return <p className="quiet" data-testid={testId}>No turn samples yet.</p>
-  const max = Math.max(...values.map((value) => Math.abs(value)), 1)
-  const mid = height / 2
-  const step = values.length > 1 ? width / (values.length - 1) : width
-  const points = values.map((value, index) => {
-    const x = index * step
-    const y = mid - (value / max) * (height * 0.42)
-    return `${x},${y}`
-  }).join(' ')
+  const dataMin = Math.min(...values)
+  const dataMax = Math.max(...values)
+  const yMin = baselineZero ? Math.min(0, dataMin) : Math.min(dataMin, 0)
+  const yMax = Math.max(dataMax, baselineZero ? 1 : 0, yMin + 1)
+  const span = Math.max(yMax - yMin, 1e-6)
+  const yAt = (value: number) => top + plotH - ((value - yMin) / span) * plotH
+  const xAt = (index: number) => left + (values.length > 1 ? (index / (values.length - 1)) * plotW : plotW / 2)
+  const points = values.map((value, index) => `${xAt(index)},${yAt(value)}`).join(' ')
+  const zeroY = yAt(0)
+  const ticks = uniqueTicks([yMax, (yMin + yMax) / 2, yMin, 0].filter((value) => value >= yMin - 1e-9 && value <= yMax + 1e-9))
   return (
     <div className="debug-graph" data-testid={testId}>
-      <svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label="Trend">
-        <line x1="0" y1={mid} x2={width} y2={mid} className="debug-axis" />
+      <svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label={`${yLabel} by turn`}>
+        <line x1={left} y1={top} x2={left} y2={top + plotH} className="debug-axis" />
+        <line x1={left} y1={top + plotH} x2={left + plotW} y2={top + plotH} className="debug-axis" />
+        {yMin < 0 && yMax > 0 ? <line x1={left} y1={zeroY} x2={left + plotW} y2={zeroY} className="debug-axis-zero" /> : null}
+        {ticks.map((tick) => (
+          <g key={tick}>
+            <line x1={left - 4} y1={yAt(tick)} x2={left} y2={yAt(tick)} className="debug-axis" />
+            <text x={left - 6} y={yAt(tick) + 3} textAnchor="end" className="debug-axis-label">{fmt(tick)}</text>
+          </g>
+        ))}
         <polyline fill="none" stroke="currentColor" strokeWidth="2" points={points} />
+        <text x={left} y={height - 4} className="debug-axis-label">T1</text>
+        <text x={left + plotW} y={height - 4} textAnchor="end" className="debug-axis-label">T{values.length}</text>
       </svg>
       <div className="debug-graph-meta">
-        <span>T1</span>
+        <span>{yLabel}</span>
         <span>avg {fmt(average(values))}</span>
-        <span>T{values.length}</span>
+        <span>{fmt(dataMin)} … {fmt(dataMax)}</span>
       </div>
     </div>
   )
+}
+
+function uniqueTicks(values: number[]): number[] {
+  const seen = new Set<string>()
+  const out: number[] = []
+  for (const value of values) {
+    const key = fmt(value)
+    if (seen.has(key)) continue
+    seen.add(key)
+    out.push(value)
+  }
+  return out.sort((a, b) => b - a)
 }
 
 function countShapes(game: Game, id: number): { core: number; mix: number } {

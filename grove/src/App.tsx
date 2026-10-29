@@ -232,15 +232,19 @@ export default function App() {
     setBatchDone(0)
     const baseSeed = seed
     const seats = seatCount
-    const total = batchSize
-    const collected: MatchReport[] = []
+    const total = Math.max(1, Math.min(1024, batchSize))
+    const chunk: MatchReport[] = []
+    const yieldEvery = total >= 64 ? 8 : 1
     for (let index = 0; index < total; index += 1) {
       if (batchToken.current !== token) return
       const report = runMatchFast(baseSeed + index, seats)
-      collected.push(report)
-      setBatchDone(index + 1)
-      setReports((current) => [...current, report])
-      await new Promise((resolve) => window.setTimeout(resolve, 0))
+      chunk.push(report)
+      if (chunk.length >= yieldEvery || index === total - 1) {
+        const batch = chunk.splice(0, chunk.length)
+        setBatchDone(index + 1)
+        setReports((current) => [...current, ...batch])
+        await new Promise((resolve) => window.setTimeout(resolve, 0))
+      }
     }
     if (batchToken.current !== token) return
     setRuns([])
@@ -267,7 +271,6 @@ export default function App() {
   }
 
   function startDebugSession(nextSeed: number, seats: SeatCount, parallel: number, background: boolean) {
-    const count = Math.max(1, Math.min(8, parallel))
     setMatch((value) => value + 1)
     setSeed(nextSeed)
     setSeatCount(seats)
@@ -275,24 +278,27 @@ export default function App() {
     setDebugSpeed(1)
     setFocus(0)
     setReports([])
-    setBatchSize(Math.max(count, 4))
     setBatchDone(0)
     if (background) {
+      const total = Math.max(1, Math.min(1024, parallel))
       setRuns([])
       setDebugView('stats')
-      setBatchSize(count)
+      setBatchSize(total)
       window.setTimeout(() => {
         void (async () => {
           const token = ++batchToken.current
           setRunningBatch(true)
-          const collected: MatchReport[] = []
-          for (let index = 0; index < count; index += 1) {
+          const chunk: MatchReport[] = []
+          const yieldEvery = total >= 64 ? 8 : 1
+          for (let index = 0; index < total; index += 1) {
             if (batchToken.current !== token) return
-            const report = runMatchFast(nextSeed + index, seats)
-            collected.push(report)
-            setBatchDone(index + 1)
-            setReports((current) => [...current, report])
-            await new Promise((resolve) => window.setTimeout(resolve, 0))
+            chunk.push(runMatchFast(nextSeed + index, seats))
+            if (chunk.length >= yieldEvery || index === total - 1) {
+              const batch = chunk.splice(0, chunk.length)
+              setBatchDone(index + 1)
+              setReports((current) => [...current, ...batch])
+              await new Promise((resolve) => window.setTimeout(resolve, 0))
+            }
           }
           if (batchToken.current !== token) return
           setRunningBatch(false)
@@ -300,6 +306,8 @@ export default function App() {
       }, 0)
       return
     }
+    const count = Math.max(1, Math.min(8, parallel))
+    setBatchSize(Math.max(count, 4))
     const created = Array.from({ length: count }, (_, index) => makeRun(nextSeed + index, seats))
     setDebugView('watch')
     setRuns(created)
@@ -461,14 +469,14 @@ function Lobby({
           <fieldset className="debug-lobby">
             <legend>Debug runs</legend>
             <label>
-              Parallel games
+              {background ? 'Background games' : 'Live parallel games'}
               <input
                 data-testid="lobby-parallel"
                 type="number"
                 min={1}
-                max={8}
+                max={background ? 1024 : 8}
                 value={parallel}
-                onChange={(event) => setParallel(Math.max(1, Math.min(8, Number(event.target.value) || 1)))}
+                onChange={(event) => setParallel(Math.max(1, Math.min(background ? 1024 : 8, Number(event.target.value) || 1)))}
               />
             </label>
             <label className="check-row">
@@ -476,15 +484,19 @@ function Lobby({
                 data-testid="lobby-background"
                 type="checkbox"
                 checked={background}
-                onChange={(event) => setBackground(event.target.checked)}
+                onChange={(event) => {
+                  const next = event.target.checked
+                  setBackground(next)
+                  if (!next && parallel > 8) setParallel(8)
+                }}
               />
               Run in background (stats only)
             </label>
             <p className="quiet">
               {background
-                ? `Simulates ${parallel} AI match${parallel === 1 ? '' : 'es'} and opens the balance tables.`
+                ? `Simulates up to ${parallel} AI matches (max 1024) and opens the balance tables.`
                 : parallel > 1
-                  ? `Watches game 1 of ${parallel}. Switch focus in the debug rail.`
+                  ? `Watches game 1 of ${parallel} (max 8 live). Switch focus in the debug rail.`
                   : 'AI seats auto-play. Balance swings accumulate in the debug rail.'}
             </p>
           </fieldset>
