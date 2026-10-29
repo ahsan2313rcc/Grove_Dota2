@@ -7,7 +7,7 @@ import type { Action, CardInst, Game, PlayerId } from '../game/types.ts'
 import { CardFace } from './CardFace.tsx'
 import { Prompt } from './Prompt.tsx'
 import { emberTargets, handRevealed, heroMarks, isCombo, playBlock, shownAttrs, shownRange, statusLines } from './present.ts'
-import type { BalanceSummary, MatchReport, StratFilter, StratLineup } from '../game/balance.ts'
+import type { BalanceSummary, MatchReport, StratFilter } from '../game/balance.ts'
 import { DebugRail, type DebugSpeed, type DebugView } from './DebugRail.tsx'
 import { Glossary } from './Glossary.tsx'
 import { Rules } from './Rules.tsx'
@@ -36,7 +36,6 @@ export function Table({
   debugSummary,
   debugReports = [],
   debugStratFilter = 'all',
-  debugStratLineup = 'mix',
   onDebugSpeed,
   onDebugStep,
   onDebugView,
@@ -44,7 +43,6 @@ export function Table({
   onDebugFocus,
   onDebugRunBatch,
   onDebugStratFilter,
-  onDebugStratLineup,
   onAction,
   onLobby,
 }: {
@@ -62,7 +60,6 @@ export function Table({
   debugSummary?: BalanceSummary
   debugReports?: MatchReport[]
   debugStratFilter?: StratFilter
-  debugStratLineup?: StratLineup
   onDebugSpeed?: (speed: DebugSpeed) => void
   onDebugStep?: () => void
   onDebugView?: (view: DebugView) => void
@@ -70,7 +67,6 @@ export function Table({
   onDebugFocus?: (index: number) => void
   onDebugRunBatch?: () => void
   onDebugStratFilter?: (filter: StratFilter) => void
-  onDebugStratLineup?: (lineup: StratLineup) => void
   onAction: (action: Action) => void
   onLobby: () => void
 }) {
@@ -135,7 +131,6 @@ export function Table({
     && onDebugFocus
     && onDebugRunBatch
     && onDebugStratFilter
-    && onDebugStratLineup
   )
 
   if (debugReady && (statsOnly || !game)) {
@@ -169,7 +164,6 @@ export function Table({
             summary={emptySummary}
             reports={debugReports}
             stratFilter={debugStratFilter}
-            stratLineup={debugStratLineup}
             onSpeed={onDebugSpeed!}
             onStep={onDebugStep!}
             onView={onDebugView!}
@@ -177,7 +171,6 @@ export function Table({
             onFocus={onDebugFocus!}
             onRunBatch={onDebugRunBatch!}
             onStratFilter={onDebugStratFilter!}
-            onStratLineup={onDebugStratLineup!}
           />
         </div>
         {rules ? <Rules onClose={() => setRules(false)} /> : null}
@@ -410,7 +403,6 @@ export function Table({
             summary={emptySummary}
             reports={debugReports}
             stratFilter={debugStratFilter}
-            stratLineup={debugStratLineup}
             onSpeed={onDebugSpeed!}
             onStep={onDebugStep!}
             onView={onDebugView!}
@@ -418,7 +410,6 @@ export function Table({
             onFocus={onDebugFocus!}
             onRunBatch={onDebugRunBatch!}
             onStratFilter={onDebugStratFilter!}
-            onStratLineup={onDebugStratLineup!}
           />
         ) : (
           <aside className="hud">

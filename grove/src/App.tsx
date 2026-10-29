@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { AI_STRATS, chooseAiAction, cycleStrat, DEFAULT_STRAT, isAiStrat } from './game/ai.ts'
+import { AI_STRATS, chooseAiAction, cycleStrat, DEFAULT_STRAT, isAiStrat, stratLabel } from './game/ai.ts'
 import {
   aiRoster,
   BalanceTracker,
@@ -7,7 +7,6 @@ import {
   summarizeReports,
   type MatchReport,
   type StratFilter,
-  type StratLineup,
 } from './game/balance.ts'
 import { apply, createGame, type SeatSpec } from './game/engine.ts'
 import { log } from './game/flow.ts'
@@ -48,8 +47,8 @@ function parseSeedInput(raw: string): { seed: number; debug: boolean } | null {
   return null
 }
 
-function makeRun(seed: number, seats: number, lineup: StratLineup = 'mix'): LiveRun {
-  const game = createGame({ seed, seats: aiRoster(seats, lineup, seed) })
+function makeRun(seed: number, seats: number, strats?: AiStrat[]): LiveRun {
+  const game = createGame({ seed, seats: aiRoster(seats, strats, seed) })
   const tracker = new BalanceTracker(seed)
   tracker.start(game)
   return { seed, game, tracker, stuck: false }
@@ -130,7 +129,7 @@ export default function App() {
   const [match, setMatch] = useState(boot ? 1 : 0)
   const [batchDone, setBatchDone] = useState(0)
   const [stratFilter, setStratFilter] = useState<StratFilter>('all')
-  const [stratLineup, setStratLineup] = useState<StratLineup>('mix')
+  const [debugStrats, setDebugStrats] = useState<AiStrat[]>(() => Array.from({ length: boot?.seats ?? 2 }, (_, index) => cycleStrat(index)))
   const batchToken = useRef(0)
 
   const live = runs[Math.min(focus, Math.max(0, runs.length - 1))] ?? null
@@ -226,7 +225,7 @@ export default function App() {
     setRunningBatch(false)
     setBatchDone(0)
     setStratFilter('all')
-    setStratLineup('mix')
+    setDebugStrats(Array.from({ length: 2 }, (_, index) => cycleStrat(index)))
   }
 
   async function runBatch() {
@@ -237,13 +236,13 @@ export default function App() {
     setBatchDone(0)
     const baseSeed = seed
     const seats = seatCount
-    const lineup = stratLineup
+    const strats = debugStrats
     const total = Math.max(1, Math.min(1024, batchSize))
     const chunk: MatchReport[] = []
     const yieldEvery = total >= 64 ? 8 : 1
     for (let index = 0; index < total; index += 1) {
       if (batchToken.current !== token) return
-      const report = runMatchFast(baseSeed + index, seats, lineup)
+      const report = runMatchFast(baseSeed + index, seats, strats)
       chunk.push(report)
       if (chunk.length >= yieldEvery || index === total - 1) {
         const batch = chunk.splice(0, chunk.length)
@@ -260,7 +259,7 @@ export default function App() {
 
   function startWatchFromStats() {
     if (runningBatch) return
-    const created = [makeRun(seed, seatCount, stratLineup)]
+    const created = [makeRun(seed, seatCount, debugStrats)]
     setRuns(created)
     setFocus(0)
     setDebugView('watch')
@@ -276,7 +275,7 @@ export default function App() {
     setDebugView(view)
   }
 
-  function startDebugSession(nextSeed: number, seats: SeatCount, parallel: number, background: boolean, lineup: StratLineup) {
+  function startDebugSession(nextSeed: number, seats: SeatCount, parallel: number, background: boolean, strats: AiStrat[]) {
     setMatch((value) => value + 1)
     setSeed(nextSeed)
     setSeatCount(seats)
@@ -285,8 +284,8 @@ export default function App() {
     setFocus(0)
     setReports([])
     setBatchDone(0)
-    setStratLineup(lineup)
-    setStratFilter(lineup === 'mix' ? 'all' : lineup)
+    setDebugStrats(strats)
+    setStratFilter(new Set(strats).size > 1 ? 'all' : (strats[0] ?? 'all'))
     if (background) {
       const total = Math.max(1, Math.min(1024, parallel))
       setRuns([])
@@ -300,7 +299,7 @@ export default function App() {
           const yieldEvery = total >= 64 ? 8 : 1
           for (let index = 0; index < total; index += 1) {
             if (batchToken.current !== token) return
-            chunk.push(runMatchFast(nextSeed + index, seats, lineup))
+            chunk.push(runMatchFast(nextSeed + index, seats, strats))
             if (chunk.length >= yieldEvery || index === total - 1) {
               const batch = chunk.splice(0, chunk.length)
               setBatchDone(index + 1)
@@ -316,7 +315,7 @@ export default function App() {
     }
     const count = Math.max(1, Math.min(8, parallel))
     setBatchSize(Math.max(count, 4))
-    const created = Array.from({ length: count }, (_, index) => makeRun(nextSeed + index, seats, lineup))
+    const created = Array.from({ length: count }, (_, index) => makeRun(nextSeed + index, seats, strats))
     setDebugView('watch')
     setRuns(created)
   }
@@ -324,9 +323,9 @@ export default function App() {
   if (runs.length === 0 && !debug) {
     return (
       <Lobby
-        onStart={(next, nextSeed, nextDebug, seats, parallel, background, lineup) => {
+        onStart={(next, nextSeed, nextDebug, seats, parallel, background, strats) => {
           if (nextDebug) {
-            startDebugSession(nextSeed, seats, parallel, background, lineup)
+            startDebugSession(nextSeed, seats, parallel, background, strats)
             return
           }
           setMatch((value) => value + 1)
@@ -360,7 +359,6 @@ export default function App() {
         debugSummary={summary}
         debugReports={reports}
         debugStratFilter={stratFilter}
-        debugStratLineup={stratLineup}
         onDebugSpeed={setDebugSpeed}
         onDebugStep={stepDebug}
         onDebugView={onDebugView}
@@ -368,7 +366,6 @@ export default function App() {
         onDebugFocus={setFocus}
         onDebugRunBatch={runBatch}
         onDebugStratFilter={setStratFilter}
-        onDebugStratLineup={setStratLineup}
         onAction={send}
         onLobby={leave}
       />
@@ -397,7 +394,7 @@ function Lobby({
     seats: SeatCount,
     parallel: number,
     background: boolean,
-    lineup: StratLineup,
+    strats: AiStrat[],
   ) => void
 }) {
   const [seedText, setSeedText] = useState('')
@@ -405,7 +402,6 @@ function Lobby({
   const [seats, setSeats] = useState<LobbySeat[]>(() => defaultSeats(2))
   const [parallel, setParallel] = useState(1)
   const [background, setBackground] = useState(false)
-  const [lineup, setLineup] = useState<StratLineup>('mix')
   const [fault, setFault] = useState('')
   const [glossary, setGlossary] = useState(false)
 
@@ -425,17 +421,20 @@ function Lobby({
     const parsed = parseSeedInput(seedText)
     const seed = parsed?.seed ?? (Math.floor(Date.now() % 100000) || 1)
     const debug = !!parsed?.debug
-    const roster: SeatSpec[] = seats.map((seat, index) => ({
-      name: seat.name.trim() || (debug || seat.kind === 'ai' ? (index === 1 ? 'The Grove' : `AI ${index + 1}`) : `Player ${index + 1}`),
-      ai: debug ? true : seat.kind === 'ai',
-      strat: debug
-        ? (lineup === 'mix' ? cycleStrat(index) : lineup)
-        : seat.kind === 'ai'
-          ? seat.strat
-          : DEFAULT_STRAT,
-    }))
+    const strats = seats.map((seat, index) => (debug || seat.kind === 'ai' ? seat.strat : cycleStrat(index)))
+    const roster: SeatSpec[] = seats.map((seat, index) => {
+      const ai = debug ? true : seat.kind === 'ai'
+      const strat = ai ? seat.strat : DEFAULT_STRAT
+      return {
+        name: ai
+          ? stratLabel(strat)
+          : (seat.name.trim() || `Player ${index + 1}`),
+        ai,
+        strat,
+      }
+    })
     try {
-      onStart(createGame({ seed, seats: roster }), seed, debug, count, debug ? parallel : 1, debug && background, lineup)
+      onStart(createGame({ seed, seats: roster }), seed, debug, count, debug ? parallel : 1, debug && background, strats)
     } catch (error) {
       setFault(error instanceof Error ? error.message : 'The deck could not be dealt.')
     }
@@ -468,51 +467,61 @@ function Lobby({
             ))}
           </div>
         </fieldset>
-        <ul className="seat-list">
-          {seats.map((seat, index) => (
-            <li key={index} className="seat-row">
-              <label>
-                Seat {index + 1}
-                <input
-                  value={seat.name}
-                  onChange={(event) => patchSeat(index, { name: event.target.value })}
-                  maxLength={24}
-                  data-testid={`name-${index}`}
-                />
-              </label>
-              <div className="kind-picks" role="group" aria-label={`Seat ${index + 1} type`}>
-                <button type="button" className={seat.kind === 'human' ? 'on' : ''} data-testid={`kind-human-${index}`} onClick={() => patchSeat(index, { kind: 'human' })}>
-                  Human
-                </button>
-                <button type="button" className={seat.kind === 'ai' ? 'on' : ''} data-testid={`kind-ai-${index}`} onClick={() => patchSeat(index, { kind: 'ai' })}>
-                  AI
-                </button>
-              </div>
-              {seat.kind === 'ai' && !debugPreview ? (
-                <label className="strat-pick">
-                  Strat
+        <ul className="seat-list" data-count={count}>
+          {seats.map((seat, index) => {
+            const aiSeat = debugPreview || seat.kind === 'ai'
+            return (
+              <li key={index} className="seat-row">
+                <span className="seat-num">Seat {index + 1}</span>
+                <div className="kind-picks" role="group" aria-label={`Seat ${index + 1} type`}>
+                  <button
+                    type="button"
+                    className={!aiSeat ? 'on' : ''}
+                    data-testid={`kind-human-${index}`}
+                    disabled={debugPreview}
+                    onClick={() => patchSeat(index, { kind: 'human', name: index === 0 ? 'You' : `Player ${index + 1}` })}
+                  >
+                    Human
+                  </button>
+                  <button
+                    type="button"
+                    className={aiSeat ? 'on' : ''}
+                    data-testid={`kind-ai-${index}`}
+                    onClick={() => patchSeat(index, { kind: 'ai', name: stratLabel(seat.strat) })}
+                  >
+                    AI
+                  </button>
+                </div>
+                {aiSeat ? (
                   <select
+                    className="seat-name-field"
                     data-testid={`strat-${index}`}
+                    aria-label={`Seat ${index + 1} strat`}
                     value={seat.strat}
                     onChange={(event) => {
                       const value = event.target.value
-                      if (isAiStrat(value)) patchSeat(index, { strat: value })
+                      if (isAiStrat(value)) patchSeat(index, { strat: value, name: stratLabel(value), kind: 'ai' })
                     }}
                   >
                     {AI_STRATS.map((entry) => (
                       <option key={entry.id} value={entry.id}>{entry.label}</option>
                     ))}
                   </select>
-                </label>
-              ) : null}
-            </li>
-          ))}
+                ) : (
+                  <input
+                    className="seat-name-field"
+                    value={seat.name}
+                    onChange={(event) => patchSeat(index, { name: event.target.value })}
+                    maxLength={24}
+                    data-testid={`name-${index}`}
+                    aria-label={`Seat ${index + 1} name`}
+                    placeholder="Name"
+                  />
+                )}
+              </li>
+            )
+          })}
         </ul>
-        {!debugPreview ? (
-          <p className="quiet strat-help">
-            AI seats pick a personality: {AI_STRATS.map((entry) => entry.label).join(', ')}.
-          </p>
-        ) : null}
         {debugPreview ? (
           <fieldset className="debug-lobby">
             <legend>Debug runs</legend>
@@ -526,19 +535,6 @@ function Lobby({
                 value={parallel}
                 onChange={(event) => setParallel(Math.max(1, Math.min(background ? 1024 : 8, Number(event.target.value) || 1)))}
               />
-            </label>
-            <label>
-              Strat lineup
-              <select
-                data-testid="lobby-strat-lineup"
-                value={lineup}
-                onChange={(event) => setLineup(event.target.value as StratLineup)}
-              >
-                <option value="mix">Mixture of strats</option>
-                {AI_STRATS.map((entry) => (
-                  <option key={entry.id} value={entry.id}>All {entry.label}</option>
-                ))}
-              </select>
             </label>
             <label className="check-row">
               <input
@@ -555,16 +551,16 @@ function Lobby({
             </label>
             <p className="quiet">
               {background
-                ? `Simulates up to ${parallel} AI matches (max 1024) with ${lineup === 'mix' ? 'mixed personalities' : `all ${lineup}`}.`
+                ? `Simulates up to ${parallel} AI matches (max 1024) using the seat strats above.`
                 : parallel > 1
                   ? `Watches game 1 of ${parallel} (max 8 live). Switch focus in the debug rail.`
-                  : 'AI seats auto-play. Balance swings accumulate in the debug rail.'}
+                  : 'AI seats auto-play with the strats chosen above.'}
             </p>
           </fieldset>
         ) : null}
         <p className="quiet">
           {debugPreview
-            ? 'Debug seed detected. AI seats auto-play and balance stats accumulate on the right.'
+            ? 'Debug seed detected. Seat strats apply to every simulated match.'
             : humans >= 2
               ? 'Multiple humans pass the seat automatically.'
               : humans === 1

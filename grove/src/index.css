@@ -502,36 +502,44 @@ p { margin: 0; }
   list-style: none;
   margin: 0;
   padding: 0;
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
 }
-.strat-pick {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  font-size: 0.78rem;
-  color: var(--cream-dim);
-  grid-column: 1 / -1;
+.seat-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-areas:
+    "num kinds"
+    "field field";
+  gap: 6px 8px;
+  align-items: center;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: rgba(0, 0, 0, 0.18);
 }
-.strat-pick select {
+.seat-num {
+  grid-area: num;
+  color: var(--cream-dim);
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.seat-row .kind-picks { grid-area: kinds; justify-self: end; }
+.seat-name-field {
+  grid-area: field;
+  width: 100%;
   background: rgba(0, 0, 0, 0.25);
   border: 1px solid var(--line);
   border-radius: 8px;
   color: var(--cream);
-  padding: 0.4rem 0.55rem;
+  padding: 0.45rem 0.55rem;
 }
-.strat-help { margin-top: -4px; }
-.seat-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 8px;
-  align-items: end;
-}
-.seat-row .strat-pick { margin-top: 2px; }
 .kind-picks { display: flex; gap: 4px; }
-.kind-picks button { padding: 0.35rem 0.7rem; font-size: 0.8rem; }
+.kind-picks button { padding: 0.3rem 0.55rem; font-size: 0.75rem; }
 .kind-picks button.on { background: var(--gold); color: var(--ink); }
+.kind-picks button:disabled { opacity: 0.55; }
 .detail {
   padding: 8px 10px;
   border-radius: 12px;

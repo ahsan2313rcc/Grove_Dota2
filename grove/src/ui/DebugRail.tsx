@@ -1,5 +1,5 @@
 import { AI_STRATS, stratLabel } from '../game/ai.ts'
-import type { BalanceSummary, CardBalanceRow, MatchReport, StratFilter, StratLineup } from '../game/balance.ts'
+import type { BalanceSummary, CardBalanceRow, MatchReport, StratFilter } from '../game/balance.ts'
 import { display } from '../game/catalog.ts'
 import { scoreState, scoreTeam } from '../game/flow.ts'
 import { teamShape } from '../game/scoring.ts'
@@ -29,7 +29,6 @@ export function DebugRail({
   summary,
   reports,
   stratFilter,
-  stratLineup,
   onSpeed,
   onStep,
   onView,
@@ -37,7 +36,6 @@ export function DebugRail({
   onFocus,
   onRunBatch,
   onStratFilter,
-  onStratLineup,
 }: {
   game: Game | null
   seed: number
@@ -52,7 +50,6 @@ export function DebugRail({
   summary: BalanceSummary
   reports: MatchReport[]
   stratFilter: StratFilter
-  stratLineup: StratLineup
   onSpeed: (speed: DebugSpeed) => void
   onStep: () => void
   onView: (view: DebugView) => void
@@ -60,7 +57,6 @@ export function DebugRail({
   onFocus: (index: number) => void
   onRunBatch: () => void
   onStratFilter: (filter: StratFilter) => void
-  onStratLineup: (lineup: StratLineup) => void
 }) {
   const active = game?.players[game.active]
 
@@ -118,20 +114,6 @@ export function DebugRail({
               value={batchSize}
               onChange={(event) => onBatchSize(Math.max(1, Math.min(1024, Number(event.target.value) || 1)))}
             />
-          </label>
-          <label>
-            Batch lineup
-            <select
-              data-testid="debug-strat-lineup"
-              value={stratLineup}
-              onChange={(event) => onStratLineup(event.target.value as StratLineup)}
-              disabled={runningBatch}
-            >
-              <option value="mix">Mixture of strats</option>
-              {AI_STRATS.map((entry) => (
-                <option key={entry.id} value={entry.id}>All {entry.label}</option>
-              ))}
-            </select>
           </label>
           <button type="button" className="primary" data-testid="debug-run-batch" disabled={runningBatch} onClick={onRunBatch}>
             {runningBatch ? 'Running…' : `Run ${batchSize} in background`}

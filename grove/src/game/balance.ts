@@ -348,24 +348,19 @@ export function summarizeReports(reports: MatchReport[], filter: StratFilter = '
   }
 }
 
-export type StratLineup = 'mix' | AiStrat
-
-export function aiRoster(count: number, lineup: StratLineup = 'mix', offset = 0): SeatSpec[] {
+export function aiRoster(count: number, strats?: AiStrat[], offset = 0): SeatSpec[] {
   return Array.from({ length: count }, (_, index) => {
-    const strat = lineup === 'mix' ? cycleStrat(index + offset) : lineup
-    const label = lineup === 'mix'
-      ? (index === 0 ? 'AI 1' : index === 1 ? 'The Grove' : `AI ${index + 1}`)
-      : `${strat[0]!.toUpperCase()}${strat.slice(1)} ${index + 1}`
+    const strat = strats && strats.length > 0 ? strats[index % strats.length]! : cycleStrat(index + offset)
     return {
-      name: label,
+      name: `${strat[0]!.toUpperCase()}${strat.slice(1)} ${index + 1}`,
       ai: true,
       strat,
     }
   })
 }
 
-export function runMatchFast(seed: number, seats: number, lineup: StratLineup = 'mix', guard = 4000): MatchReport {
-  let game = createGame({ seed, seats: aiRoster(seats, lineup, seed) })
+export function runMatchFast(seed: number, seats: number, strats?: AiStrat[], guard = 4000): MatchReport {
+  let game = createGame({ seed, seats: aiRoster(seats, strats, seed) })
   const tracker = new BalanceTracker(seed)
   tracker.start(game)
   let steps = 0

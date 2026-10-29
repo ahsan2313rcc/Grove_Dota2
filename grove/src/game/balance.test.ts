@@ -4,7 +4,7 @@ import { runMatchFast, summarizeReports } from './balance.ts'
 
 describe('balance', () => {
   it('records card swings and turn graphs for a finished AI match', () => {
-    const report = runMatchFast(58, 2, 'mix')
+    const report = runMatchFast(58, 2)
     expect(report.over).toBe(true)
     expect(report.swings.length).toBeGreaterThan(0)
     expect(report.rounds.length).toBeGreaterThan(0)
@@ -24,7 +24,11 @@ describe('balance', () => {
   })
 
   it('aggregates multiple parallel seeds and filters by strat', () => {
-    const reports = [runMatchFast(11, 2, 'mix'), runMatchFast(12, 2, 'tempo'), runMatchFast(13, 2, 'spite')]
+    const reports = [
+      runMatchFast(11, 2),
+      runMatchFast(12, 2, ['tempo', 'tempo']),
+      runMatchFast(13, 2, ['spite', 'spite']),
+    ]
     const all = summarizeReports(reports, 'all')
     expect(all.matches).toBe(3)
     expect(all.finished).toBe(3)
@@ -32,7 +36,6 @@ describe('balance', () => {
 
     const tempo = summarizeReports(reports, 'tempo')
     expect(tempo.matches).toBeGreaterThan(0)
-    expect(tempo.byStrat.every((row) => row.strat === 'tempo' || row.plays >= 0)).toBe(true)
     expect(tempo.filter).toBe('tempo')
 
     const mixOnly = summarizeReports(reports, 'mix')
