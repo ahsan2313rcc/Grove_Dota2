@@ -43,7 +43,7 @@ function defaultSeats(count: SeatCount): LobbySeat[] {
 function parseSeedInput(raw: string): { seed: number; debug: boolean } | null {
   const text = raw.trim()
   if (!text) return null
-  const debug = /^ahsan-(\d+)$/i.exec(text)
+  const debug = /^d(\d+)$/i.exec(text)
   if (debug) return { seed: Math.floor(Number(debug[1])) || 1, debug: true }
   const parsed = Number(text)
   if (Number.isFinite(parsed)) return { seed: Math.floor(parsed) || 1, debug: false }
@@ -94,7 +94,7 @@ function readStart(): { debug: boolean; seed: number; seats: SeatCount; runs: Li
   const mode = params.get('mode')
   if (mode !== 'ai' && mode !== 'hotseat' && mode !== 'debug') return null
   const seedParam = params.get('seed') ?? ''
-  const parsed = parseSeedInput(seedParam.startsWith('ahsan-') ? seedParam : seedParam ? String(Number(seedParam) || 1) : '')
+  const parsed = parseSeedInput(/^d\d+$/i.test(seedParam) ? seedParam : seedParam ? String(Number(seedParam) || 1) : '')
   const seed = parsed?.seed ?? (Math.floor(Date.now() % 100000) || 1)
   const debug = mode === 'debug' || !!parsed?.debug
   const seatRaw = Number(params.get('seats'))
@@ -468,7 +468,7 @@ function Lobby({
   }
 
   const humans = seats.filter((seat) => seat.kind === 'human').length
-  const debugPreview = /^ahsan-\d+$/i.test(seedText.trim())
+  const debugPreview = /^d\d+$/i.test(seedText.trim())
 
   return (
     <main className="lobby">
@@ -608,7 +608,7 @@ function Lobby({
           Seed
           <input
             data-testid="seed"
-            placeholder="Random or ahsan-58"
+            placeholder="Random or d58"
             value={seedText}
             onChange={(event) => setSeedText(event.target.value)}
           />

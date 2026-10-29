@@ -67,7 +67,7 @@ export function DebugRail({
     <aside className="debug-rail" data-testid="debug-rail">
       <div className="debug-head">
         <p className="eyebrow">Debug balance</p>
-        <h2>ahsan-{seed}</h2>
+        <h2>d{seed}</h2>
         <p className="quiet">
           {runningBatch
             ? `Batch running… ${finishedCount}/${runCount}`

@@ -154,7 +154,7 @@ export function Table({
           <div className="brand">
             <span className="leaf" aria-hidden="true" />
             <h1>Grove</h1>
-            <span className="top-seed">ahsan-{seed}</span>
+            <span className="top-seed">d{seed}</span>
             <span className="debug-pill">Debug</span>
           </div>
           <div className="top-actions">
@@ -316,7 +316,7 @@ export function Table({
         <div className="brand">
           <span className="leaf" aria-hidden="true" />
           <h1>Grove</h1>
-          <span className="top-seed">{debug ? `ahsan-${seed}` : `Seed ${seed}`}</span>
+          <span className="top-seed">{debug ? `d${seed}` : `Seed ${seed}`}</span>
           {debug ? <span className="debug-pill">Debug</span> : null}
         </div>
         <div className="top-actions">
