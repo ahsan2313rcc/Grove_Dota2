@@ -7,13 +7,14 @@ import type { CardInst, Game, PlayerId } from './types.ts'
 
 describe('scoring', () => {
   it('scores mono teams, mixed teams, and empty attributes', () => {
+    // Core bonus +0/0/3/6/10 → max 15. Mix attrs +0/0/2/4 + atk 0/0/1/2/3 → max 12.
     expect(scoreBodies([{ attrs: ['STR'], range: 'Melee', count: 1 }]).points).toBe(1)
-    expect(scoreBodies([{ attrs: ['STR'], range: 'Melee', count: 2 }]).points).toBe(3)
+    expect(scoreBodies([{ attrs: ['STR'], range: 'Melee', count: 2 }]).points).toBe(2)
     expect(scoreBodies([{ attrs: ['STR'], range: 'Melee', count: 3 }]).points).toBe(6)
     expect(scoreBodies([{ attrs: ['STR'], range: 'Melee', count: 4 }]).points).toBe(10)
     expect(scoreBodies([{ attrs: ['STR'], range: 'Melee', count: 5 }]).points).toBe(15)
     expect(scoreBodies([{ attrs: ['UNI'], range: 'Ranged', count: 5 }]).points).toBe(15)
-    expect(scoreBodies([{ attrs: ['AGI'], range: 'Melee', count: 2 }]).points).toBe(3)
+    expect(scoreBodies([{ attrs: ['AGI'], range: 'Melee', count: 2 }]).points).toBe(2)
     const mixed = scoreBodies([
       { attrs: ['STR'], range: 'Melee', count: 1 },
       { attrs: ['AGI'], range: 'Melee', count: 1 },
@@ -26,14 +27,14 @@ describe('scoring', () => {
       { attrs: ['INT'], range: 'Ranged', count: 1 },
       { attrs: ['UNI'], range: 'Ranged', count: 1 },
     ])
-    expect(four.points).toBe(12)
+    expect(four.points).toBe(10)
     const fullMix = scoreBodies([
       { attrs: ['STR'], range: 'Melee', count: 2 },
       { attrs: ['AGI'], range: 'Melee', count: 1 },
       { attrs: ['INT'], range: 'Melee', count: 1 },
       { attrs: ['UNI'], range: 'Melee', count: 1 },
     ])
-    expect(fullMix.points).toBe(14)
+    expect(fullMix.points).toBe(12)
     expect(scoreBodies([
       { attrs: ['STR'], range: 'Melee', count: 4 },
       { attrs: ['UNI'], range: 'Melee', count: 1 },
@@ -58,7 +59,7 @@ describe('turn', () => {
     const actions = game.players[0].actions
     game = apply(game, { type: 'combo', uids: rivers })
     expect(game.players[0].actions).toBe(actions)
-    expect(game.players[0].combos[0]?.points).toBe(3)
+    expect(game.players[0].combos[0]?.points).toBe(5)
     expect(game.players[0].hand.some((card) => ['haste', 'double_damage', 'regen', 'arcane', 'shield', 'illusion'].includes(card.defId))).toBe(true)
   })
 
@@ -69,6 +70,19 @@ describe('turn', () => {
     game = apply(game, { type: 'combo', uids })
     expect(game.players[0].combos[0]?.points).toBe(5)
     expect(game.players[0].actions).toBe(2)
+  })
+
+  it('rejects playing a single setting', () => {
+    let game = ready()
+    game = give(game, 'river', 0)
+    const uid = game.players[0].hand.find((card) => card.defId === 'river')?.uid ?? ''
+    const hand = game.players[0].hand.length
+    const actions = game.players[0].actions
+    game = apply(game, { type: 'play', uid, team: 'new' })
+    expect(game.players[0].hand.length).toBe(hand)
+    expect(game.players[0].actions).toBe(actions)
+    expect(game.players[0].combos.length).toBe(0)
+    expect(game.log.some((line) => line.includes('three at a time'))).toBe(true)
   })
 })
 

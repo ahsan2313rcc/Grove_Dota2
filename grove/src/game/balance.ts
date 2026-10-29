@@ -68,6 +68,11 @@ export interface ShapeCounts {
   coreTeams: number
   mixTeams: number
   openTeams: number
+  coreTeams3: number
+  coreTeams4: number
+  coreTeams5: number
+  mixTeams3: number
+  mixTeams4: number
   coreSettings: number
   mixSettings: number
   coreTeamPoints: number
@@ -119,7 +124,16 @@ export interface StratBalanceRow {
 }
 
 export interface ShapeCompareRow {
-  id: 'core_team' | 'mix_team' | 'core_setting' | 'mix_setting'
+  id:
+    | 'core_team'
+    | 'core_team_3'
+    | 'core_team_4'
+    | 'core_team_5'
+    | 'mix_team'
+    | 'mix_team_3'
+    | 'mix_team_4'
+    | 'core_setting'
+    | 'mix_setting'
   label: string
   count: number
   avgCount: number
@@ -190,6 +204,11 @@ const EMPTY_SHAPES = (): ShapeCounts => ({
   coreTeams: 0,
   mixTeams: 0,
   openTeams: 0,
+  coreTeams3: 0,
+  coreTeams4: 0,
+  coreTeams5: 0,
+  mixTeams3: 0,
+  mixTeams4: 0,
   coreSettings: 0,
   mixSettings: 0,
   coreTeamPoints: 0,
@@ -239,7 +258,9 @@ export class BalanceTracker {
 
     if (action.type === 'play') {
       const held = before.players[before.active]?.hand.find((card) => card.uid === action.uid)
-      if (held) {
+      // Rejected plays (e.g. lone setting) leave the card in hand — do not pollute Rel tables.
+      const resolved = held && !after.players[before.active]?.hand.some((card) => card.uid === action.uid)
+      if (held && resolved) {
         this.turnCards += 1
         this.recordSwing(before, after, before.active, held.defId, held.kind)
         this.tallyPlay(held.kind, display(held.defId).instant)
@@ -570,7 +591,12 @@ export function summarizeReports(reports: MatchReport[], filter: StratFilter = A
       .sort((a, b) => b.wins - a.wins || b.avgScore - a.avgScore),
     shapeCompare: [
       shapeRow('core_team', 'Core team', shapeTotals.coreTeams, shapeTotals.coreTeamPoints, matchCount),
+      shapeRow('core_team_3', 'Core team ×3', shapeTotals.coreTeams3, 0, matchCount),
+      shapeRow('core_team_4', 'Core team ×4', shapeTotals.coreTeams4, 0, matchCount),
+      shapeRow('core_team_5', 'Core team ×5', shapeTotals.coreTeams5, 0, matchCount),
       shapeRow('mix_team', 'Mixed team', shapeTotals.mixTeams, shapeTotals.mixTeamPoints, matchCount),
+      shapeRow('mix_team_3', 'Mixed team ×3', shapeTotals.mixTeams3, 0, matchCount),
+      shapeRow('mix_team_4', 'Mixed team ×4', shapeTotals.mixTeams4, 0, matchCount),
       shapeRow('core_setting', 'Core setting', shapeTotals.coreSettings, shapeTotals.coreSettingPoints, matchCount),
       shapeRow('mix_setting', 'Mixed setting', shapeTotals.mixSettings, shapeTotals.mixSettingPoints, matchCount),
     ],
@@ -722,12 +748,18 @@ function shapeCounts(game: Game): ShapeCounts {
     for (const team of player.teams) {
       const scored = scoreTeam(game, team)
       const shape = teamShape(scored.why)
+      const size = team.heroes.reduce((sum, hero) => sum + (hero.defId === 'meepo' ? 2 : 1), 0)
       if (shape === 'core') {
         shapes.coreTeams += 1
         shapes.coreTeamPoints += scored.points
+        if (size === 3) shapes.coreTeams3 += 1
+        else if (size === 4) shapes.coreTeams4 += 1
+        else if (size >= 5) shapes.coreTeams5 += 1
       } else if (shape === 'mix') {
         shapes.mixTeams += 1
         shapes.mixTeamPoints += scored.points
+        if (size === 3) shapes.mixTeams3 += 1
+        else if (size === 4) shapes.mixTeams4 += 1
       } else {
         shapes.openTeams += 1
       }

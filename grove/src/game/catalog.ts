@@ -221,9 +221,9 @@ export const REWARDS: RewardDef[] = [
 ]
 
 export const SETTINGS: SettingDef[] = [
-  { id: 'river', name: 'River', text: 'A setting. Three Rivers score 3 and take the top rune. A River, a Jungle, and a Lane score 5.' },
-  { id: 'jungle', name: 'Jungle', text: 'A setting. Three Jungles score 3 and take the top neutral. A River, a Jungle, and a Lane score 5.' },
-  { id: 'lane', name: 'Lane', text: 'A setting. Three Lanes score 3 and take the top tower. A River, a Jungle, and a Lane score 5.' },
+  { id: 'river', name: 'River', text: 'A setting — cannot be played alone. Three Rivers score 5 and take the top rune. A River, a Jungle, and a Lane score 5.' },
+  { id: 'jungle', name: 'Jungle', text: 'A setting — cannot be played alone. Three Jungles score 5 and take the top neutral. A River, a Jungle, and a Lane score 5.' },
+  { id: 'lane', name: 'Lane', text: 'A setting — cannot be played alone. Three Lanes score 5 and take the top tower. A River, a Jungle, and a Lane score 5.' },
 ]
 
 export const HERO_BY_ID = Object.fromEntries(HEROES.map((entry) => [entry.id, entry])) as Record<string, HeroDef>

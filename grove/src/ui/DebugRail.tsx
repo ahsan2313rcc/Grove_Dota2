@@ -217,7 +217,7 @@ export function DebugRail({
 
       <div className="debug-block">
         <h3>Shape compare</h3>
-        <p className="quiet debug-legend">Core = mono-attribute team / three-of-a-kind settings. Mixed = multi-attribute team / mixed path.</p>
+        <p className="quiet debug-legend">Core = mono-attribute team / three-of-a-kind settings. Mixed = multi-attribute team / mixed path. Size rows are per-match rates for 3/4/5-hero core and 3/4-hero mix teams.</p>
         <table className="debug-table">
           <thead>
             <tr><th>Shape</th><th>n</th><th>/match</th><th>Avg pts</th></tr>
@@ -228,7 +228,7 @@ export function DebugRail({
                 <td>{row.label}</td>
                 <td>{row.count}</td>
                 <td>{fmt(row.avgCount)}</td>
-                <td>{fmt(row.avgPoints)}</td>
+                <td>{row.id.endsWith('_3') || row.id.endsWith('_4') || row.id.endsWith('_5') ? '—' : fmt(row.avgPoints)}</td>
               </tr>
             ))}
           </tbody>

@@ -449,7 +449,7 @@ function Lobby({
       <div className="lobby-copy">
         <p className="eyebrow">A shared deck of heroes</p>
         <h1>Grove</h1>
-        <p className="lede">Each player scores for themselves. Two actions a turn — draw a card, or play one. Three settings are free: three of a kind scores 3 and takes a hidden reward, a mixed path scores 5. Heroes score in teams by attribute, and a mixed team can add a melee or ranged bonus.</p>
+        <p className="lede">Each player scores for themselves. Two actions a turn — draw a card, or play one. Three settings are free (never a single River, Jungle, or Lane): three of a kind or a mixed path both score 5; three of a kind also takes a hidden reward. Heroes score in teams by attribute — core up to 15, mix up to 12 with an attack bonus.</p>
         <dl>
           <div><dt>Deck</dt><dd>127 heroes, 36 items, 36 settings</dd></div>
           <div><dt>Hand</dt><dd>Five to open. Seven is the limit.</dd></div>

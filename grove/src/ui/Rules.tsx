@@ -10,12 +10,12 @@ export function Rules({ onClose }: { onClose: () => void }) {
         </section>
         <section>
           <h3>Settings</h3>
-          <p>Play three settings at once. Three of a kind score 3 and you take the top of the matching pile: River takes a rune, Jungle a neutral, Lane a tower. One of each scores 5 and takes nothing. The piles are face down.</p>
+          <p>Play three settings at once — a single River, Jungle, or Lane cannot be played alone. Three of a kind score 5 and you take the top of the matching pile: River takes a rune, Jungle a neutral, Lane a tower. One of each also scores 5 and takes nothing. The piles are face down.</p>
         </section>
         <section>
           <h3>Teams</h3>
           <p>Heroes score in teams of up to five. A player can field at most 12 teams. Meepo counts as two. One neutral may sit in a team. Neutrals have no ability and no attack type.</p>
-          <p>Each hero scores 1. A team earns either the same-attribute bonus or the attack bonus, not both. One attribute, Universal included, adds +1, +3, +6, or +10 for two through five heroes, and that team does not take an attack bonus. Universal is its own attribute and does not fill in for another. A mixed team can also earn the different-attribute bonus: +0, +2, or +6 for two, three, or four different attributes. That bonus stacks with attack. Three, four, or five heroes of the same attack type add +1, +2, or +3. Neutrals have no attack type and do not spoil that bonus. Meepo counts as two. Brewmaster is Strength, Agility, and Intelligence, so alone he scores 3. A hero with no attribute still scores 1.</p>
+          <p>Each hero scores 1. A team earns either the same-attribute bonus or the attack bonus, not both. One attribute, Universal included, adds +0, +0, +3, +6, or +10 for one through five heroes, and that team does not take an attack bonus (max 15). Universal is its own attribute and does not fill in for another. A mixed team can also earn the different-attribute bonus: +0, +0, +2, or +4 for one through four different attributes. That bonus stacks with attack. Three, four, or five heroes of the same attack type add +1, +2, or +3 (mix max 12). Neutrals have no attack type and do not spoil that bonus. Meepo counts as two. Brewmaster is Strength, Agility, and Intelligence, so alone he scores 3. A hero with no attribute still scores 1.</p>
         </section>
         <section>
           <h3>Zones</h3>

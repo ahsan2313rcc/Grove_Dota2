@@ -4,8 +4,8 @@ import { scoreState, scoreTeam } from './flow.ts'
 import type { Action, AiStrat, Game, PlayerId } from './types.ts'
 
 export const AI_STRATS: { id: AiStrat; label: string; blurb: string }[] = [
-  { id: 'balanced', label: 'Balanced', blurb: 'Scores the lead and keeps a flexible hand.' },
-  { id: 'tempo', label: 'Tempo', blurb: 'Plays out the board fast; draws only when stuck.' },
+  { id: 'balanced', label: 'Balanced', blurb: 'Banks free settings, joins teams, and finishes scoring boards.' },
+  { id: 'tempo', label: 'Tempo', blurb: 'Banks free settings, then floods heroes onto the board; draws when stalled.' },
   { id: 'architect', label: 'Architect', blurb: 'Builds teams and setting paths before racing.' },
   { id: 'spite', label: 'Spite', blurb: 'Chases relative swings and denies the table.' },
 ]
@@ -30,41 +30,19 @@ export function chooseAiAction(state: Game): Action {
   const actor = state.active
   const strat = state.players[actor]?.strat ?? DEFAULT_STRAT
   const plans = comboPlans(state)
-  const rainbow = plans.find((plan) => plan.detail.startsWith('5'))
-  const trio = plans.find((plan) => plan.detail.startsWith('3'))
+  const core = plans.find((plan) => plan.detail.startsWith('core'))
+  const mixed = plans.find((plan) => plan.detail.startsWith('mixed'))
 
-  if (strat === 'architect') {
-    if (rainbow) return { type: 'combo', uids: rainbow.uids }
-    if (trio) return { type: 'combo', uids: trio.uids }
-  } else if (strat === 'tempo') {
-    if (rainbow) return { type: 'combo', uids: rainbow.uids }
-    // Tempo still takes free settings, but prefers immediate plays first when behind on actions.
-  } else {
-    if (rainbow) return { type: 'combo', uids: rainbow.uids }
-    if (trio) return { type: 'combo', uids: trio.uids }
-  }
+  // Free setting combos first for every personality. Never play a lone setting.
+  if (mixed) return { type: 'combo', uids: mixed.uids }
+  if (core) return { type: 'combo', uids: core.uids }
 
   let best: Action = { type: 'end' }
   let bestScore = evaluate(state, actor, strat) + endBias(state, actor, strat)
   const seen = new Set<string>()
 
-  if (strat !== 'tempo' && trio && !rainbow) {
-    const next = apply({ ...state, autoAll: true }, { type: 'combo', uids: trio.uids })
-    const score = evaluate(next, actor, strat) + 0.35
-    if (score > bestScore) {
-      bestScore = score
-      best = { type: 'combo', uids: trio.uids }
-    }
-  } else if (strat === 'tempo' && trio) {
-    const next = apply({ ...state, autoAll: true }, { type: 'combo', uids: trio.uids })
-    const score = evaluate(next, actor, strat) + 0.15
-    if (score > bestScore) {
-      bestScore = score
-      best = { type: 'combo', uids: trio.uids }
-    }
-  }
-
   for (const card of state.players[actor].hand) {
+    if (card.kind === 'setting') continue
     if (seen.has(card.defId)) continue
     seen.add(card.defId)
     const instant = display(card.defId).instant
@@ -89,40 +67,91 @@ export function chooseAiAction(state: Game): Action {
     if (score > bestScore) best = { type: 'draw' }
   }
 
+  // Softlock escape: hand full of lone settings / Poison-Nova-locked items — pitch one and dig.
+  if (best.type === 'end' && state.players[actor].actions > 0) {
+    const uid = stuckDiscardUid(state, actor)
+    if (uid) return { type: 'discard', uid }
+  }
+
   return best
+}
+
+function stuckDiscardUid(state: Game, actor: PlayerId): string | null {
+  const hand = state.players[actor].hand
+  if (hand.length === 0) return null
+  const playable = hand.some((card) => {
+    if (card.kind === 'setting') return false
+    const teams = needsTeam(card.defId, card.kind) ? teamsFor(state, card.uid).filter((team) => team.ok) : [{ id: 'new', ok: true }]
+    return teams.some((team) => {
+      const next = apply({ ...state, autoAll: true }, { type: 'play', uid: card.uid, team: team.id })
+      return moved(state, next)
+    })
+  })
+  if (playable) return null
+  // Only pitch when the hand is clogged (no room to draw) or the deck is empty.
+  if (hand.length < state.players[actor].handLimit && state.deck.length > 0) return null
+
+  // Combo plans already ran — leftover settings cannot be played alone.
+  const setting = hand.find((card) => card.kind === 'setting')
+  if (setting) return setting.uid
+  const item = hand.find((card) => card.kind === 'item')
+  if (item) return item.uid
+  return hand[0]?.uid ?? null
 }
 
 function endBias(state: Game, actor: PlayerId, strat: AiStrat): number {
   const actions = state.players[actor].actions
-  if (strat === 'tempo') return actions > 0 ? -1.6 : 0
-  if (strat === 'architect') return actions > 0 ? -0.35 : 0
-  if (strat === 'spite') return actions > 0 ? -0.9 : 0
-  return actions > 0 ? -0.8 : 0
+  if (actions < 1) return 0
+  // Stronger push to keep acting — balanced/tempo were ending too early and losing.
+  if (strat === 'tempo') return -1.55
+  if (strat === 'architect') return -0.35
+  if (strat === 'spite') return -0.9
+  return -1.45
 }
 
 function drawBias(state: Game, actor: PlayerId, strat: AiStrat): number {
-  const hand = state.players[actor].hand.length
-  if (strat === 'tempo') return hand >= 4 ? -0.35 : 0.15
-  if (strat === 'architect') return 0.85 + (hand < 5 ? 0.25 : 0)
+  const hand = state.players[actor].hand
+  const playable = hand.filter((card) => card.kind !== 'setting').length
+  const settings = hand.filter((card) => card.kind === 'setting').length
+  if (strat === 'tempo') {
+    if (playable === 0) return 1.1
+    if (hand.length <= 2) return 0.55
+    if (hand.length >= 6 && playable >= 2) return -0.45
+    if (playable >= 3) return -0.15
+    return 0.2
+  }
+  if (strat === 'architect') return 0.85 + (hand.length < 5 ? 0.25 : 0)
   if (strat === 'spite') return 0.25
-  return 0.45
+  // Balanced: dig when the hand is thin or settings are stacking toward a combo.
+  return 0.7 + (playable <= 1 ? 0.45 : 0) + (settings >= 2 ? 0.25 : 0) + (hand.length <= 3 ? 0.2 : 0)
 }
 
 function playBias(before: Game, after: Game, actor: PlayerId, strat: AiStrat, kind: string, teamId: string): number {
+  const beforeHeroes = before.players[actor].teams.reduce((sum, team) => sum + team.heroes.length, 0)
+  const afterHeroes = after.players[actor].teams.reduce((sum, team) => sum + team.heroes.length, 0)
+  const beforeFilled = before.players[actor].teams.filter((team) => team.heroes.length >= 3).length
+  const afterFilled = after.players[actor].teams.filter((team) => team.heroes.length >= 3).length
+  const beforePts = scoreState(before, actor).total
+  const afterPts = scoreState(after, actor).total
+  const ptsGain = afterPts - beforePts
+
   if (strat === 'tempo') {
-    if (kind === 'hero' || kind === 'item') return 0.55
-    if (kind === 'setting') return -0.1
-    return 0.2
+    let bonus = ptsGain * 0.35
+    if (kind === 'hero') {
+      bonus += 0.95
+      if (teamId !== 'new') bonus += 0.65
+      if (afterHeroes > beforeHeroes) bonus += 0.45
+      if (afterFilled > beforeFilled) bonus += 0.75
+    }
+    if (kind === 'item') bonus += 0.35
+    return bonus
   }
   if (strat === 'architect') {
     const beforeTeams = before.players[actor].teams.length
     const afterTeams = after.players[actor].teams.length
-    const beforeHeroes = before.players[actor].teams.reduce((sum, team) => sum + team.heroes.length, 0)
-    const afterHeroes = after.players[actor].teams.reduce((sum, team) => sum + team.heroes.length, 0)
     const beforeCombos = before.players[actor].combos.length
     const afterCombos = after.players[actor].combos.length
     let bonus = 0
-    if (kind === 'setting') bonus += 0.7
     if (kind === 'hero') {
       bonus += 0.45
       if (teamId !== 'new') bonus += 0.55
@@ -135,9 +164,20 @@ function playBias(before: Game, after: Game, actor: PlayerId, strat: AiStrat, ki
   if (strat === 'spite') {
     const beforeOpp = bestFoe(before, actor)
     const afterOpp = bestFoe(after, actor)
-    return (beforeOpp - afterOpp) * 0.35
+    return (beforeOpp - afterOpp) * 0.35 + ptsGain * 0.15
   }
-  return 0
+
+  // Balanced: join and complete teams; reward real point swings.
+  let bonus = ptsGain * 0.55
+  if (kind === 'hero') {
+    bonus += 0.55
+    if (teamId !== 'new') bonus += 0.85
+    if (afterFilled > beforeFilled) bonus += 0.95
+    if (afterHeroes > beforeHeroes) bonus += 0.35
+    if (teamId === 'new') bonus -= 0.25
+  }
+  if (kind === 'item') bonus += 0.3
+  return bonus
 }
 
 function evaluate(state: Game, actor: PlayerId, strat: AiStrat): number {
@@ -146,8 +186,8 @@ function evaluate(state: Game, actor: PlayerId, strat: AiStrat): number {
     const foe = bestFoeScores(state.over.scores, actor)
     if (strat === 'spite') return (mine - foe) * 6
     if (strat === 'architect') return mine * 4 + (mine - foe) * 1.5
-    if (strat === 'tempo') return mine * 3.2 + (mine - foe) * 2
-    return (mine - foe) * 5
+    if (strat === 'tempo') return mine * 4.2 + (mine - foe) * 2.4
+    return mine * 4 + (mine - foe) * 2.8
   }
 
   const mine = scoreState(state, actor).total
@@ -157,11 +197,21 @@ function evaluate(state: Game, actor: PlayerId, strat: AiStrat): number {
   const teams = state.players[actor].teams
   const heroes = teams.reduce((sum, team) => sum + team.heroes.length, 0)
   const filled = teams.filter((team) => team.heroes.length >= 3).length
+  const nearly = teams.filter((team) => team.heroes.length === 2).length
   const comboPts = state.players[actor].combos.reduce((sum, combo) => sum + combo.points, 0)
   const boardShape = teams.reduce((sum, team) => sum + scoreTeam(state, team).points, 0)
 
   if (strat === 'tempo') {
-    return mine * 1.35 - foe * 0.85 + heroes * 0.35 + hand * 0.04 - settings * 0.08
+    return (
+      mine * 1.65 -
+      foe * 0.7 +
+      heroes * 0.55 +
+      boardShape * 0.28 +
+      filled * 0.85 +
+      nearly * 0.35 +
+      comboPts * 0.5 +
+      hand * 0.05
+    )
   }
   if (strat === 'architect') {
     return mine * 0.9 - foe * 0.45 + boardShape * 0.25 + filled * 0.8 + comboPts * 0.55 + settings * 0.4 + hand * 0.18 + heroes * 0.22
@@ -169,7 +219,17 @@ function evaluate(state: Game, actor: PlayerId, strat: AiStrat): number {
   if (strat === 'spite') {
     return mine * 0.75 - foe * 1.55 + hand * 0.08
   }
-  return mine - foe + hand * 0.12
+  return (
+    mine * 1.45 -
+    foe * 0.85 +
+    boardShape * 0.35 +
+    filled * 0.85 +
+    nearly * 0.4 +
+    comboPts * 0.55 +
+    settings * 0.35 +
+    hand * 0.12 +
+    heroes * 0.28
+  )
 }
 
 function bestFoe(state: Game, actor: PlayerId): number {

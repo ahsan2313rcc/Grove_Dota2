@@ -198,6 +198,7 @@ function reduce(state: Game, action: Action): Game {
   if (action.type === 'move') return moveEmber(state, action.uid, action.team)
   if (action.type === 'morph') return morphCast(state, action.uid)
   if (action.type === 'play') return play(state, action.uid, action.team)
+  if (action.type === 'discard') return discardStuck(state, action.uid)
   return state
 }
 
@@ -365,7 +366,7 @@ function combo(state: Game, uids: string[], forced = false): Game {
   }
   const picked = cards as CardInst[]
   const same = picked.every((card) => card.defId === picked[0]?.defId)
-  const points = same ? 3 : 5
+  const points = 5
   const kind = same ? (picked[0]?.defId as 'river' | 'jungle' | 'lane') : 'mixed'
   let next = state
   for (const uid of uids) next = removeHand(next, actor, uid)
@@ -389,10 +390,23 @@ function combo(state: Game, uids: string[], forced = false): Game {
   return next
 }
 
+/** Spend an action to pitch a stuck hand card (Poison Nova / lone settings) so the seat can dig. */
+function discardStuck(state: Game, uid: string): Game {
+  const actor = state.active
+  if (cardsLocked(state, actor)) return log(state, 'Chronosphere stops you from playing cards.')
+  if (state.players[actor].actions < 1) return state
+  const held = findHand(state, uid)
+  if (!held || held.player.id !== actor) return state
+  let next = discardUid(state, actor, uid)
+  next = setPlayer(next, actor, (player) => ({ ...player, actions: player.actions - 1 }))
+  return log(next, `${pname(next, actor)} discards ${display(held.card.defId).name} to dig.`)
+}
+
 function play(state: Game, uid: string, team: string): Game {
   const actor = state.active
   const held = findHand(state, uid)
   if (!held || held.player.id !== actor) return state
+  if (held.card.kind === 'setting') return log(state, 'Settings are played three at a time.')
   const info = display(held.card.defId)
   const instant = info.instant
   if (cardsLocked(state, actor)) return log(state, 'Chronosphere stops you from playing cards.')
@@ -797,7 +811,7 @@ export function comboPlans(state: Game): { uids: string[]; label: string; detail
       plans.push({
         uids: matches.slice(0, 3).map((card) => card.uid),
         label: `Three ${kind}s`,
-        detail: '3 points and a reward',
+        detail: 'core · 5 and a reward',
       })
     }
   }
@@ -805,7 +819,7 @@ export function comboPlans(state: Game): { uids: string[]; label: string; detail
   const jungle = hand.find((card) => card.defId === 'jungle')
   const lane = hand.find((card) => card.defId === 'lane')
   if (river && jungle && lane) {
-    plans.push({ uids: [river.uid, jungle.uid, lane.uid], label: 'River, Jungle, Lane', detail: '5 points' })
+    plans.push({ uids: [river.uid, jungle.uid, lane.uid], label: 'River, Jungle, Lane', detail: 'mixed · 5' })
   }
   return plans
 }

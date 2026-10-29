@@ -85,6 +85,7 @@ export function emberTargets(game: Game, uid: string): { id: string; label: stri
 }
 
 export function playBlock(game: Game, viewer: PlayerId, card: CardInst): string | null {
+  if (card.kind === 'setting') return 'Play three settings together.'
   if (game.lockPlay && game.lockPlay.caster !== viewer) return 'Chronosphere stops cards.'
   if (card.kind === 'hero' && game.players[viewer].noHeroNow) return 'Doom stops heroes.'
   if (card.kind === 'item' && itemsLocked(game, viewer)) return 'Poison Nova stops items.'

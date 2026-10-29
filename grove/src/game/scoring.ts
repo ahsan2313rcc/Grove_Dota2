@@ -6,7 +6,7 @@ export interface ScoreBody {
   count: number
 }
 
-const MONO_BONUS = [0, 0, 1, 3, 6, 10]
+const MONO_BONUS = [0, 0, 0, 3, 6, 10]
 const ATTRS: Attr[] = ['STR', 'AGI', 'INT', 'UNI']
 
 export function scoreBodies(bodies: ScoreBody[]): { points: number; why: string } {
@@ -35,7 +35,7 @@ export function scoreBodies(bodies: ScoreBody[]): { points: number; why: string 
 }
 
 function mixBonus(colors: number): { points: number; why: string } {
-  if (colors >= 4) return { points: 6, why: 'Four attributes' }
+  if (colors >= 4) return { points: 4, why: 'Four attributes' }
   if (colors === 3) return { points: 2, why: 'Three attributes' }
   if (colors === 2) return { points: 0, why: 'Two attributes' }
   return { points: 0, why: 'No attribute' }

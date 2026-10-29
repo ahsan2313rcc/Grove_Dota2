@@ -225,4 +225,5 @@ export type Action =
   | { type: 'combo'; uids: string[] }
   | { type: 'move'; uid: string; team: string }
   | { type: 'morph'; uid: string }
+  | { type: 'discard'; uid: string }
   | { type: 'choose'; ids: string[] }

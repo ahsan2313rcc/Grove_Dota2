@@ -18,9 +18,37 @@ describe('ai strats', () => {
         ],
       })
       const action = chooseAiAction(game)
-      expect(['draw', 'play', 'combo', 'end', 'morph', 'move']).toContain(action.type)
+      expect(['draw', 'play', 'combo', 'end', 'morph', 'move', 'discard']).toContain(action.type)
       game = apply(game, action)
       expect(game.log.length).toBeGreaterThan(0)
+    }
+  })
+
+  it('never tries to play a lone setting', () => {
+    for (const strat of AI_STRATS.map((entry) => entry.id) as AiStrat[]) {
+      let game = createGame({
+        seed: 91,
+        seats: [
+          { name: 'A', ai: true, strat },
+          { name: 'B', ai: true, strat: 'spite' },
+        ],
+      })
+      for (let step = 0; step < 40 && !game.over; step += 1) {
+        if (game.veil) {
+          game = apply(game, { type: 'ready' })
+          continue
+        }
+        if (game.pending) {
+          game = { ...game, pending: null }
+          continue
+        }
+        const action = chooseAiAction(game)
+        if (action.type === 'play') {
+          const card = game.players[game.active]?.hand.find((entry) => entry.uid === action.uid)
+          expect(card?.kind).not.toBe('setting')
+        }
+        game = apply(game, action)
+      }
     }
   })
 })
