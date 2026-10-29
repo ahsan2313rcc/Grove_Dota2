@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { AI_STRATS } from './ai.ts'
-import { runMatchFast, summarizeReports } from './balance.ts'
+import { ALL_STRAT_FILTER, runMatchFast, summarizeReports } from './balance.ts'
 
 describe('balance', () => {
   it('records card swings and turn graphs for a finished AI match', () => {
@@ -18,27 +18,32 @@ describe('balance', () => {
     expect(summary.cards.length).toBeGreaterThan(0)
     expect(summary.contested.length).toBeGreaterThan(0)
     expect(summary.avgPtsByTurn.length).toBeGreaterThan(0)
-    expect(summary.avgCardsByTurn.length).toBeGreaterThan(0)
+    expect(summary.avgCardsByTurn.length).toBe(summary.avgPtsByTurn.length)
+    expect(summary.turnLabels.length).toBe(summary.avgPtsByTurn.length)
     expect(summary.kindSwing.length).toBeGreaterThan(0)
     expect(summary.byStrat.length).toBeGreaterThan(0)
   })
 
-  it('aggregates multiple parallel seeds and filters by strat', () => {
+  it('filters graphs and tables to enabled strats', () => {
     const reports = [
       runMatchFast(11, 2),
       runMatchFast(12, 2, ['tempo', 'tempo']),
       runMatchFast(13, 2, ['spite', 'spite']),
     ]
-    const all = summarizeReports(reports, 'all')
+    const all = summarizeReports(reports, ALL_STRAT_FILTER)
     expect(all.matches).toBe(3)
     expect(all.finished).toBe(3)
-    expect(all.avgTurns).toBeGreaterThan(0)
+    expect(all.avgPtsByTurn.length).toBeGreaterThan(0)
 
-    const tempo = summarizeReports(reports, 'tempo')
+    const tempo = summarizeReports(reports, { strats: ['tempo'], mixOnly: false })
     expect(tempo.matches).toBeGreaterThan(0)
-    expect(tempo.filter).toBe('tempo')
+    expect(tempo.avgPtsByTurn.length).toBe(tempo.turnLabels.length)
+    expect(tempo.avgPtsByTurn.length).toBeGreaterThan(0)
+    expect(tempo.byStrat.every((row) => row.strat === 'tempo')).toBe(true)
+    expect(tempo.kindSwing.every((row) => row.plays > 0)).toBe(true)
 
-    const mixOnly = summarizeReports(reports, 'mix')
+    const mixOnly = summarizeReports(reports, { strats: [], mixOnly: true })
     expect(mixOnly.matches).toBe(reports.filter((report) => report.mixture).length)
+    expect(mixOnly.avgPtsByTurn.length).toBe(mixOnly.turnLabels.length)
   })
 })

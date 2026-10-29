@@ -7,7 +7,7 @@ import type { Action, CardInst, Game, PlayerId } from '../game/types.ts'
 import { CardFace } from './CardFace.tsx'
 import { Prompt } from './Prompt.tsx'
 import { emberTargets, handRevealed, heroMarks, isCombo, playBlock, shownAttrs, shownRange, statusLines } from './present.ts'
-import type { BalanceSummary, MatchReport, StratFilter } from '../game/balance.ts'
+import { ALL_STRAT_FILTER, type BalanceSummary, type MatchReport, type StratFilter } from '../game/balance.ts'
 import { DebugRail, type DebugSpeed, type DebugView } from './DebugRail.tsx'
 import { Glossary } from './Glossary.tsx'
 import { Rules } from './Rules.tsx'
@@ -35,7 +35,7 @@ export function Table({
   debugRunningBatch = false,
   debugSummary,
   debugReports = [],
-  debugStratFilter = 'all',
+  debugStratFilter = ALL_STRAT_FILTER,
   onDebugSpeed,
   onDebugStep,
   onDebugView,
@@ -87,7 +87,7 @@ export function Table({
     matches: 0,
     finished: 0,
     seats: 0,
-    filter: 'all',
+    filter: ALL_STRAT_FILTER,
     avgTurns: 0,
     avgFinalSpread: 0,
     avgWinnerScore: 0,
@@ -95,6 +95,7 @@ export function Table({
     contested: [],
     avgPtsByTurn: [],
     avgCardsByTurn: [],
+    turnLabels: [],
     kindSwing: [],
     byStrat: [],
   }

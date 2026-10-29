@@ -1,5 +1,6 @@
 import { AI_STRATS, stratLabel } from '../game/ai.ts'
 import type { BalanceSummary, CardBalanceRow, MatchReport, StratFilter } from '../game/balance.ts'
+import type { AiStrat } from '../game/types.ts'
 import { display } from '../game/catalog.ts'
 import { scoreState, scoreTeam } from '../game/flow.ts'
 import { teamShape } from '../game/scoring.ts'
@@ -134,26 +135,39 @@ export function DebugRail({
 
       <div className="debug-block">
         <h3>Strat filter</h3>
-        <label className="debug-focus">
-          Graphs & tables
-          <select
-            data-testid="debug-strat-filter"
-            value={stratFilter}
-            onChange={(event) => onStratFilter(event.target.value as StratFilter)}
+        <div className="debug-speeds" role="group" aria-label="Strat filters">
+          {AI_STRATS.map((entry) => {
+            const on = stratFilter.strats.includes(entry.id)
+            return (
+              <button
+                key={entry.id}
+                type="button"
+                className={on ? 'on' : ''}
+                data-testid={`debug-strat-${entry.id}`}
+                aria-pressed={on}
+                onClick={() => onStratFilter(toggleStrat(stratFilter, entry.id))}
+              >
+                {entry.label}
+              </button>
+            )
+          })}
+          <button
+            type="button"
+            className={stratFilter.mixOnly ? 'on' : ''}
+            data-testid="debug-strat-mix"
+            aria-pressed={stratFilter.mixOnly}
+            onClick={() => onStratFilter({ ...stratFilter, mixOnly: !stratFilter.mixOnly })}
           >
-            <option value="all">All strats</option>
-            <option value="mix">Mixture matches only</option>
-            {AI_STRATS.map((entry) => (
-              <option key={entry.id} value={entry.id}>{entry.label} plays</option>
-            ))}
-          </select>
-        </label>
+            Mix only
+          </button>
+        </div>
         <p className="quiet debug-legend">
-          {stratFilter === 'all'
-            ? 'Showing every traced play.'
-            : stratFilter === 'mix'
-              ? 'Only matches where seats used more than one strat.'
-              : `Only plays made by ${stratLabel(stratFilter)}.`}
+          {stratFilter.strats.length === 0 && !stratFilter.mixOnly
+            ? 'All strats on. Toggle personalities on/off; Mix only keeps mixed seat matches.'
+            : [
+              stratFilter.strats.length > 0 ? stratFilter.strats.map(stratLabel).join(' · ') : 'All strats',
+              stratFilter.mixOnly ? 'mixture matches' : null,
+            ].filter(Boolean).join(' · ')}
         </p>
       </div>
 
@@ -193,12 +207,12 @@ export function DebugRail({
 
       <div className="debug-block">
         <h3>Avg points / turn</h3>
-        <Sparkline values={summary.avgPtsByTurn} testId="graph-pts" yLabel="pts" />
+        <Sparkline values={summary.avgPtsByTurn} labels={summary.turnLabels} testId="graph-pts" yLabel="pts" />
       </div>
 
       <div className="debug-block">
         <h3>Avg cards / turn</h3>
-        <Sparkline values={summary.avgCardsByTurn} testId="graph-cards" yLabel="cards" baselineZero />
+        <Sparkline values={summary.avgCardsByTurn} labels={summary.turnLabels} testId="graph-cards" yLabel="cards" baselineZero />
       </div>
 
       <div className="debug-block">
@@ -318,13 +332,21 @@ function CardTable({ rows }: { rows: CardBalanceRow[] }) {
   )
 }
 
+function toggleStrat(filter: StratFilter, strat: AiStrat): StratFilter {
+  const on = filter.strats.includes(strat)
+  const strats = on ? filter.strats.filter((entry) => entry !== strat) : [...filter.strats, strat]
+  return { ...filter, strats }
+}
+
 function Sparkline({
   values,
+  labels,
   testId,
   yLabel,
   baselineZero = false,
 }: {
   values: number[]
+  labels?: number[]
   testId: string
   yLabel: string
   baselineZero?: boolean
@@ -348,6 +370,8 @@ function Sparkline({
   const points = values.map((value, index) => `${xAt(index)},${yAt(value)}`).join(' ')
   const zeroY = yAt(0)
   const ticks = uniqueTicks([yMax, (yMin + yMax) / 2, yMin, 0].filter((value) => value >= yMin - 1e-9 && value <= yMax + 1e-9))
+  const firstLabel = labels?.[0] ?? 1
+  const lastLabel = labels?.[labels.length - 1] ?? values.length
   return (
     <div className="debug-graph" data-testid={testId}>
       <svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label={`${yLabel} by turn`}>
@@ -361,8 +385,8 @@ function Sparkline({
           </g>
         ))}
         <polyline fill="none" stroke="currentColor" strokeWidth="2" points={points} />
-        <text x={left} y={height - 4} className="debug-axis-label">T1</text>
-        <text x={left + plotW} y={height - 4} textAnchor="end" className="debug-axis-label">T{values.length}</text>
+        <text x={left} y={height - 4} className="debug-axis-label">T{firstLabel}</text>
+        <text x={left + plotW} y={height - 4} textAnchor="end" className="debug-axis-label">T{lastLabel}</text>
       </svg>
       <div className="debug-graph-meta">
         <span>{yLabel}</span>

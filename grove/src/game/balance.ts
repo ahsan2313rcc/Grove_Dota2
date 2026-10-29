@@ -5,7 +5,22 @@ import { scoreState } from './flow.ts'
 import type { Action, AiStrat, CardKind, Game } from './types.ts'
 
 export type PlayKind = CardKind | 'combo' | 'draw' | 'morph' | 'move' | 'other'
-export type StratFilter = 'all' | 'mix' | AiStrat
+
+/** Empty `strats` means every personality. `mixOnly` keeps mixture matches only. */
+export type StratFilter = {
+  strats: AiStrat[]
+  mixOnly: boolean
+}
+
+export const ALL_STRAT_FILTER: StratFilter = { strats: [], mixOnly: false }
+
+export function stratFilterActive(filter: StratFilter): boolean {
+  return filter.mixOnly || filter.strats.length > 0
+}
+
+export function allowsStrat(filter: StratFilter, strat: AiStrat): boolean {
+  return filter.strats.length === 0 || filter.strats.includes(strat)
+}
 
 export interface SwingEvent {
   seed: number
@@ -79,6 +94,7 @@ export interface BalanceSummary {
   contested: CardBalanceRow[]
   avgPtsByTurn: number[]
   avgCardsByTurn: number[]
+  turnLabels: number[]
   kindSwing: { kind: PlayKind; plays: number; avgActorSwing: number; avgRelativeSwing: number }[]
   byStrat: StratBalanceRow[]
 }
@@ -232,21 +248,23 @@ export class BalanceTracker {
   }
 }
 
-export function summarizeReports(reports: MatchReport[], filter: StratFilter = 'all'): BalanceSummary {
+export function summarizeReports(reports: MatchReport[], filter: StratFilter = ALL_STRAT_FILTER): BalanceSummary {
   const scoped = reports.filter((report) => {
-    if (filter === 'all') return true
-    if (filter === 'mix') return report.mixture
-    return report.seatStrats.includes(filter)
+    if (filter.mixOnly && !report.mixture) return false
+    if (filter.strats.length === 0) return true
+    return filter.strats.some((strat) => report.seatStrats.includes(strat))
   })
   const finished = scoped.filter((report) => report.over)
   const cardMap = new Map<string, { defId: string; name: string; kind: PlayKind; plays: number; actor: number; relative: number; abs: number }>()
   const kindMap = new Map<PlayKind, { plays: number; actor: number; relative: number }>()
-  const ptsByTurn: number[][] = []
-  const cardsByTurn: number[][] = []
+  const ptsByTurn = new Map<number, number[]>()
+  const cardsByTurn = new Map<number, number[]>()
   const stratMap = new Map<AiStrat, { seats: number; wins: number; finishes: number; score: number; actor: number; relative: number; plays: number }>()
+  const filteringPlays = filter.strats.length > 0
 
   for (const report of scoped) {
     for (const strat of report.seatStrats) {
+      if (!allowsStrat(filter, strat)) continue
       const row = stratMap.get(strat) ?? { seats: 0, wins: 0, finishes: 0, score: 0, actor: 0, relative: 0, plays: 0 }
       row.seats += 1
       stratMap.set(strat, row)
@@ -254,6 +272,7 @@ export function summarizeReports(reports: MatchReport[], filter: StratFilter = '
     if (report.over) {
       for (let index = 0; index < report.seatStrats.length; index += 1) {
         const strat = report.seatStrats[index]!
+        if (!allowsStrat(filter, strat)) continue
         const row = stratMap.get(strat) ?? { seats: 0, wins: 0, finishes: 0, score: 0, actor: 0, relative: 0, plays: 0 }
         row.finishes += 1
         row.score += report.finalScores[index] ?? 0
@@ -263,7 +282,7 @@ export function summarizeReports(reports: MatchReport[], filter: StratFilter = '
     }
 
     for (const swing of report.swings) {
-      if (filter !== 'all' && filter !== 'mix' && swing.actorStrat !== filter) continue
+      if (!allowsStrat(filter, swing.actorStrat)) continue
       const key = `${swing.kind}:${swing.defId}`
       const row = cardMap.get(key) ?? { defId: swing.defId, name: swing.name, kind: swing.kind, plays: 0, actor: 0, relative: 0, abs: 0 }
       row.plays += 1
@@ -285,10 +304,14 @@ export function summarizeReports(reports: MatchReport[], filter: StratFilter = '
       stratMap.set(swing.actorStrat, stratRow)
     }
     for (const round of report.rounds) {
-      if (filter !== 'all' && filter !== 'mix' && round.actorStrat !== filter) continue
-      const index = Math.max(0, round.turn - 1)
-      ;(ptsByTurn[index] ??= []).push(round.pointsDelta)
-      ;(cardsByTurn[index] ??= []).push(round.cardsPlayed)
+      if (!allowsStrat(filter, round.actorStrat)) continue
+      const turn = Math.max(1, round.turn)
+      const pts = ptsByTurn.get(turn) ?? []
+      pts.push(round.pointsDelta)
+      ptsByTurn.set(turn, pts)
+      const cards = cardsByTurn.get(turn) ?? []
+      cards.push(round.cardsPlayed)
+      cardsByTurn.set(turn, cards)
     }
   }
 
@@ -312,6 +335,7 @@ export function summarizeReports(reports: MatchReport[], filter: StratFilter = '
 
   const spreads = finished.map((report) => Math.max(...report.finalScores) - Math.min(...report.finalScores))
   const winnerScores = finished.map((report) => Math.max(...report.finalScores))
+  const turnSeries = seriesFromTurnBuckets(ptsByTurn, cardsByTurn, filteringPlays)
 
   return {
     matches: scoped.length,
@@ -323,8 +347,9 @@ export function summarizeReports(reports: MatchReport[], filter: StratFilter = '
     avgWinnerScore: average(winnerScores),
     cards: cards.slice(0, 24),
     contested,
-    avgPtsByTurn: ptsByTurn.map((samples) => average(samples)),
-    avgCardsByTurn: cardsByTurn.map((samples) => average(samples)),
+    avgPtsByTurn: turnSeries.pts,
+    avgCardsByTurn: turnSeries.cards,
+    turnLabels: turnSeries.labels,
     kindSwing: [...kindMap.entries()]
       .map(([kind, row]) => ({
         kind,
@@ -345,6 +370,31 @@ export function summarizeReports(reports: MatchReport[], filter: StratFilter = '
         plays: row.plays,
       }))
       .sort((a, b) => b.wins - a.wins || b.avgScore - a.avgScore),
+  }
+}
+
+function seriesFromTurnBuckets(
+  ptsByTurn: Map<number, number[]>,
+  cardsByTurn: Map<number, number[]>,
+  compact: boolean,
+): { pts: number[]; cards: number[]; labels: number[] } {
+  const turns = [...new Set([...ptsByTurn.keys(), ...cardsByTurn.keys()])].sort((a, b) => a - b)
+  if (turns.length === 0) return { pts: [], cards: [], labels: [] }
+
+  if (compact) {
+    return {
+      labels: turns,
+      pts: turns.map((turn) => average(ptsByTurn.get(turn) ?? [])),
+      cards: turns.map((turn) => average(cardsByTurn.get(turn) ?? [])),
+    }
+  }
+
+  const max = turns[turns.length - 1]!
+  const labels = Array.from({ length: max }, (_, index) => index + 1)
+  return {
+    labels,
+    pts: labels.map((turn) => average(ptsByTurn.get(turn) ?? [])),
+    cards: labels.map((turn) => average(cardsByTurn.get(turn) ?? [])),
   }
 }
 

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { AI_STRATS, chooseAiAction, cycleStrat, DEFAULT_STRAT, isAiStrat, stratLabel } from './game/ai.ts'
 import {
+  ALL_STRAT_FILTER,
   aiRoster,
   BalanceTracker,
   runMatchFast,
@@ -128,7 +129,7 @@ export default function App() {
   const [runningBatch, setRunningBatch] = useState(false)
   const [match, setMatch] = useState(boot ? 1 : 0)
   const [batchDone, setBatchDone] = useState(0)
-  const [stratFilter, setStratFilter] = useState<StratFilter>('all')
+  const [stratFilter, setStratFilter] = useState<StratFilter>(ALL_STRAT_FILTER)
   const [debugStrats, setDebugStrats] = useState<AiStrat[]>(() => Array.from({ length: boot?.seats ?? 2 }, (_, index) => cycleStrat(index)))
   const batchToken = useRef(0)
 
@@ -224,7 +225,7 @@ export default function App() {
     setFocus(0)
     setRunningBatch(false)
     setBatchDone(0)
-    setStratFilter('all')
+    setStratFilter(ALL_STRAT_FILTER)
     setDebugStrats(Array.from({ length: 2 }, (_, index) => cycleStrat(index)))
   }
 
@@ -285,7 +286,7 @@ export default function App() {
     setReports([])
     setBatchDone(0)
     setDebugStrats(strats)
-    setStratFilter(new Set(strats).size > 1 ? 'all' : (strats[0] ?? 'all'))
+    setStratFilter(ALL_STRAT_FILTER)
     if (background) {
       const total = Math.max(1, Math.min(1024, parallel))
       setRuns([])
