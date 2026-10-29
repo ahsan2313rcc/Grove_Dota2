@@ -14,6 +14,22 @@ npm run dev
 
 Open http://127.0.0.1:43117
 
+### Online ranked (matchmaking + MMR)
+
+```bash
+# terminal 1 — authoritative server (WS + optional static dist)
+npm run start
+
+# terminal 2 — Vite client (proxies /ws to :8787)
+npm run dev
+```
+
+Lobby → **Play online (ranked)** → register → Find match. Starting MMR is 1000 (Elo). For production on Render, use a **Web Service** with:
+
+- Build: `npm install && npm run build`
+- Start: `npm start`
+- Persistent disk optional for `.data/players.json` (set `GROVE_DATA`)
+
 - **Play the Grove** — you go first against the Grove.
 - **Pass and play** — two people, one screen. The seat is covered between turns.
 
