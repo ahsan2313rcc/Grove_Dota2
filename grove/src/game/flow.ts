@@ -34,6 +34,34 @@ export function foe(state: Game, id: PlayerId): PlayerId {
   return nextSeat(state, id)
 }
 
+/**
+ * Sabotage focus: the opponent immediately above this seat in score,
+ * or the strongest rival when already tied/leading.
+ */
+export function preferredFoe(state: Game, actor: PlayerId): PlayerId {
+  const scores = state.players.map((player) => scoreState(state, player.id).total)
+  return preferredFoeFromScores(scores, actor)
+}
+
+export function preferredFoeFromScores(scores: number[], actor: PlayerId): PlayerId {
+  const mine = scores[actor] ?? 0
+  const others = scores
+    .map((score, id) => ({ score, id }))
+    .filter((entry) => entry.id !== actor)
+  if (others.length === 0) return actor
+  const above = others
+    .filter((entry) => entry.score > mine)
+    .sort((a, b) => a.score - b.score || a.id - b.id)
+  if (above[0]) return above[0].id
+  return others.slice().sort((a, b) => b.score - a.score || a.id - b.id)[0]!.id
+}
+
+/** 1 = first place. Ties share the best available place. */
+export function standingOf(scores: number[], seat: number): number {
+  const mine = scores[seat] ?? 0
+  return scores.filter((score) => score > mine).length + 1
+}
+
 export function holderWith(state: Game, actor: PlayerId, defId: string): PlayerId | null {
   const count = state.players.length
   for (let step = 1; step < count; step += 1) {
@@ -174,7 +202,6 @@ export function attrsOf(state: Game, hero: BoardHero): Attr[] {
 
 export function rangeOf(hero: BoardHero): Range | null {
   if (hero.token) return null
-  if (hero.defId === 'dragon_knight') return 'Ranged'
   return HERO_BY_ID[hero.defId]?.range ?? null
 }
 

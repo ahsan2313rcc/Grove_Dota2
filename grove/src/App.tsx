@@ -15,6 +15,7 @@ import { cloneRules, DEFAULT_SCORE_RULES, getScoreRules, resetScoreRules, setSco
 import type { Action, AiStrat, Game } from './game/types.ts'
 import { Glossary } from './ui/Glossary.tsx'
 import { type DebugSpeed, type DebugView } from './ui/DebugRail.tsx'
+import { OnlinePlay } from './ui/OnlinePlay.tsx'
 import { ScoreRulesPanel } from './ui/ScoreRulesPanel.tsx'
 import { Table } from './ui/Table.tsx'
 
@@ -341,9 +342,16 @@ export default function App() {
     setRuns(created)
   }
 
+  const [online, setOnline] = useState(false)
+
+  if (online) {
+    return <OnlinePlay onBack={() => setOnline(false)} />
+  }
+
   if (runs.length === 0 && !debug) {
     return (
       <Lobby
+        onOnline={() => setOnline(true)}
         onStart={(next, nextSeed, nextDebug, seats, parallel, background, strats, rules) => {
           if (nextDebug) {
             startDebugSession(nextSeed, seats, parallel, background, strats, rules)
@@ -409,7 +417,9 @@ export default function App() {
 
 function Lobby({
   onStart,
+  onOnline,
 }: {
+  onOnline: () => void
   onStart: (
     game: Game,
     seed: number,
@@ -603,6 +613,7 @@ function Lobby({
                 : 'All AI is fine for spectating and debugging.'}
         </p>
         <button type="button" className="primary block" data-testid="play-solo" onClick={start}>Start match</button>
+        <button type="button" className="block" data-testid="play-online" onClick={onOnline}>Play online (ranked)</button>
         <button type="button" className="block" data-testid="glossary-open" onClick={() => setGlossary(true)}>Glossary</button>
         <label>
           Seed

@@ -176,7 +176,7 @@ export interface ScoreParts {
 export interface Game {
   rng: number
   nextId: number
-  mode: 'hotseat' | 'ai'
+  mode: 'hotseat' | 'ai' | 'online'
   autoAll: boolean
   deck: CardInst[]
   grave: CardInst[]

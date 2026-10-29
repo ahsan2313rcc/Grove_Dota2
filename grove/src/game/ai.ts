@@ -1,6 +1,6 @@
 import { display } from './catalog.ts'
 import { apply, comboPlans, needsTeam, teamsFor } from './engine.ts'
-import { scoreState, scoreTeam } from './flow.ts'
+import { preferredFoe, preferredFoeFromScores, scoreState, scoreTeam } from './flow.ts'
 import type { Action, AiStrat, Game, PlayerId } from './types.ts'
 
 export const AI_STRATS: { id: AiStrat; label: string; blurb: string }[] = [
@@ -162,8 +162,8 @@ function playBias(before: Game, after: Game, actor: PlayerId, strat: AiStrat, ki
     return bonus
   }
   if (strat === 'spite') {
-    const beforeOpp = bestFoe(before, actor)
-    const afterOpp = bestFoe(after, actor)
+    const beforeOpp = rivalPts(before, actor)
+    const afterOpp = rivalPts(after, actor)
     return (beforeOpp - afterOpp) * 0.35 + ptsGain * 0.15
   }
 
@@ -183,7 +183,7 @@ function playBias(before: Game, after: Game, actor: PlayerId, strat: AiStrat, ki
 function evaluate(state: Game, actor: PlayerId, strat: AiStrat): number {
   if (state.over) {
     const mine = state.over.scores[actor] ?? 0
-    const foe = bestFoeScores(state.over.scores, actor)
+    const foe = state.over.scores[preferredFoeFromScores(state.over.scores, actor)] ?? 0
     if (strat === 'spite') return (mine - foe) * 6
     if (strat === 'architect') return mine * 4 + (mine - foe) * 1.5
     if (strat === 'tempo') return mine * 4.2 + (mine - foe) * 2.4
@@ -191,7 +191,7 @@ function evaluate(state: Game, actor: PlayerId, strat: AiStrat): number {
   }
 
   const mine = scoreState(state, actor).total
-  const foe = bestFoe(state, actor)
+  const foe = rivalPts(state, actor)
   const hand = state.players[actor].hand.length
   const settings = state.players[actor].hand.filter((card) => card.kind === 'setting').length
   const teams = state.players[actor].teams
@@ -232,12 +232,8 @@ function evaluate(state: Game, actor: PlayerId, strat: AiStrat): number {
   )
 }
 
-function bestFoe(state: Game, actor: PlayerId): number {
-  return bestFoeScores(state.players.map((player) => scoreState(state, player.id).total), actor)
-}
-
-function bestFoeScores(scores: number[], actor: PlayerId): number {
-  return Math.max(0, ...scores.map((score, id) => (id === actor ? -Infinity : score)))
+function rivalPts(state: Game, actor: PlayerId): number {
+  return scoreState(state, preferredFoe(state, actor)).total
 }
 
 function moved(before: Game, after: Game): boolean {

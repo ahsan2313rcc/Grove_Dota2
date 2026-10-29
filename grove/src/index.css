@@ -350,6 +350,17 @@ p { margin: 0; }
   flex-direction: column;
   gap: 4px;
 }
+.online-over, .online-leaders {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.online-leaders ol, .online-over ul {
+  margin: 0;
+  padding-left: 1.2rem;
+  color: var(--cream-dim);
+  font-size: 0.85rem;
+}
 .check-row {
   flex-direction: row !important;
   align-items: center;

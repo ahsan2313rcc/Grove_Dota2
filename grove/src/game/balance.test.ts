@@ -24,6 +24,15 @@ describe('balance', () => {
     expect(summary.avgPtsByTurn.length).toBeGreaterThan(0)
     expect(summary.avgCardsByTurn.length).toBe(summary.avgPtsByTurn.length)
     expect(summary.turnLabels.length).toBe(summary.avgPtsByTurn.length)
+    expect(summary.byStrat.length).toBeGreaterThan(0)
+    expect(summary.byStrat.every((row) => row.avgStanding >= 1)).toBe(true)
+    const core5 = summary.shapeCompare.find((row) => row.id === 'core_team_5')
+    expect(core5).toBeTruthy()
+    expect(core5!.pureCount).toBeGreaterThanOrEqual(0)
+    expect(core5!.avgPtsPerCard).toBeGreaterThanOrEqual(0)
+    if (core5!.count > 0 && core5!.avgPoints > 0) {
+      expect(core5!.avgPtsPerCard).toBeGreaterThan(0)
+    }
   })
 
   it('filters graphs and split Rel tables to enabled strats', () => {

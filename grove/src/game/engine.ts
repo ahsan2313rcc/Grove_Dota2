@@ -23,6 +23,7 @@ import {
   makeCard,
   makeHero,
   mint,
+  preferredFoe,
   seatTeam,
   performDestroy,
   pname,
@@ -51,14 +52,15 @@ const DEFAULT_STRAT: AiStrat = 'balanced'
 
 export function createGame(opts: {
   seed?: number
-  mode?: 'hotseat' | 'ai'
+  mode?: 'hotseat' | 'ai' | 'online'
   names?: [string, string]
   seats?: SeatSpec[]
 }): Game {
   const seats = opts.seats ?? legacySeats(opts.mode ?? 'hotseat', opts.names)
   if (seats.length < 2 || seats.length > 8) throw new Error('Grove seats 2 to 8 players.')
   const humans = seats.filter((seat) => !seat.ai).length
-  const mode: 'hotseat' | 'ai' = humans >= 2 ? 'hotseat' : 'ai'
+  const mode: 'hotseat' | 'ai' | 'online' =
+    opts.mode === 'online' ? 'online' : humans >= 2 ? 'hotseat' : 'ai'
   let state = blank(opts.seed ?? (Date.now() % 100000), mode, seats)
   const cards: CardInst[] = []
   for (const hero of HEROES) {
@@ -98,7 +100,7 @@ export function createGame(opts: {
   return state
 }
 
-function legacySeats(mode: 'hotseat' | 'ai', names?: [string, string]): SeatSpec[] {
+function legacySeats(mode: 'hotseat' | 'ai' | 'online', names?: [string, string]): SeatSpec[] {
   const labels = names ?? (mode === 'ai' ? ['You', 'The Grove'] : ['Player 1', 'Player 2'])
   return [
     { name: labels[0], ai: false },
@@ -119,7 +121,7 @@ function fillPile(state: Game, pile: 'runes' | 'neutrals' | 'towers'): Game {
   return { ...shuffled[0], [pile]: shuffled[1] }
 }
 
-function blank(seed: number, mode: 'hotseat' | 'ai', seats: SeatSpec[]): Game {
+function blank(seed: number, mode: 'hotseat' | 'ai' | 'online', seats: SeatSpec[]): Game {
   const player = (id: PlayerId, name: string, ai: boolean, strat: AiStrat): Player => ({
     id,
     name,
@@ -862,9 +864,58 @@ function autoIds(state: Game): string[] {
   const save = pending.choices.find((choice) => choice.id.startsWith('play:'))
   if (save && pending.prompt.includes('destroyed')) return [save.id]
   if (pending.choices.some((choice) => choice.id === 'pass')) return ['pass']
-  if (pending.choices.some((choice) => choice.id === 'no')) return ['no']
+  const hasYes = pending.choices.some((choice) => choice.id === 'yes')
+  const hasNo = pending.choices.some((choice) => choice.id === 'no')
+  if (hasYes && hasNo) {
+    // Opt into sabotage / stolen casts that improve standing; otherwise soft-pass.
+    if (/fire that ability|destroy shadow shaman/i.test(pending.prompt)) return ['yes']
+    return ['no']
+  }
   if (pending.min === 0) return []
-  return pending.choices.slice(0, pending.max).map((choice) => choice.id)
+  const focus = preferredFoe(state, pending.actor)
+  const scores = state.players.map((player) => scoreState(state, player.id).total)
+  const ranked = pending.choices
+    .map((choice, index) => ({
+      id: choice.id,
+      weight: autoChoiceWeight(state, choice.id, pending.actor, focus, scores) - index * 0.001,
+    }))
+    .sort((a, b) => b.weight - a.weight)
+  return ranked.slice(0, pending.max).map((entry) => entry.id)
+}
+
+function autoChoiceWeight(
+  state: Game,
+  choiceId: string,
+  actor: PlayerId,
+  focus: PlayerId,
+  scores: number[],
+): number {
+  const owner = choiceOwner(state, choiceId)
+  if (owner === null) return 0
+  if (owner === actor) return -5
+  if (owner === focus) return 100 + (scores[owner] ?? 0)
+  return (scores[owner] ?? 0)
+}
+
+function choiceOwner(state: Game, choiceId: string): PlayerId | null {
+  if (choiceId.startsWith('player:')) return Number(choiceId.slice(7))
+  if (choiceId.startsWith('hero:')) {
+    return findHero(state, choiceId.slice(5))?.hero.controller ?? null
+  }
+  if (choiceId.startsWith('team:')) {
+    return teamById(state, choiceId.slice(5))?.player.id ?? null
+  }
+  if (choiceId.startsWith('new:')) {
+    const seat = Number(choiceId.slice(4))
+    return Number.isFinite(seat) ? seat : null
+  }
+  if (choiceId.startsWith('card:')) {
+    const uid = choiceId.slice(5)
+    for (const player of state.players) {
+      if (player.hand.some((card) => card.uid === uid)) return player.id
+    }
+  }
+  return null
 }
 
 export function needsTeam(defId: string, kind: CardKind): boolean {

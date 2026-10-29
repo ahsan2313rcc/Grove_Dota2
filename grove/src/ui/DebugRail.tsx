@@ -185,12 +185,13 @@ export function DebugRail({
 
       <div className="debug-block">
         <h3>By strat</h3>
+        <p className="quiet debug-legend">Place = average finish (1 is first).</p>
         {summary.byStrat.length === 0 ? (
           <p className="quiet">No strat samples yet.</p>
         ) : (
           <table className="debug-table">
             <thead>
-              <tr><th>Strat</th><th>W</th><th>Avg</th><th>Self</th><th>Rel</th></tr>
+              <tr><th>Strat</th><th>W</th><th>Avg</th><th>Place</th><th>Self</th><th>Rel</th></tr>
             </thead>
             <tbody>
               {summary.byStrat.map((row) => (
@@ -198,6 +199,7 @@ export function DebugRail({
                   <td><strong>{stratLabel(row.strat)}</strong><small>{row.plays} plays</small></td>
                   <td>{row.wins}/{row.finishes}</td>
                   <td>{fmt(row.avgScore)}</td>
+                  <td>{fmt(row.avgStanding)}</td>
                   <td>{signed(row.avgSelfSwing)}</td>
                   <td>{signed(row.avgRelSwing)}</td>
                 </tr>
@@ -219,18 +221,20 @@ export function DebugRail({
 
       <div className="debug-block">
         <h3>Shape compare</h3>
-        <p className="quiet debug-legend">Core = mono-attribute team / three-of-a-kind settings. Mixed = multi-attribute team / mixed path. Core ×3/×4/×5 = hero count. Mixed · 3/4 attrs = attribute count (floors ~6 / ~8 with attack).</p>
+        <p className="quiet debug-legend">Core ×3/×4/×5 = largest same-attr stack (counts mixed boards too). Pure = exact-size mono core, or mix with hero count matching attr count. Pts/card = avg points ÷ heroes (settings ÷ 3).</p>
         <table className="debug-table">
           <thead>
-            <tr><th>Shape</th><th>n</th><th>/match</th><th>Avg pts</th></tr>
+            <tr><th>Shape</th><th>n</th><th>Pure</th><th>/match</th><th>Avg pts</th><th>Pts/card</th></tr>
           </thead>
           <tbody>
             {summary.shapeCompare.map((row) => (
               <tr key={row.id}>
                 <td>{row.label}</td>
                 <td>{row.count}</td>
+                <td>{row.pureCount}</td>
                 <td>{fmt(row.avgCount)}</td>
                 <td>{fmt(row.avgPoints)}</td>
+                <td>{fmt(row.avgPtsPerCard)}</td>
               </tr>
             ))}
           </tbody>

@@ -31,7 +31,7 @@ export function Rules({ onClose }: { onClose: () => void }) {
             <li>Riki cannot be targeted by an enemy.</li>
             <li>Night Stalker steals two cards from the enemy.</li>
             <li>Lycan draws a card when an ally enters that team.</li>
-            <li>Medusa’s gaze strips attributes from her team. Range stays.</li>
+            <li>Medusa’s Stone Gaze exiles a target enemy team.</li>
             <li>Elder Titan strips attributes from enemy heroes. They keep 1 point each, and a shared attack type still scores.</li>
             <li>Tidehunter returns every other hero to its owner’s hand. His own team stays.</li>
             <li>Magnus gathers up to 5 enemy heroes into a new team. The rest stay.</li>

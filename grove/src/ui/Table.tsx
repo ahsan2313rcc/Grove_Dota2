@@ -44,6 +44,7 @@ export function Table({
   onDebugRunBatch,
   onDebugStratFilter,
   onDebugReset,
+  onlineSeat = null,
   onAction,
   onLobby,
 }: {
@@ -69,6 +70,8 @@ export function Table({
   onDebugRunBatch?: () => void
   onDebugStratFilter?: (filter: StratFilter) => void
   onDebugReset?: () => void
+  /** When set, this seat is the networked player (no hotseat handoff). */
+  onlineSeat?: PlayerId | null
   onAction: (action: Action) => void
   onLobby: () => void
 }) {
@@ -216,18 +219,22 @@ export function Table({
   const primaryHuman = humans[0] ?? 0
   const pendingHuman = game.pending && !game.players[game.pending.actor]?.ai ? game.pending.actor : null
   const activeHuman = game.players[game.active] && !game.players[game.active]!.ai ? game.active : null
+  const networked = onlineSeat !== null && onlineSeat !== undefined
   // Only pass-the-device when another human must answer — not when you target an enemy on your own turn.
   const needsHandoff =
     !debug
+    && !networked
     && humans.length > 1
     && pendingHuman !== null
     && acked !== promptKey
     && pendingHuman !== activeHuman
-  const viewer: PlayerId = debug
-    ? game.active
-    : pendingHuman !== null && (acked === promptKey || pendingHuman === activeHuman || humans.length === 1)
-      ? pendingHuman
-      : (activeHuman ?? primaryHuman)
+  const viewer: PlayerId = networked
+    ? onlineSeat
+    : debug
+      ? game.active
+      : pendingHuman !== null && (acked === promptKey || pendingHuman === activeHuman || humans.length === 1)
+        ? pendingHuman
+        : (activeHuman ?? primaryHuman)
   const you = game.players[viewer]!
   const chairs = game.players.map((player) => ({
     key: `p-${player.id}`,
@@ -237,7 +244,7 @@ export function Table({
   const pageCount = Math.max(1, Math.ceil(chairs.length / PAGE_SIZE))
   const safePage = ((page % pageCount) + pageCount) % pageCount
   const visible = chairs.slice(safePage * PAGE_SIZE, safePage * PAGE_SIZE + PAGE_SIZE)
-  const canAct = !debug && !game.over && !game.veil && !game.pending && game.active === viewer && !you.ai
+  const canAct = !debug && !game.over && !game.veil && !game.pending && game.active === viewer && (networked || !you.ai)
   const handIds = new Set(you.hand.map((card) => card.uid))
   const liveCombo = combo.filter((uid) => handIds.has(uid))
   if (liveCombo.length !== combo.length) setCombo(liveCombo)
@@ -251,7 +258,7 @@ export function Table({
   const activeName = game.players[game.active]?.name ?? 'Player'
   const whoseTurn = game.over ? 'Match over' : debug ? `${activeName}'s turn` : game.active === viewer ? 'Your turn' : `${activeName}'s turn`
 
-  if (game.mode === 'hotseat' && game.veil && !game.players[game.active]?.ai) {
+  if (!networked && game.mode === 'hotseat' && game.veil && !game.players[game.active]?.ai) {
     return (
       <SeatCover
         title={game.players[game.active]!.name}
@@ -522,7 +529,9 @@ export function Table({
         </div>
       </footer>
 
-      {!debug && game.pending ? <Prompt key={promptKey} pending={game.pending} names={names} onChoose={(ids) => onAction({ type: 'choose', ids })} /> : null}
+      {!debug && game.pending && (!networked || game.pending.actor === onlineSeat) ? (
+        <Prompt key={promptKey} pending={game.pending} names={names} onChoose={(ids) => onAction({ type: 'choose', ids })} />
+      ) : null}
       {rules ? <Rules onClose={() => setRules(false)} /> : null}
       {glossary ? <Glossary onClose={() => setGlossary(false)} /> : null}
       {logOpen ? <LogSheet log={game.log} onClose={() => setLogOpen(false)} /> : null}

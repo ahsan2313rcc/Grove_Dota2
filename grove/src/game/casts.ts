@@ -263,7 +263,6 @@ function questions(state: Game, resume: CastResume): Ask {
     case 'lion':
     case 'necrophos':
     case 'queen_of_pain':
-    case 'shadow_shaman':
     case 'vengeful_spirit':
     case 'viper':
     case 'bane':
@@ -291,6 +290,16 @@ function questions(state: Game, resume: CastResume): Ask {
         return pose(actor, 'Choose an opponent.', opponentChoices(state, actor))
       }
       return pose(actor, 'Choose an enemy hero.', enemyHeroes(state, actor, kind))
+    case 'shadow_shaman':
+      if (at === 0) {
+        return pose(actor, 'Destroy Shadow Shaman to destroy an enemy?', [
+          { id: 'yes', label: 'Destroy Shadow Shaman' },
+          { id: 'no', label: 'Keep Shadow Shaman' },
+        ])
+      }
+      if (resume.picked.includes('no')) return ready()
+      if (at === 1) return pose(actor, 'Choose an enemy hero.', enemyHeroes(state, actor, kind))
+      return ready()
     case 'phantom_assassin':
       if (at > 0) return ready()
       return pose(actor, 'Choose an enemy hero in a team of 1 or 5.', enemyHeroes(state, actor, kind, (uid) => {
@@ -404,7 +413,6 @@ function questions(state: Game, resume: CastResume): Ask {
     case 'spectre':
       return askAttrByTeam(state, resume, enemy)
     case 'tiny':
-    case 'lifestealer':
     case 'enchantress':
     case 'force_staff':
       if (at === 0) return pose(actor, 'Choose an enemy hero.', enemyHeroes(state, actor, kind))
@@ -420,8 +428,18 @@ function questions(state: Game, resume: CastResume): Ask {
           }
           return pose(actor, 'Choose a team its owner controls.', choices)
         }
-        return pose(actor, 'Choose a team you own.', ownTeams(state, actor, true).filter((choice) => choice.id !== `team:${home?.team.id}` || resume.defId === 'lifestealer'))
+        return pose(actor, 'Choose a team you own.', ownTeams(state, actor, true).filter((choice) => choice.id !== `team:${home?.team.id}`))
       }
+    case 'lifestealer':
+      if (at === 0) return pose(actor, 'Choose an enemy hero.', enemyHeroes(state, actor, kind))
+      if (at === 1) return pose(actor, 'Choose a team you own.', ownTeams(state, actor, true))
+      if (at === 2) {
+        return pose(actor, 'Fire that ability now?', [
+          { id: 'yes', label: 'Fire it' },
+          { id: 'no', label: 'Leave it' },
+        ])
+      }
+      return ready()
     case 'blink':
       if (at === 0) return pose(actor, 'Choose a hero you own.', ownHeroes(state, actor, kind))
       if (at > 1) return ready()
@@ -614,7 +632,8 @@ function questions(state: Game, resume: CastResume): Ask {
     case 'storm_spirit':
       if (at > 0) return ready()
       return pose(actor, 'Discard any number of cards. Gain that many actions.', handCards(state, actor), 0, Math.max(1, state.players[actor].hand.length))
-    case 'clarity': {
+    case 'clarity':
+    case 'dragon_knight': {
       if (at > 0) return ready()
       const kinds = ['river', 'jungle', 'lane'].filter((id) => state.deck.some((card) => card.defId === id))
       return pose(actor, 'Search for a setting.', kinds.map((id) => ({ id: `type:${id}`, label: display(id).name, defId: id })))
@@ -714,9 +733,14 @@ function effect(state: Game, resume: CastResume): Game {
       if (!heroes[0]) return state
       return log(editFlag(state, heroes[0], (hero) => ({ ...hero, omni: true })), 'Guardian Angel watches.')
     case 'phoenix':
-    case 'shadow_shaman':
       if (heroes[0]) state = exileBoard(state, heroes[0])
       return exileBoard(state, resume.sourceUid)
+    case 'shadow_shaman':
+      if (!resume.picked.includes('yes')) return log(state, 'Shackles passes.')
+      if (heroes[0]) state = kill(state, heroes[0], 'Shackles')
+      return kill(state, resume.sourceUid, 'Shackles')
+    case 'dragon_knight':
+      return searchSetting(state, actor, resume.picked.find((id) => id.startsWith('type:'))?.slice(5) ?? '', 'Elder Dragon Form')
     case 'primal_beast':
     case 'juggernaut':
       return heroes.reduce((current, uid) => kill(current, uid, display(resume.defId).name), state)
@@ -797,7 +821,7 @@ function effect(state: Game, resume: CastResume): Game {
     case 'luna':
       return eclipse(state, actor, teams[0])
     case 'medusa':
-      return gaze(state, resume, teams[0])
+      return exileTeam(state, teams[0], 'Stone Gaze')
     case 'mirana':
       return arrow(state, resume)
     case 'monkey_king':
@@ -1155,7 +1179,23 @@ function moveOnto(state: Game, uid: string, destPlayer: PlayerId, destTeam: stri
 function infest(state: Game, resume: CastResume, uid: string | undefined, dest: string): Game {
   state = enqueue(state, resume.sourceUid, 'Infest', false, true, resume.actor)
   if (!uid) return state
-  return moveOnto(state, uid, resume.actor, dest)
+  state = moveOnto(state, uid, resume.actor, dest)
+  const landed = findHero(state, uid)
+  if (!landed || landed.hero.controller !== resume.actor) return state
+  if (!resume.picked.includes('yes')) return log(state, 'Infest leaves the stolen ability quiet.')
+  if (state.silence || landed.hero.muted) return log(state, 'The stolen ability does not fire.')
+  if (HERO_BY_ID[landed.hero.defId]?.timing === 'aura') return log(state, 'That hero has no ability to fire.')
+  state = cast(log(state, 'Infest fires the stolen ability this turn.'), {
+    kind: 'cast',
+    actor: resume.actor,
+    sourceUid: uid,
+    defId: landed.hero.defId,
+    picked: [],
+    steps: 0,
+  })
+  // Once-only this turn — no second voluntary cast after Infest's free fire.
+  if (findHero(state, uid)) state = editFlag(state, uid, (hero) => ({ ...hero, castTurn: state.turn }))
+  return state
 }
 
 function relocate(state: Game, resume: CastResume): Game {
@@ -1304,14 +1344,14 @@ function spray(state: Game, resume: CastResume): Game {
   return next
 }
 
-function gaze(state: Game, resume: CastResume, teamId: string | undefined): Game {
+function exileTeam(state: Game, teamId: string | undefined, cause: string): Game {
   if (!teamId) return state
-  const dest = teamById(state, teamId)
-  const self = findHero(state, resume.sourceUid)
-  if (!dest || !self) return state
-  const reason = enterReason(state, dest.team, 1, false)
-  if (reason) return log(state, reason)
-  return moveOnto(state, resume.sourceUid, dest.player.id, teamId)
+  const found = teamById(state, teamId)
+  if (!found) return state
+  return found.team.heroes.reduce(
+    (current, hero) => exileBoard(current, hero.uid),
+    log(state, `${cause} exiles the team.`),
+  )
 }
 
 function imprison(state: Game, resume: CastResume, uid: string | undefined): Game {
@@ -1564,12 +1604,12 @@ function regen(state: Game, actor: PlayerId): Game {
   return log(addHand({ ...state, grave: state.grave.slice(0, -1) }, actor, [card]), `${display(card.defId).name} returns.`)
 }
 
-function searchSetting(state: Game, actor: PlayerId, kind: string): Game {
+function searchSetting(state: Game, actor: PlayerId, kind: string, label = 'Clarity'): Game {
   const card = state.deck.find((entry) => entry.defId === kind)
-  if (!card) return log(state, 'Clarity finds nothing.')
+  if (!card) return log(state, `${label} finds nothing.`)
   const deck = state.deck.filter((entry) => entry.uid !== card.uid)
   const [shuffled, mixed] = shuffle(state, deck)
-  return log(addHand({ ...shuffled, deck: mixed }, actor, [card]), `Clarity takes ${display(card.defId).name}.`)
+  return log(addHand({ ...shuffled, deck: mixed }, actor, [card]), `${label} takes ${display(card.defId).name}.`)
 }
 
 function eul(state: Game, uid: string | undefined): Game {

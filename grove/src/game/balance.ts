@@ -1,9 +1,9 @@
 import { chooseAiAction, cycleStrat, DEFAULT_STRAT } from './ai.ts'
 import { display, HERO_BY_ID } from './catalog.ts'
 import { apply, createGame, type SeatSpec } from './engine.ts'
-import { scoreState, scoreTeam } from './flow.ts'
+import { attrsOf, heroWeight, scoreState, scoreTeam, standingOf } from './flow.ts'
 import { teamShape } from './scoring.ts'
-import type { Action, AiStrat, Attr, CardInst, CardKind, Game } from './types.ts'
+import type { Action, AiStrat, Attr, CardInst, CardKind, Game, Team } from './types.ts'
 
 export type PlayKind = CardKind | 'combo' | 'draw' | 'morph' | 'move' | 'other'
 export type RelBucket = 'hero' | 'setting' | 'loot' | 'other'
@@ -68,11 +68,19 @@ export interface ShapeCounts {
   coreTeams: number
   mixTeams: number
   openTeams: number
+  /** Teams with a same-attr stack of exactly 3 / 4 / 5+ (counts mixed boards too). */
   coreTeams3: number
   coreTeams4: number
   coreTeams5: number
   mixTeams3: number
   mixTeams4: number
+  /** Pure mono teams with exact hero count 3 / 4 / 5+. */
+  pureCore3: number
+  pureCore4: number
+  pureCore5: number
+  /** Mixed teams with 3 / 4 attrs and exactly that many heroes. */
+  pureMix3: number
+  pureMix4: number
   coreSettings: number
   mixSettings: number
   coreTeamPoints: number
@@ -82,6 +90,13 @@ export interface ShapeCounts {
   coreTeamPoints5: number
   mixTeamPoints3: number
   mixTeamPoints4: number
+  coreTeamHeroes: number
+  mixTeamHeroes: number
+  coreTeamHeroes3: number
+  coreTeamHeroes4: number
+  coreTeamHeroes5: number
+  mixTeamHeroes3: number
+  mixTeamHeroes4: number
   coreSettingPoints: number
   mixSettingPoints: number
 }
@@ -125,6 +140,7 @@ export interface StratBalanceRow {
   wins: number
   finishes: number
   avgScore: number
+  avgStanding: number
   avgSelfSwing: number
   avgRelSwing: number
   plays: number
@@ -146,6 +162,10 @@ export interface ShapeCompareRow {
   avgCount: number
   totalPoints: number
   avgPoints: number
+  /** Pure exact-size instances (mono core, or mix attrs with matching hero count). */
+  pureCount: number
+  /** Average points per hero/card in the counted set. */
+  avgPtsPerCard: number
 }
 
 export interface EventStatRow {
@@ -216,6 +236,11 @@ const EMPTY_SHAPES = (): ShapeCounts => ({
   coreTeams5: 0,
   mixTeams3: 0,
   mixTeams4: 0,
+  pureCore3: 0,
+  pureCore4: 0,
+  pureCore5: 0,
+  pureMix3: 0,
+  pureMix4: 0,
   coreSettings: 0,
   mixSettings: 0,
   coreTeamPoints: 0,
@@ -225,6 +250,13 @@ const EMPTY_SHAPES = (): ShapeCounts => ({
   coreTeamPoints5: 0,
   mixTeamPoints3: 0,
   mixTeamPoints4: 0,
+  coreTeamHeroes: 0,
+  mixTeamHeroes: 0,
+  coreTeamHeroes3: 0,
+  coreTeamHeroes4: 0,
+  coreTeamHeroes5: 0,
+  mixTeamHeroes3: 0,
+  mixTeamHeroes4: 0,
   coreSettingPoints: 0,
   mixSettingPoints: 0,
 })
@@ -464,7 +496,7 @@ export function summarizeReports(reports: MatchReport[], filter: StratFilter = A
   const attrMap = new Map<Attr | 'none', { plays: number; actor: number; relative: number }>()
   const ptsByTurn = new Map<number, number[]>()
   const cardsByTurn = new Map<number, number[]>()
-  const stratMap = new Map<AiStrat, { seats: number; wins: number; finishes: number; score: number; actor: number; relative: number; plays: number }>()
+  const stratMap = new Map<AiStrat, { seats: number; wins: number; finishes: number; score: number; standing: number; actor: number; relative: number; plays: number }>()
   const eventTotals = EMPTY_EVENTS()
   const shapeTotals = EMPTY_SHAPES()
   const filteringPlays = filter.strats.length > 0
@@ -475,7 +507,7 @@ export function summarizeReports(reports: MatchReport[], filter: StratFilter = A
       if (!allowsStrat(filter, strat)) continue
       addEvents(eventTotals, report.seatEvents[seat] ?? EMPTY_EVENTS())
       addShapes(shapeTotals, report.seatShapes[seat] ?? EMPTY_SHAPES())
-      const row = stratMap.get(strat) ?? { seats: 0, wins: 0, finishes: 0, score: 0, actor: 0, relative: 0, plays: 0 }
+      const row = stratMap.get(strat) ?? { seats: 0, wins: 0, finishes: 0, score: 0, standing: 0, actor: 0, relative: 0, plays: 0 }
       row.seats += 1
       stratMap.set(strat, row)
     }
@@ -483,9 +515,10 @@ export function summarizeReports(reports: MatchReport[], filter: StratFilter = A
       for (let index = 0; index < report.seatStrats.length; index += 1) {
         const strat = report.seatStrats[index]!
         if (!allowsStrat(filter, strat)) continue
-        const row = stratMap.get(strat) ?? { seats: 0, wins: 0, finishes: 0, score: 0, actor: 0, relative: 0, plays: 0 }
+        const row = stratMap.get(strat) ?? { seats: 0, wins: 0, finishes: 0, score: 0, standing: 0, actor: 0, relative: 0, plays: 0 }
         row.finishes += 1
         row.score += report.finalScores[index] ?? 0
+        row.standing += standingOf(report.finalScores, index)
         if (report.winner === index) row.wins += 1
         stratMap.set(strat, row)
       }
@@ -527,7 +560,7 @@ export function summarizeReports(reports: MatchReport[], filter: StratFilter = A
         attrMap.set(attrKey, attrRow)
       }
 
-      const stratRow = stratMap.get(swing.actorStrat) ?? { seats: 0, wins: 0, finishes: 0, score: 0, actor: 0, relative: 0, plays: 0 }
+      const stratRow = stratMap.get(swing.actorStrat) ?? { seats: 0, wins: 0, finishes: 0, score: 0, standing: 0, actor: 0, relative: 0, plays: 0 }
       stratRow.plays += 1
       stratRow.actor += swing.actorSwing
       stratRow.relative += swing.relativeSwing
@@ -606,21 +639,22 @@ export function summarizeReports(reports: MatchReport[], filter: StratFilter = A
         wins: row.wins,
         finishes: row.finishes,
         avgScore: row.finishes ? row.score / row.finishes : 0,
+        avgStanding: row.finishes ? row.standing / row.finishes : 0,
         avgSelfSwing: row.plays ? row.actor / row.plays : 0,
         avgRelSwing: row.plays ? row.relative / row.plays : 0,
         plays: row.plays,
       }))
-      .sort((a, b) => b.wins - a.wins || b.avgScore - a.avgScore),
+      .sort((a, b) => b.wins - a.wins || a.avgStanding - b.avgStanding || b.avgScore - a.avgScore),
     shapeCompare: [
-      shapeRow('core_team', 'Core team', shapeTotals.coreTeams, shapeTotals.coreTeamPoints, matchCount),
-      shapeRow('core_team_3', 'Core team ×3', shapeTotals.coreTeams3, shapeTotals.coreTeamPoints3, matchCount),
-      shapeRow('core_team_4', 'Core team ×4', shapeTotals.coreTeams4, shapeTotals.coreTeamPoints4, matchCount),
-      shapeRow('core_team_5', 'Core team ×5', shapeTotals.coreTeams5, shapeTotals.coreTeamPoints5, matchCount),
-      shapeRow('mix_team', 'Mixed team', shapeTotals.mixTeams, shapeTotals.mixTeamPoints, matchCount),
-      shapeRow('mix_team_3', 'Mixed · 3 attrs', shapeTotals.mixTeams3, shapeTotals.mixTeamPoints3, matchCount),
-      shapeRow('mix_team_4', 'Mixed · 4 attrs', shapeTotals.mixTeams4, shapeTotals.mixTeamPoints4, matchCount),
-      shapeRow('core_setting', 'Core setting', shapeTotals.coreSettings, shapeTotals.coreSettingPoints, matchCount),
-      shapeRow('mix_setting', 'Mixed setting', shapeTotals.mixSettings, shapeTotals.mixSettingPoints, matchCount),
+      shapeRow('core_team', 'Core team', shapeTotals.coreTeams, shapeTotals.coreTeamPoints, shapeTotals.coreTeamHeroes, shapeTotals.pureCore3 + shapeTotals.pureCore4 + shapeTotals.pureCore5, matchCount),
+      shapeRow('core_team_3', 'Core ×3 same attr', shapeTotals.coreTeams3, shapeTotals.coreTeamPoints3, shapeTotals.coreTeamHeroes3, shapeTotals.pureCore3, matchCount),
+      shapeRow('core_team_4', 'Core ×4 same attr', shapeTotals.coreTeams4, shapeTotals.coreTeamPoints4, shapeTotals.coreTeamHeroes4, shapeTotals.pureCore4, matchCount),
+      shapeRow('core_team_5', 'Core ×5 same attr', shapeTotals.coreTeams5, shapeTotals.coreTeamPoints5, shapeTotals.coreTeamHeroes5, shapeTotals.pureCore5, matchCount),
+      shapeRow('mix_team', 'Mixed team', shapeTotals.mixTeams, shapeTotals.mixTeamPoints, shapeTotals.mixTeamHeroes, shapeTotals.pureMix3 + shapeTotals.pureMix4, matchCount),
+      shapeRow('mix_team_3', 'Mixed · 3 attrs', shapeTotals.mixTeams3, shapeTotals.mixTeamPoints3, shapeTotals.mixTeamHeroes3, shapeTotals.pureMix3, matchCount),
+      shapeRow('mix_team_4', 'Mixed · 4 attrs', shapeTotals.mixTeams4, shapeTotals.mixTeamPoints4, shapeTotals.mixTeamHeroes4, shapeTotals.pureMix4, matchCount),
+      shapeRow('core_setting', 'Core setting', shapeTotals.coreSettings, shapeTotals.coreSettingPoints, shapeTotals.coreSettings * 3, shapeTotals.coreSettings, matchCount),
+      shapeRow('mix_setting', 'Mixed setting', shapeTotals.mixSettings, shapeTotals.mixSettingPoints, shapeTotals.mixSettings * 3, shapeTotals.mixSettings, matchCount),
     ],
     eventStats: [
       eventRow('drawDeck', 'Draw from deck', eventTotals.drawDeck, matchCount),
@@ -663,6 +697,8 @@ function shapeRow(
   label: string,
   count: number,
   points: number,
+  cards: number,
+  pureCount: number,
   matches: number,
 ): ShapeCompareRow {
   return {
@@ -672,6 +708,8 @@ function shapeRow(
     avgCount: count / matches,
     totalPoints: points,
     avgPoints: count ? points / count : 0,
+    pureCount,
+    avgPtsPerCard: cards ? points / cards : 0,
   }
 }
 
@@ -771,6 +809,18 @@ function mixAttrCount(why: string): number {
   return 0
 }
 
+/** Largest mono-attribute stack on the team (Meepo counts as 2). Multi-attr heroes do not pad a stack. */
+function maxSameAttrStackFor(game: Game, team: Team): number {
+  const tallies: Record<string, number> = { STR: 0, AGI: 0, INT: 0, UNI: 0 }
+  for (const hero of team.heroes) {
+    const attrs = attrsOf(game, hero)
+    if (attrs.length !== 1) continue
+    const attr = attrs[0]!
+    tallies[attr] = (tallies[attr] ?? 0) + heroWeight(hero)
+  }
+  return Math.max(0, tallies.STR ?? 0, tallies.AGI ?? 0, tallies.INT ?? 0, tallies.UNI ?? 0)
+}
+
 function shapeCounts(game: Game): ShapeCounts {
   const shapes = EMPTY_SHAPES()
   for (const player of game.players) addShapes(shapes, shapeCountsFor(game, player.id))
@@ -784,31 +834,46 @@ function shapeCountsFor(game: Game, playerId: number): ShapeCounts {
   for (const team of player.teams) {
     const scored = scoreTeam(game, team)
     const shape = teamShape(scored.why)
-    // Core tiers are by hero count; mix tiers are by attribute count (+2 / +4).
     const size = team.heroes.reduce((sum, hero) => sum + (hero.defId === 'meepo' ? 2 : 1), 0)
     const mixAttrs = mixAttrCount(scored.why)
+    const sameAttr = maxSameAttrStackFor(game, team)
+
+    // Inclusive same-attr stacks — a 5-hero mixed board with 4 STR still counts as Core ×4.
+    if (sameAttr === 3) {
+      shapes.coreTeams3 += 1
+      shapes.coreTeamPoints3 += scored.points
+      shapes.coreTeamHeroes3 += size
+    } else if (sameAttr === 4) {
+      shapes.coreTeams4 += 1
+      shapes.coreTeamPoints4 += scored.points
+      shapes.coreTeamHeroes4 += size
+    } else if (sameAttr >= 5) {
+      shapes.coreTeams5 += 1
+      shapes.coreTeamPoints5 += scored.points
+      shapes.coreTeamHeroes5 += size
+    }
+
     if (shape === 'core') {
       shapes.coreTeams += 1
       shapes.coreTeamPoints += scored.points
-      if (size === 3) {
-        shapes.coreTeams3 += 1
-        shapes.coreTeamPoints3 += scored.points
-      } else if (size === 4) {
-        shapes.coreTeams4 += 1
-        shapes.coreTeamPoints4 += scored.points
-      } else if (size >= 5) {
-        shapes.coreTeams5 += 1
-        shapes.coreTeamPoints5 += scored.points
-      }
+      shapes.coreTeamHeroes += size
+      if (size === 3) shapes.pureCore3 += 1
+      else if (size === 4) shapes.pureCore4 += 1
+      else if (size >= 5) shapes.pureCore5 += 1
     } else if (shape === 'mix') {
       shapes.mixTeams += 1
       shapes.mixTeamPoints += scored.points
+      shapes.mixTeamHeroes += size
       if (mixAttrs === 3) {
         shapes.mixTeams3 += 1
         shapes.mixTeamPoints3 += scored.points
+        shapes.mixTeamHeroes3 += size
+        if (size === 3) shapes.pureMix3 += 1
       } else if (mixAttrs >= 4) {
         shapes.mixTeams4 += 1
         shapes.mixTeamPoints4 += scored.points
+        shapes.mixTeamHeroes4 += size
+        if (size === 4) shapes.pureMix4 += 1
       }
     } else {
       shapes.openTeams += 1
