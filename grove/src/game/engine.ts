@@ -42,9 +42,11 @@ import {
   toGrave,
   viperDue,
 } from './flow.ts'
-import type { Action, CardInst, CardKind, Game, Player, PlayerId, Resume } from './types.ts'
+import type { Action, AiStrat, CardInst, CardKind, Game, Player, PlayerId, Resume } from './types.ts'
 
-export type SeatSpec = { name: string; ai: boolean }
+export type SeatSpec = { name: string; ai: boolean; strat?: AiStrat }
+
+const DEFAULT_STRAT: AiStrat = 'balanced'
 
 export function createGame(opts: {
   seed?: number
@@ -117,10 +119,11 @@ function fillPile(state: Game, pile: 'runes' | 'neutrals' | 'towers'): Game {
 }
 
 function blank(seed: number, mode: 'hotseat' | 'ai', seats: SeatSpec[]): Game {
-  const player = (id: PlayerId, name: string, ai: boolean): Player => ({
+  const player = (id: PlayerId, name: string, ai: boolean, strat: AiStrat): Player => ({
     id,
     name,
     ai,
+    strat: ai ? strat : DEFAULT_STRAT,
     hand: [],
     teams: [],
     combos: [],
@@ -144,7 +147,7 @@ function blank(seed: number, mode: 'hotseat' | 'ai', seats: SeatSpec[]): Game {
     runes: [],
     neutrals: [],
     towers: [],
-    players: seats.map((seat, id) => player(id, seat.name, seat.ai)),
+    players: seats.map((seat, id) => player(id, seat.name, seat.ai, seat.strat ?? DEFAULT_STRAT)),
     active: 0,
     turn: 1,
     log: [],

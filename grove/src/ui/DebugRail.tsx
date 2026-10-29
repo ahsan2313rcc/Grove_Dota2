@@ -1,4 +1,5 @@
-import type { BalanceSummary, CardBalanceRow, MatchReport } from '../game/balance.ts'
+import { AI_STRATS, stratLabel } from '../game/ai.ts'
+import type { BalanceSummary, CardBalanceRow, MatchReport, StratFilter, StratLineup } from '../game/balance.ts'
 import { display } from '../game/catalog.ts'
 import { scoreState, scoreTeam } from '../game/flow.ts'
 import { teamShape } from '../game/scoring.ts'
@@ -27,12 +28,16 @@ export function DebugRail({
   runningBatch,
   summary,
   reports,
+  stratFilter,
+  stratLineup,
   onSpeed,
   onStep,
   onView,
   onBatchSize,
   onFocus,
   onRunBatch,
+  onStratFilter,
+  onStratLineup,
 }: {
   game: Game | null
   seed: number
@@ -46,12 +51,16 @@ export function DebugRail({
   runningBatch: boolean
   summary: BalanceSummary
   reports: MatchReport[]
+  stratFilter: StratFilter
+  stratLineup: StratLineup
   onSpeed: (speed: DebugSpeed) => void
   onStep: () => void
   onView: (view: DebugView) => void
   onBatchSize: (size: number) => void
   onFocus: (index: number) => void
   onRunBatch: () => void
+  onStratFilter: (filter: StratFilter) => void
+  onStratLineup: (lineup: StratLineup) => void
 }) {
   const active = game?.players[game.active]
 
@@ -110,6 +119,20 @@ export function DebugRail({
               onChange={(event) => onBatchSize(Math.max(1, Math.min(1024, Number(event.target.value) || 1)))}
             />
           </label>
+          <label>
+            Batch lineup
+            <select
+              data-testid="debug-strat-lineup"
+              value={stratLineup}
+              onChange={(event) => onStratLineup(event.target.value as StratLineup)}
+              disabled={runningBatch}
+            >
+              <option value="mix">Mixture of strats</option>
+              {AI_STRATS.map((entry) => (
+                <option key={entry.id} value={entry.id}>All {entry.label}</option>
+              ))}
+            </select>
+          </label>
           <button type="button" className="primary" data-testid="debug-run-batch" disabled={runningBatch} onClick={onRunBatch}>
             {runningBatch ? 'Running…' : `Run ${batchSize} in background`}
           </button>
@@ -128,6 +151,31 @@ export function DebugRail({
       </div>
 
       <div className="debug-block">
+        <h3>Strat filter</h3>
+        <label className="debug-focus">
+          Graphs & tables
+          <select
+            data-testid="debug-strat-filter"
+            value={stratFilter}
+            onChange={(event) => onStratFilter(event.target.value as StratFilter)}
+          >
+            <option value="all">All strats</option>
+            <option value="mix">Mixture matches only</option>
+            {AI_STRATS.map((entry) => (
+              <option key={entry.id} value={entry.id}>{entry.label} plays</option>
+            ))}
+          </select>
+        </label>
+        <p className="quiet debug-legend">
+          {stratFilter === 'all'
+            ? 'Showing every traced play.'
+            : stratFilter === 'mix'
+              ? 'Only matches where seats used more than one strat.'
+              : `Only plays made by ${stratLabel(stratFilter)}.`}
+        </p>
+      </div>
+
+      <div className="debug-block">
         <h3>Summary</h3>
         <dl className="debug-piles">
           <div><dt>Matches</dt><dd>{summary.finished}/{summary.matches}</dd></div>
@@ -135,6 +183,30 @@ export function DebugRail({
           <div><dt>Avg spread</dt><dd>{fmt(summary.avgFinalSpread)}</dd></div>
           <div><dt>Avg win</dt><dd>{fmt(summary.avgWinnerScore)}</dd></div>
         </dl>
+      </div>
+
+      <div className="debug-block">
+        <h3>By strat</h3>
+        {summary.byStrat.length === 0 ? (
+          <p className="quiet">No strat samples yet.</p>
+        ) : (
+          <table className="debug-table">
+            <thead>
+              <tr><th>Strat</th><th>W</th><th>Avg</th><th>Self</th><th>Rel</th></tr>
+            </thead>
+            <tbody>
+              {summary.byStrat.map((row) => (
+                <tr key={row.strat}>
+                  <td><strong>{stratLabel(row.strat)}</strong><small>{row.plays} plays</small></td>
+                  <td>{row.wins}/{row.finishes}</td>
+                  <td>{fmt(row.avgScore)}</td>
+                  <td>{signed(row.avgSelfSwing)}</td>
+                  <td>{signed(row.avgRelSwing)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
       </div>
 
       <div className="debug-block">
@@ -191,7 +263,10 @@ export function DebugRail({
                       <strong>{player.name}</strong>
                       <span>{scored.total}</span>
                     </div>
-                    <small>{scored.teams}+{scored.settings} · hand {player.hand.length} · {shapes.core}c/{shapes.mix}m</small>
+                    <small>
+                      {player.ai ? `${stratLabel(player.strat)} · ` : ''}
+                      {scored.teams}+{scored.settings} · hand {player.hand.length} · {shapes.core}c/{shapes.mix}m
+                    </small>
                   </li>
                 )
               })}
@@ -227,6 +302,7 @@ export function DebugRail({
             {reports.slice(-12).map((report) => (
               <li key={report.seed}>
                 seed {report.seed}: {report.over ? report.finalScores.join('–') : 'open'} · T{report.turns}
+                <small> · {report.mixture ? 'mix' : stratLabel(report.seatStrats[0] ?? 'balanced')}</small>
               </li>
             ))}
           </ul>

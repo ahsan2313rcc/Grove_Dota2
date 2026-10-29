@@ -4,6 +4,7 @@ export type Range = 'Melee' | 'Ranged'
 export type SettingKind = 'river' | 'jungle' | 'lane'
 export type CardKind = 'hero' | 'item' | 'setting' | 'rune' | 'neutral' | 'tower'
 export type Timing = 'cast' | 'aura' | 'instant'
+export type AiStrat = 'balanced' | 'tempo' | 'architect' | 'spite'
 
 export interface CardInst {
   uid: string
@@ -66,6 +67,7 @@ export interface Player {
   id: PlayerId
   name: string
   ai: boolean
+  strat: AiStrat
   hand: CardInst[]
   teams: Team[]
   combos: Combo[]

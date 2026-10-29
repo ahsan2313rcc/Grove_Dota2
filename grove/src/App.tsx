@@ -1,9 +1,17 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { chooseAiAction } from './game/ai.ts'
-import { BalanceTracker, runMatchFast, summarizeReports, type MatchReport } from './game/balance.ts'
+import { AI_STRATS, chooseAiAction, cycleStrat, DEFAULT_STRAT, isAiStrat } from './game/ai.ts'
+import {
+  aiRoster,
+  BalanceTracker,
+  runMatchFast,
+  summarizeReports,
+  type MatchReport,
+  type StratFilter,
+  type StratLineup,
+} from './game/balance.ts'
 import { apply, createGame, type SeatSpec } from './game/engine.ts'
 import { log } from './game/flow.ts'
-import type { Action, Game } from './game/types.ts'
+import type { Action, AiStrat, Game } from './game/types.ts'
 import { Glossary } from './ui/Glossary.tsx'
 import { type DebugSpeed, type DebugView } from './ui/DebugRail.tsx'
 import { Table } from './ui/Table.tsx'
@@ -13,7 +21,7 @@ export type SeatCount = 2 | 3 | 4 | 5 | 6 | 7 | 8
 const SEAT_OPTIONS: SeatCount[] = [2, 3, 4, 5, 6, 7, 8]
 const BASE_TICK_MS = 420
 
-type LobbySeat = { name: string; kind: 'human' | 'ai' }
+type LobbySeat = { name: string; kind: 'human' | 'ai'; strat: AiStrat }
 
 type LiveRun = {
   seed: number
@@ -24,9 +32,9 @@ type LiveRun = {
 
 function defaultSeats(count: SeatCount): LobbySeat[] {
   return Array.from({ length: count }, (_, index) => {
-    if (index === 0) return { name: 'You', kind: 'human' as const }
-    if (index === 1) return { name: 'The Grove', kind: 'ai' as const }
-    return { name: `Player ${index + 1}`, kind: 'ai' as const }
+    if (index === 0) return { name: 'You', kind: 'human' as const, strat: DEFAULT_STRAT }
+    if (index === 1) return { name: 'The Grove', kind: 'ai' as const, strat: 'balanced' }
+    return { name: `Player ${index + 1}`, kind: 'ai' as const, strat: cycleStrat(index) }
   })
 }
 
@@ -40,15 +48,8 @@ function parseSeedInput(raw: string): { seed: number; debug: boolean } | null {
   return null
 }
 
-function aiRoster(count: number): SeatSpec[] {
-  return Array.from({ length: count }, (_, index) => ({
-    name: index === 0 ? 'AI 1' : index === 1 ? 'The Grove' : `AI ${index + 1}`,
-    ai: true,
-  }))
-}
-
-function makeRun(seed: number, seats: number): LiveRun {
-  const game = createGame({ seed, seats: aiRoster(seats) })
+function makeRun(seed: number, seats: number, lineup: StratLineup = 'mix'): LiveRun {
+  const game = createGame({ seed, seats: aiRoster(seats, lineup, seed) })
   const tracker = new BalanceTracker(seed)
   tracker.start(game)
   return { seed, game, tracker, stuck: false }
@@ -128,6 +129,8 @@ export default function App() {
   const [runningBatch, setRunningBatch] = useState(false)
   const [match, setMatch] = useState(boot ? 1 : 0)
   const [batchDone, setBatchDone] = useState(0)
+  const [stratFilter, setStratFilter] = useState<StratFilter>('all')
+  const [stratLineup, setStratLineup] = useState<StratLineup>('mix')
   const batchToken = useRef(0)
 
   const live = runs[Math.min(focus, Math.max(0, runs.length - 1))] ?? null
@@ -136,8 +139,8 @@ export default function App() {
 
   const summary = useMemo(() => {
     const liveReports = runs.map((run) => run.tracker.snapshot(run.game))
-    return summarizeReports([...reports, ...liveReports])
-  }, [reports, runs])
+    return summarizeReports([...reports, ...liveReports], stratFilter)
+  }, [reports, runs, stratFilter])
 
   const finishedCount = reports.filter((report) => report.over).length + runs.filter((run) => run.game.over).length
   const runCount = runningBatch ? batchSize : Math.max(runs.length, 1)
@@ -222,6 +225,8 @@ export default function App() {
     setFocus(0)
     setRunningBatch(false)
     setBatchDone(0)
+    setStratFilter('all')
+    setStratLineup('mix')
   }
 
   async function runBatch() {
@@ -232,12 +237,13 @@ export default function App() {
     setBatchDone(0)
     const baseSeed = seed
     const seats = seatCount
+    const lineup = stratLineup
     const total = Math.max(1, Math.min(1024, batchSize))
     const chunk: MatchReport[] = []
     const yieldEvery = total >= 64 ? 8 : 1
     for (let index = 0; index < total; index += 1) {
       if (batchToken.current !== token) return
-      const report = runMatchFast(baseSeed + index, seats)
+      const report = runMatchFast(baseSeed + index, seats, lineup)
       chunk.push(report)
       if (chunk.length >= yieldEvery || index === total - 1) {
         const batch = chunk.splice(0, chunk.length)
@@ -254,7 +260,7 @@ export default function App() {
 
   function startWatchFromStats() {
     if (runningBatch) return
-    const created = [makeRun(seed, seatCount)]
+    const created = [makeRun(seed, seatCount, stratLineup)]
     setRuns(created)
     setFocus(0)
     setDebugView('watch')
@@ -270,7 +276,7 @@ export default function App() {
     setDebugView(view)
   }
 
-  function startDebugSession(nextSeed: number, seats: SeatCount, parallel: number, background: boolean) {
+  function startDebugSession(nextSeed: number, seats: SeatCount, parallel: number, background: boolean, lineup: StratLineup) {
     setMatch((value) => value + 1)
     setSeed(nextSeed)
     setSeatCount(seats)
@@ -279,6 +285,8 @@ export default function App() {
     setFocus(0)
     setReports([])
     setBatchDone(0)
+    setStratLineup(lineup)
+    setStratFilter(lineup === 'mix' ? 'all' : lineup)
     if (background) {
       const total = Math.max(1, Math.min(1024, parallel))
       setRuns([])
@@ -292,7 +300,7 @@ export default function App() {
           const yieldEvery = total >= 64 ? 8 : 1
           for (let index = 0; index < total; index += 1) {
             if (batchToken.current !== token) return
-            chunk.push(runMatchFast(nextSeed + index, seats))
+            chunk.push(runMatchFast(nextSeed + index, seats, lineup))
             if (chunk.length >= yieldEvery || index === total - 1) {
               const batch = chunk.splice(0, chunk.length)
               setBatchDone(index + 1)
@@ -308,7 +316,7 @@ export default function App() {
     }
     const count = Math.max(1, Math.min(8, parallel))
     setBatchSize(Math.max(count, 4))
-    const created = Array.from({ length: count }, (_, index) => makeRun(nextSeed + index, seats))
+    const created = Array.from({ length: count }, (_, index) => makeRun(nextSeed + index, seats, lineup))
     setDebugView('watch')
     setRuns(created)
   }
@@ -316,9 +324,9 @@ export default function App() {
   if (runs.length === 0 && !debug) {
     return (
       <Lobby
-        onStart={(next, nextSeed, nextDebug, seats, parallel, background) => {
+        onStart={(next, nextSeed, nextDebug, seats, parallel, background, lineup) => {
           if (nextDebug) {
-            startDebugSession(nextSeed, seats, parallel, background)
+            startDebugSession(nextSeed, seats, parallel, background, lineup)
             return
           }
           setMatch((value) => value + 1)
@@ -351,12 +359,16 @@ export default function App() {
         debugRunningBatch={runningBatch}
         debugSummary={summary}
         debugReports={reports}
+        debugStratFilter={stratFilter}
+        debugStratLineup={stratLineup}
         onDebugSpeed={setDebugSpeed}
         onDebugStep={stepDebug}
         onDebugView={onDebugView}
         onDebugBatchSize={setBatchSize}
         onDebugFocus={setFocus}
         onDebugRunBatch={runBatch}
+        onDebugStratFilter={setStratFilter}
+        onDebugStratLineup={setStratLineup}
         onAction={send}
         onLobby={leave}
       />
@@ -378,13 +390,22 @@ export default function App() {
 function Lobby({
   onStart,
 }: {
-  onStart: (game: Game, seed: number, debug: boolean, seats: SeatCount, parallel: number, background: boolean) => void
+  onStart: (
+    game: Game,
+    seed: number,
+    debug: boolean,
+    seats: SeatCount,
+    parallel: number,
+    background: boolean,
+    lineup: StratLineup,
+  ) => void
 }) {
   const [seedText, setSeedText] = useState('')
   const [count, setCount] = useState<SeatCount>(2)
   const [seats, setSeats] = useState<LobbySeat[]>(() => defaultSeats(2))
   const [parallel, setParallel] = useState(1)
   const [background, setBackground] = useState(false)
+  const [lineup, setLineup] = useState<StratLineup>('mix')
   const [fault, setFault] = useState('')
   const [glossary, setGlossary] = useState(false)
 
@@ -407,9 +428,14 @@ function Lobby({
     const roster: SeatSpec[] = seats.map((seat, index) => ({
       name: seat.name.trim() || (debug || seat.kind === 'ai' ? (index === 1 ? 'The Grove' : `AI ${index + 1}`) : `Player ${index + 1}`),
       ai: debug ? true : seat.kind === 'ai',
+      strat: debug
+        ? (lineup === 'mix' ? cycleStrat(index) : lineup)
+        : seat.kind === 'ai'
+          ? seat.strat
+          : DEFAULT_STRAT,
     }))
     try {
-      onStart(createGame({ seed, seats: roster }), seed, debug, count, debug ? parallel : 1, debug && background)
+      onStart(createGame({ seed, seats: roster }), seed, debug, count, debug ? parallel : 1, debug && background, lineup)
     } catch (error) {
       setFault(error instanceof Error ? error.message : 'The deck could not be dealt.')
     }
@@ -462,9 +488,31 @@ function Lobby({
                   AI
                 </button>
               </div>
+              {seat.kind === 'ai' && !debugPreview ? (
+                <label className="strat-pick">
+                  Strat
+                  <select
+                    data-testid={`strat-${index}`}
+                    value={seat.strat}
+                    onChange={(event) => {
+                      const value = event.target.value
+                      if (isAiStrat(value)) patchSeat(index, { strat: value })
+                    }}
+                  >
+                    {AI_STRATS.map((entry) => (
+                      <option key={entry.id} value={entry.id}>{entry.label}</option>
+                    ))}
+                  </select>
+                </label>
+              ) : null}
             </li>
           ))}
         </ul>
+        {!debugPreview ? (
+          <p className="quiet strat-help">
+            AI seats pick a personality: {AI_STRATS.map((entry) => entry.label).join(', ')}.
+          </p>
+        ) : null}
         {debugPreview ? (
           <fieldset className="debug-lobby">
             <legend>Debug runs</legend>
@@ -478,6 +526,19 @@ function Lobby({
                 value={parallel}
                 onChange={(event) => setParallel(Math.max(1, Math.min(background ? 1024 : 8, Number(event.target.value) || 1)))}
               />
+            </label>
+            <label>
+              Strat lineup
+              <select
+                data-testid="lobby-strat-lineup"
+                value={lineup}
+                onChange={(event) => setLineup(event.target.value as StratLineup)}
+              >
+                <option value="mix">Mixture of strats</option>
+                {AI_STRATS.map((entry) => (
+                  <option key={entry.id} value={entry.id}>All {entry.label}</option>
+                ))}
+              </select>
             </label>
             <label className="check-row">
               <input
@@ -494,7 +555,7 @@ function Lobby({
             </label>
             <p className="quiet">
               {background
-                ? `Simulates up to ${parallel} AI matches (max 1024) and opens the balance tables.`
+                ? `Simulates up to ${parallel} AI matches (max 1024) with ${lineup === 'mix' ? 'mixed personalities' : `all ${lineup}`}.`
                 : parallel > 1
                   ? `Watches game 1 of ${parallel} (max 8 live). Switch focus in the debug rail.`
                   : 'AI seats auto-play. Balance swings accumulate in the debug rail.'}

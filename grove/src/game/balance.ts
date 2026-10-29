@@ -1,15 +1,17 @@
-import { chooseAiAction } from './ai.ts'
+import { chooseAiAction, cycleStrat, DEFAULT_STRAT } from './ai.ts'
 import { display } from './catalog.ts'
-import { apply, createGame } from './engine.ts'
+import { apply, createGame, type SeatSpec } from './engine.ts'
 import { scoreState } from './flow.ts'
-import type { Action, CardKind, Game } from './types.ts'
+import type { Action, AiStrat, CardKind, Game } from './types.ts'
 
 export type PlayKind = CardKind | 'combo' | 'draw' | 'morph' | 'move' | 'other'
+export type StratFilter = 'all' | 'mix' | AiStrat
 
 export interface SwingEvent {
   seed: number
   turn: number
   actor: number
+  actorStrat: AiStrat
   defId: string
   name: string
   kind: PlayKind
@@ -22,6 +24,7 @@ export interface RoundEvent {
   seed: number
   turn: number
   actor: number
+  actorStrat: AiStrat
   cardsPlayed: number
   pointsDelta: number
   endScore: number
@@ -30,10 +33,13 @@ export interface RoundEvent {
 export interface MatchReport {
   seed: number
   seats: number
+  seatStrats: AiStrat[]
+  mixture: boolean
   turns: number
   actions: number
   finalScores: number[]
   winner: number | null
+  winnerStrat: AiStrat | null
   swings: SwingEvent[]
   rounds: RoundEvent[]
   over: boolean
@@ -50,10 +56,22 @@ export interface CardBalanceRow {
   totalActorSwing: number
 }
 
+export interface StratBalanceRow {
+  strat: AiStrat
+  seats: number
+  wins: number
+  finishes: number
+  avgScore: number
+  avgSelfSwing: number
+  avgRelSwing: number
+  plays: number
+}
+
 export interface BalanceSummary {
   matches: number
   finished: number
   seats: number
+  filter: StratFilter
   avgTurns: number
   avgFinalSpread: number
   avgWinnerScore: number
@@ -62,6 +80,7 @@ export interface BalanceSummary {
   avgPtsByTurn: number[]
   avgCardsByTurn: number[]
   kindSwing: { kind: PlayKind; plays: number; avgActorSwing: number; avgRelativeSwing: number }[]
+  byStrat: StratBalanceRow[]
 }
 
 export class BalanceTracker {
@@ -139,6 +158,7 @@ export class BalanceTracker {
     const scores = totals(game)
     const best = Math.max(...scores, 0)
     const winners = scores.map((score, index) => (score === best ? index : -1)).filter((id) => id >= 0)
+    const seatStrats = game.players.map((player) => player.strat ?? DEFAULT_STRAT)
     const rounds = this.rounds.slice()
     if (includeOpenRound && this.started) {
       const start = this.turnStartScores[this.turnActor] ?? 0
@@ -147,6 +167,7 @@ export class BalanceTracker {
         seed: this.seed,
         turn: this.turnNo,
         actor: this.turnActor,
+        actorStrat: seatStrats[this.turnActor] ?? DEFAULT_STRAT,
         cardsPlayed: this.turnCards,
         pointsDelta: end - start,
         endScore: end,
@@ -155,10 +176,13 @@ export class BalanceTracker {
     return {
       seed: this.seed,
       seats: game.players.length,
+      seatStrats,
+      mixture: new Set(seatStrats).size > 1,
       turns: game.turn,
       actions: this.actions,
       finalScores: scores,
       winner: winners.length === 1 ? winners[0]! : null,
+      winnerStrat: winners.length === 1 ? (seatStrats[winners[0]!] ?? null) : null,
       swings: this.swings.slice(),
       rounds,
       over: !!game.over,
@@ -174,6 +198,7 @@ export class BalanceTracker {
       seed: this.seed,
       turn: this.turnNo,
       actor: this.turnActor,
+      actorStrat: game.players[this.turnActor]?.strat ?? DEFAULT_STRAT,
       cardsPlayed: this.turnCards,
       pointsDelta: end - start,
       endScore: end,
@@ -196,6 +221,7 @@ export class BalanceTracker {
       seed: this.seed,
       turn: before.turn,
       actor,
+      actorStrat: before.players[actor]?.strat ?? DEFAULT_STRAT,
       defId,
       name,
       kind: shownKind,
@@ -206,15 +232,38 @@ export class BalanceTracker {
   }
 }
 
-export function summarizeReports(reports: MatchReport[]): BalanceSummary {
-  const finished = reports.filter((report) => report.over)
+export function summarizeReports(reports: MatchReport[], filter: StratFilter = 'all'): BalanceSummary {
+  const scoped = reports.filter((report) => {
+    if (filter === 'all') return true
+    if (filter === 'mix') return report.mixture
+    return report.seatStrats.includes(filter)
+  })
+  const finished = scoped.filter((report) => report.over)
   const cardMap = new Map<string, { defId: string; name: string; kind: PlayKind; plays: number; actor: number; relative: number; abs: number }>()
   const kindMap = new Map<PlayKind, { plays: number; actor: number; relative: number }>()
   const ptsByTurn: number[][] = []
   const cardsByTurn: number[][] = []
+  const stratMap = new Map<AiStrat, { seats: number; wins: number; finishes: number; score: number; actor: number; relative: number; plays: number }>()
 
-  for (const report of reports) {
+  for (const report of scoped) {
+    for (const strat of report.seatStrats) {
+      const row = stratMap.get(strat) ?? { seats: 0, wins: 0, finishes: 0, score: 0, actor: 0, relative: 0, plays: 0 }
+      row.seats += 1
+      stratMap.set(strat, row)
+    }
+    if (report.over) {
+      for (let index = 0; index < report.seatStrats.length; index += 1) {
+        const strat = report.seatStrats[index]!
+        const row = stratMap.get(strat) ?? { seats: 0, wins: 0, finishes: 0, score: 0, actor: 0, relative: 0, plays: 0 }
+        row.finishes += 1
+        row.score += report.finalScores[index] ?? 0
+        if (report.winner === index) row.wins += 1
+        stratMap.set(strat, row)
+      }
+    }
+
     for (const swing of report.swings) {
+      if (filter !== 'all' && filter !== 'mix' && swing.actorStrat !== filter) continue
       const key = `${swing.kind}:${swing.defId}`
       const row = cardMap.get(key) ?? { defId: swing.defId, name: swing.name, kind: swing.kind, plays: 0, actor: 0, relative: 0, abs: 0 }
       row.plays += 1
@@ -228,8 +277,15 @@ export function summarizeReports(reports: MatchReport[]): BalanceSummary {
       kind.actor += swing.actorSwing
       kind.relative += swing.relativeSwing
       kindMap.set(swing.kind, kind)
+
+      const stratRow = stratMap.get(swing.actorStrat) ?? { seats: 0, wins: 0, finishes: 0, score: 0, actor: 0, relative: 0, plays: 0 }
+      stratRow.plays += 1
+      stratRow.actor += swing.actorSwing
+      stratRow.relative += swing.relativeSwing
+      stratMap.set(swing.actorStrat, stratRow)
     }
     for (const round of report.rounds) {
+      if (filter !== 'all' && filter !== 'mix' && round.actorStrat !== filter) continue
       const index = Math.max(0, round.turn - 1)
       ;(ptsByTurn[index] ??= []).push(round.pointsDelta)
       ;(cardsByTurn[index] ??= []).push(round.cardsPlayed)
@@ -258,9 +314,10 @@ export function summarizeReports(reports: MatchReport[]): BalanceSummary {
   const winnerScores = finished.map((report) => Math.max(...report.finalScores))
 
   return {
-    matches: reports.length,
+    matches: scoped.length,
     finished: finished.length,
-    seats: reports[0]?.seats ?? 0,
+    seats: scoped[0]?.seats ?? reports[0]?.seats ?? 0,
+    filter,
     avgTurns: average(finished.map((report) => report.turns)),
     avgFinalSpread: average(spreads),
     avgWinnerScore: average(winnerScores),
@@ -276,15 +333,39 @@ export function summarizeReports(reports: MatchReport[]): BalanceSummary {
         avgRelativeSwing: row.relative / row.plays,
       }))
       .sort((a, b) => Math.abs(b.avgRelativeSwing) - Math.abs(a.avgRelativeSwing)),
+    byStrat: [...stratMap.entries()]
+      .map(([strat, row]) => ({
+        strat,
+        seats: row.seats,
+        wins: row.wins,
+        finishes: row.finishes,
+        avgScore: row.finishes ? row.score / row.finishes : 0,
+        avgSelfSwing: row.plays ? row.actor / row.plays : 0,
+        avgRelSwing: row.plays ? row.relative / row.plays : 0,
+        plays: row.plays,
+      }))
+      .sort((a, b) => b.wins - a.wins || b.avgScore - a.avgScore),
   }
 }
 
-export function runMatchFast(seed: number, seats: number, guard = 4000): MatchReport {
-  const roster = Array.from({ length: seats }, (_, index) => ({
-    name: index === 0 ? 'AI 1' : index === 1 ? 'The Grove' : `AI ${index + 1}`,
-    ai: true,
-  }))
-  let game = createGame({ seed, seats: roster })
+export type StratLineup = 'mix' | AiStrat
+
+export function aiRoster(count: number, lineup: StratLineup = 'mix', offset = 0): SeatSpec[] {
+  return Array.from({ length: count }, (_, index) => {
+    const strat = lineup === 'mix' ? cycleStrat(index + offset) : lineup
+    const label = lineup === 'mix'
+      ? (index === 0 ? 'AI 1' : index === 1 ? 'The Grove' : `AI ${index + 1}`)
+      : `${strat[0]!.toUpperCase()}${strat.slice(1)} ${index + 1}`
+    return {
+      name: label,
+      ai: true,
+      strat,
+    }
+  })
+}
+
+export function runMatchFast(seed: number, seats: number, lineup: StratLineup = 'mix', guard = 4000): MatchReport {
+  let game = createGame({ seed, seats: aiRoster(seats, lineup, seed) })
   const tracker = new BalanceTracker(seed)
   tracker.start(game)
   let steps = 0
@@ -299,7 +380,6 @@ export function runMatchFast(seed: number, seats: number, guard = 4000): MatchRe
       continue
     }
     if (game.pending) {
-      // Settle can exhaust its chain on rare prompts; clear so batch sims keep going.
       game = { ...game, pending: null, log: [...game.log, 'Forced past a stuck choice.'] }
       continue
     }

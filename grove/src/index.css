@@ -506,12 +506,29 @@ p { margin: 0; }
   flex-direction: column;
   gap: 10px;
 }
+.strat-pick {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.78rem;
+  color: var(--cream-dim);
+  grid-column: 1 / -1;
+}
+.strat-pick select {
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--cream);
+  padding: 0.4rem 0.55rem;
+}
+.strat-help { margin-top: -4px; }
 .seat-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 8px;
   align-items: end;
 }
+.seat-row .strat-pick { margin-top: 2px; }
 .kind-picks { display: flex; gap: 4px; }
 .kind-picks button { padding: 0.35rem 0.7rem; font-size: 0.8rem; }
 .kind-picks button.on { background: var(--gold); color: var(--ink); }
