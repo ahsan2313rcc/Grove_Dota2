@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { display } from '../game/catalog.ts'
 import { comboPlans, morphCasts, needsTeam, teamsFor } from '../game/engine.ts'
-import { findHero, scoreState, scoreTeam } from '../game/flow.ts'
+import { findHero, isTrapHero, scoreState, scoreTeam } from '../game/flow.ts'
 import { teamShape } from '../game/scoring.ts'
 import type { Action, CardInst, Game, PlayerId } from '../game/types.ts'
 import { CardFace } from './CardFace.tsx'
@@ -88,6 +88,8 @@ export function Table({
   const [page, setPage] = useState(0)
   const [acked, setAcked] = useState('')
   const [leaveArmed, setLeaveArmed] = useState(false)
+  /** Hotseat: non-active human sits down to play Instant cards. */
+  const [reactSeat, setReactSeat] = useState<PlayerId | null>(null)
   const statsOnly = debug && debugView === 'stats'
   const emptySummary: BalanceSummary = debugSummary ?? {
     matches: 0,
@@ -101,8 +103,8 @@ export function Table({
     cardsLow: [],
     heroHigh: [],
     heroLow: [],
-    settingHigh: [],
-    settingLow: [],
+    terrainHigh: [],
+    terrainLow: [],
     lootHigh: [],
     lootLow: [],
     contested: [],
@@ -138,6 +140,14 @@ export function Table({
     if (!game || statsOnly) return
     document.querySelector('.lane.mine')?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
   }, [game, statsOnly, teamCount, comboCount])
+
+  useEffect(() => {
+    if (reactSeat === null || !game) return
+    const humans = game.players.filter((player) => !player.ai).map((player) => player.id)
+    if (game.over || game.veil || game.pending || reactSeat === game.active || !humans.includes(reactSeat)) {
+      setReactSeat(null)
+    }
+  }, [game, reactSeat])
 
   const debugReady = !!(
     debug
@@ -235,7 +245,9 @@ export function Table({
       ? game.active
       : pendingHuman !== null && (acked === promptKey || pendingHuman === activeHuman || humans.length === 1)
         ? pendingHuman
-        : (activeHuman ?? primaryHuman)
+        : reactSeat !== null && humans.includes(reactSeat) && reactSeat !== game.active
+          ? reactSeat
+          : (activeHuman ?? primaryHuman)
   const you = game.players[viewer]!
   const chairs = game.players.map((player) => ({
     key: `p-${player.id}`,
@@ -245,7 +257,16 @@ export function Table({
   const pageCount = Math.max(1, Math.ceil(chairs.length / PAGE_SIZE))
   const safePage = ((page % pageCount) + pageCount) % pageCount
   const visible = chairs.slice(safePage * PAGE_SIZE, safePage * PAGE_SIZE + PAGE_SIZE)
-  const canAct = !debug && !game.over && !game.veil && !game.pending && game.active === viewer && (networked || !you.ai)
+  const seatLive = networked || !you.ai
+  const canAct = !debug && !game.over && !game.veil && !game.pending && game.active === viewer && seatLive
+  const canInstant =
+    !debug
+    && !game.over
+    && !game.veil
+    && !game.pending
+    && game.active !== viewer
+    && seatLive
+  const canPlayCards = canAct || canInstant
   const handIds = new Set(you.hand.map((card) => card.uid))
   const liveCombo = combo.filter((uid) => handIds.has(uid))
   if (liveCombo.length !== combo.length) setCombo(liveCombo)
@@ -262,6 +283,9 @@ export function Table({
   const showDetail = !!focus || !!placing || !!moving
   const activeName = game.players[game.active]?.name ?? 'Player'
   const whoseTurn = game.over ? 'Match over' : debug ? `${activeName}'s turn` : game.active === viewer ? 'Your turn' : `${activeName}'s turn`
+  const reactCandidates = !networked && !debug && humans.length > 1 && !game.pending && !game.over && !game.veil
+    ? humans.filter((id) => id !== game.active && id !== viewer)
+    : []
 
   if (!networked && game.mode === 'hotseat' && game.veil && !game.players[game.active]?.ai) {
     return (
@@ -301,7 +325,7 @@ export function Table({
       return
     }
     setMoving(null)
-    if (card.kind === 'setting') {
+    if (card.kind === 'terrain') {
       setPlacing(null)
       setExtras([])
       setCombo((current) => {
@@ -312,14 +336,20 @@ export function Table({
       setFocus({ kind: 'hand', uid: card.uid })
       return
     }
-    // While placing a hero, further hero clicks toggle silent companions.
-    if (placing && card.kind === 'hero' && card.uid !== placing) {
+    // Active hero (placing or focused) + other heroes toggle silent companions for one action.
+    const primary =
+      placing
+      ?? (focus?.kind === 'hand'
+        ? you.hand.find((entry) => entry.uid === focus.uid && entry.kind === 'hero')?.uid
+        : undefined)
+    if (canAct && primary && card.kind === 'hero' && card.uid !== primary) {
       setExtras((current) => (current.includes(card.uid) ? current.filter((uid) => uid !== card.uid) : [...current, card.uid]))
-      setFocus({ kind: 'hand', uid: card.uid })
+      if (!placing) setFocus({ kind: 'hand', uid: primary })
+      else setFocus({ kind: 'hand', uid: card.uid })
       return
     }
     setCombo([])
-    setExtras([])
+    setExtras((current) => (card.kind === 'hero' ? current.filter((uid) => uid !== card.uid) : []))
     setPlacing(null)
     setFocus({ kind: 'hand', uid: card.uid })
   }
@@ -327,14 +357,16 @@ export function Table({
   function playFocused(uid: string) {
     if (!game) return
     const card = you.hand.find((entry) => entry.uid === uid)
-    if (!card || !canAct || playBlock(game, viewer, card)) return
+    if (!card || !canPlayCards || playBlock(game, viewer, card)) return
+    if (canInstant && !display(card.defId).instant) return
     if (needsTeam(card.defId, card.kind)) {
       setPlacing(uid)
-      setExtras([])
+      setExtras((current) => current.filter((extra) => extra !== uid))
       setMoving(null)
       return
     }
-    onAction({ type: 'play', uid, team: '' })
+    onAction({ type: 'play', uid, team: '', extras: extras.length > 0 && card.kind === 'hero' ? extras : undefined })
+    setExtras([])
   }
 
   return (
@@ -473,6 +505,16 @@ export function Table({
               <button type="button" data-testid="end" disabled={!canAct && !stuck} onClick={() => onAction({ type: 'end' })}>
                 End turn
               </button>
+              {reactSeat !== null ? (
+                <button type="button" data-testid="react-done" onClick={() => setReactSeat(null)}>
+                  Back to {activeName}
+                </button>
+              ) : null}
+              {reactCandidates.map((id) => (
+                <button key={id} type="button" data-testid={`react-${id}`} onClick={() => setReactSeat(id)}>
+                  Instant as {names[id]}
+                </button>
+              ))}
               {plans.map((plan) => (
                 <button key={plan.label} type="button" className="combo" data-testid="combo" onClick={() => onAction({ type: 'combo', uids: plan.uids })}>
                   {plan.label} · free
@@ -500,6 +542,7 @@ export function Table({
                 game={game}
                 viewer={viewer}
                 canAct={canAct}
+                canInstant={canInstant}
                 focus={focus}
                 placing={placing}
                 extras={extras}
@@ -519,6 +562,7 @@ export function Table({
                   }
                   setPlacing(null)
                   setExtras([])
+                  setReactSeat(null)
                 }}
                 onMove={(team) => {
                   if (moving) onAction({ type: 'move', uid: moving, team })
@@ -667,7 +711,8 @@ function Lane({
                   {team.gaze ? <em>Gaze</em> : null}
                   {team.noEnter ? <em>Sealed</em> : null}
                   {team.mine ? <em>Mine</em> : null}
-                  {team.heroes.length === 0 ? <em>Empty</em> : null}
+                  {team.trap ? <em>Trap</em> : null}
+                  {team.heroes.length === 0 && !team.trap ? <em>Empty</em> : null}
                 </footer>
               </article>
             )
@@ -728,6 +773,7 @@ function Detail({
   game,
   viewer,
   canAct,
+  canInstant,
   focus,
   placing,
   extras,
@@ -744,6 +790,7 @@ function Detail({
   game: Game
   viewer: PlayerId
   canAct: boolean
+  canInstant: boolean
   focus: Focus | null
   placing: string | null
   extras: string[]
@@ -757,20 +804,26 @@ function Detail({
   onMorph: (uid: string) => void
   onCancel: () => void
 }) {
+  const canPlayCards = canAct || canInstant
   if (placing) {
     const card = game.players[viewer].hand.find((entry) => entry.uid === placing)
-    const options = card ? teamsFor(game, placing) : []
+    const options = card ? teamsFor(game, placing, extras) : []
     const mates = extras
       .map((uid) => game.players[viewer].hand.find((entry) => entry.uid === uid))
       .filter((entry): entry is CardInst => !!entry)
+    const trap = !!card && isTrapHero(card.defId)
     return (
       <div className="detail">
         <p>
-          Active {card ? display(card.defId).name : 'hero'}
-          {mates.length > 0 ? ` + ${mates.map((entry) => display(entry.defId).name).join(', ')} (silent)` : ''}
+          {trap ? 'Plant' : 'Active'} {card ? display(card.defId).name : 'hero'}
+          {!trap && mates.length > 0 ? ` + ${mates.map((entry) => display(entry.defId).name).join(', ')} (silent)` : ''}
           {' '}onto
         </p>
-        <p className="quiet">Click more heroes in hand to bring them in silently. Only the active ability fires.</p>
+        <p className="quiet">
+          {trap
+            ? 'Choose any team — yours or an opponent’s. At most one trap per team.'
+            : 'Click more heroes in hand to bring them in silently. Only the active ability fires.'}
+        </p>
         <div className="inline-choices">
           {options.map((option) => (
             <button key={option.id} type="button" disabled={!option.ok} data-testid={option.id === 'new' ? 'team-new' : `team-pick-${option.id}`} onClick={() => onTeam(option.id)}>
@@ -831,19 +884,36 @@ function Detail({
   if (!card) return <div className="detail quiet">That card has left your hand.</div>
   const info = display(card.defId)
   const block = playBlock(game, viewer, card)
+  const mates = card.kind === 'hero'
+    ? extras
+      .map((uid) => game.players[viewer].hand.find((entry) => entry.uid === uid))
+      .filter((entry): entry is CardInst => !!entry && entry.uid !== card.uid)
+    : []
+  const offTurnInstant = canInstant && info.instant
+  const playable = canPlayCards && !block && (canAct || offTurnInstant)
   return (
     <div className="detail">
       <h3>{info.name}</h3>
       {info.spell ? <p className="spell">{info.spell}</p> : null}
       <p>{info.text}</p>
+      {mates.length > 0 ? (
+        <p className="quiet">Companions: {mates.map((entry) => display(entry.defId).name).join(', ')} (silent)</p>
+      ) : null}
+      {canAct && card.kind === 'hero' ? (
+        <p className="quiet">Click other heroes to add silent companions, then play — one action for the squad.</p>
+      ) : null}
       <div className="inline-choices">
-        {card.kind === 'setting' ? (
+        {card.kind === 'terrain' ? (
           <button type="button" className="combo" disabled={!canAct || !comboReady} onClick={onPlace}>
             {comboReady ? 'Place these three · free' : `Selected ${chosen.length}/3`}
           </button>
         ) : (
-          <button type="button" className="primary" data-testid="play-card" disabled={!canAct || !!block} onClick={() => onPlay(card.uid)}>
-            {info.instant ? `Play ${info.name} · free` : `Play ${info.name} · 1 action`}
+          <button type="button" className="primary" data-testid="play-card" disabled={!playable} onClick={() => onPlay(card.uid)}>
+            {info.instant
+              ? `Play ${info.name} · Instant`
+              : mates.length > 0
+                ? `Play squad · 1 action`
+                : `Play ${info.name} · 1 action`}
           </button>
         )}
         {block ? <span className="quiet">{block}</span> : null}
@@ -949,7 +1019,7 @@ function PileDialog({
         <p className="eyebrow">{count} cards</p>
         <h2>{title}</h2>
         {pile === 'deck' ? <p>The deck is shared and face down. The match ends when it is empty.</p> : null}
-        {pile === 'runes' || pile === 'neutrals' || pile === 'towers' ? <p>This pile is shuffled face down. Three matching settings take the top card. You can read it once it reaches your hand.</p> : null}
+        {pile === 'runes' || pile === 'neutrals' || pile === 'towers' ? <p>This pile is shuffled face down. Three matching terrains take the top card. You can read it once it reaches your hand.</p> : null}
         {pile === 'grave' ? <p>Discarded cards and destroyed heroes wait here. Anyone can take from the grave when an ability says so.</p> : null}
         {pile === 'exile' ? <p>Exiled cards are out of the game. They do not interact.</p> : null}
         {!sealed && cards.length === 0 ? <p className="quiet">Nothing here yet.</p> : null}
@@ -982,7 +1052,7 @@ function Over({ game, names, onLobby }: { game: Game; names: string[]; onLobby: 
             <div key={`${name}-${index}`}>
               <strong>{over.scores[index]}</strong>
               <span>{name}</span>
-              <small>{over.parts[index]?.teams ?? 0} from teams · {over.parts[index]?.settings ?? 0} from settings</small>
+              <small>{over.parts[index]?.teams ?? 0} from teams · {over.parts[index]?.terrains ?? 0} from terrains</small>
             </div>
           ))}
         </div>

@@ -1,8 +1,8 @@
 export type PlayerId = number
 export type Attr = 'STR' | 'AGI' | 'INT' | 'UNI'
 export type Range = 'Melee' | 'Ranged'
-export type SettingKind = 'river' | 'jungle' | 'lane'
-export type CardKind = 'hero' | 'item' | 'setting' | 'rune' | 'neutral' | 'tower'
+export type TerrainKind = 'river' | 'jungle' | 'lane'
+export type CardKind = 'hero' | 'item' | 'terrain' | 'rune' | 'neutral' | 'tower'
 export type Timing = 'cast' | 'aura' | 'instant' | 'trap'
 export type AiStrat = 'balanced' | 'tempo' | 'architect' | 'spite'
 
@@ -68,7 +68,7 @@ export interface Combo {
   owner: PlayerId
   cards: CardInst[]
   points: number
-  kind: SettingKind | 'mixed'
+  kind: TerrainKind | 'mixed'
   protectedBy: string | null
 }
 
@@ -125,6 +125,8 @@ export type Resume =
   | { kind: 'pugna'; cast: CastResume }
   | { kind: 'venomancer'; cast: CastResume }
   | { kind: 'nyx-ability'; cast: CastResume; heroUid: string }
+  /** Opponents may play an Instant before a hero ability fires. */
+  | { kind: 'instant-window'; cast: CastResume; heroUid: string; seats: PlayerId[]; index: number }
   | { kind: 'free-play-offer'; uid: string; actor: PlayerId }
   | { kind: 'torment'; heroUid: string; cast: CastResume | null }
   | { kind: 'slark-trap'; owner: PlayerId; card: CardInst }
@@ -188,7 +190,7 @@ export interface Over {
 
 export interface ScoreParts {
   teams: number
-  settings: number
+  terrains: number
   total: number
 }
 

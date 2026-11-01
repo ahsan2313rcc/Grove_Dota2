@@ -1,4 +1,4 @@
-import { HEROES, ITEMS, REWARDS, SETTINGS, display, firesAbility } from './catalog.ts'
+import { HEROES, ITEMS, REWARDS, TERRAINS, display, firesAbility } from './catalog.ts'
 import { cast, finishIo, finishKunkka } from './casts.ts'
 import { getScoreRules } from './scoring.ts'
 import {
@@ -26,6 +26,7 @@ import {
   instantsLocked,
   isTrapHero,
   itemsLocked,
+  opponents,
   log,
   makeCard,
   makeHero,
@@ -83,9 +84,9 @@ export function createGame(opts: {
       cards.push(made[1])
     }
   }
-  for (const setting of SETTINGS) {
+  for (const terrain of TERRAINS) {
     for (let copy = 0; copy < 12; copy += 1) {
-      const made = makeCard(state, setting.id, 'setting')
+      const made = makeCard(state, terrain.id, 'terrain')
       state = made[0]
       cards.push(made[1])
     }
@@ -266,11 +267,7 @@ export function settle(state: Game): Game {
       state = beginDraw(state, draw!.player, draw!.n, false)
       continue
     }
-    const limited = ([0, 1] as const).find((id) => state.players[id].hand.length > state.players[id].handLimit)
-    if (limited !== undefined) {
-      state = askLimit(state, limited, 'none')
-      continue
-    }
+    // Hand limit is enforced only when ending a turn — draws may go above 7 mid-turn.
     if (state.live && state.deck.length === 0) return finish(state, 'The deck is empty.')
     return state
   }
@@ -390,14 +387,14 @@ function combo(state: Game, uids: string[], forced = false): Game {
   if (cardsLocked(state, actor)) return log(state, 'Chronosphere stops you from playing cards.')
   if (uids.length !== 3) return state
   const cards = uids.map((uid) => state.players[actor].hand.find((card) => card.uid === uid))
-  if (cards.some((card) => !card || card.kind !== 'setting')) return state
+  if (cards.some((card) => !card || card.kind !== 'terrain')) return state
   if (!forced) {
     const holder = holderWith(state, actor, 'nyx_assassin')
     if (holder !== null) {
       const nyx = state.players[holder]!.hand.filter((card) => card.defId === 'nyx_assassin')
       return ask(state, {
         actor: holder,
-        prompt: `${pname(state, holder)} may discard Nyx Assassin to counter the setting combo, or pass.`,
+        prompt: `${pname(state, holder)} may discard Nyx Assassin to counter the terrain combo, or pass.`,
         mode: 'pick',
         min: 1,
         max: 1,
@@ -449,7 +446,7 @@ function combo(state: Game, uids: string[], forced = false): Game {
   return next
 }
 
-/** Spend an action to pitch a stuck hand card (Poison Nova / lone settings) so the seat can dig. */
+/** Spend an action to pitch a stuck hand card (Poison Nova / lone terrains) so the seat can dig. */
 function discardStuck(state: Game, uid: string): Game {
   const actor = state.active
   if (cardsLocked(state, actor)) return log(state, 'Chronosphere stops you from playing cards.')
@@ -462,18 +459,23 @@ function discardStuck(state: Game, uid: string): Game {
 }
 
 function play(state: Game, uid: string, team: string, extras: string[] = []): Game {
-  const actor = state.active
-  // Death Prophet: play the top card of the grave.
+  // Peek hand owner first — Instant cards may be played off-turn by non-active seats.
+  let held = findHand(state, uid)
+  let actor = held?.player.id ?? state.active
+
+  // Death Prophet: play the top card of the grave (your turn only).
   const graveTop = state.grave[state.grave.length - 1]
   const fromGrave =
-    !findHand(state, uid) &&
+    !held &&
+    actor === state.active &&
     !!graveTop &&
     graveTop.uid === uid &&
     allLocs(state).some((loc) => loc.hero.defId === 'death_prophet' && loc.hero.controller === actor) &&
     !graveLocked(state, actor)
   // Clinkz: play an exiled item that was Skeleton-Walked this turn.
   const fromClinkz = state.clinkzExile.find((card) => card.uid === uid)
-  if (fromClinkz && !findHand(state, uid)) {
+  if (fromClinkz && !held) {
+    actor = state.active
     state = {
       ...state,
       exile: state.exile.filter((card) => card.uid !== uid),
@@ -481,15 +483,17 @@ function play(state: Game, uid: string, team: string, extras: string[] = []): Ga
       freeItems: Math.max(0, state.freeItems - 1),
     }
     state = addHand(state, actor, [fromClinkz])
+    held = findHand(state, uid)
   }
   if (fromGrave && graveTop) {
     state = { ...state, grave: state.grave.slice(0, -1) }
     state = addHand(state, actor, [graveTop])
+    held = findHand(state, uid)
   }
 
-  const held = findHand(state, uid)
-  if (!held || held.player.id !== actor) return state
-  if (held.card.kind === 'setting') return log(state, 'Settings are played three at a time.')
+  if (!held) return state
+  actor = held.player.id
+  if (held.card.kind === 'terrain') return log(state, 'Terrains are played three at a time.')
   const info = display(held.card.defId)
   const freeGrant = state.freePlay.includes(uid)
   const freeItem =
@@ -500,15 +504,24 @@ function play(state: Game, uid: string, team: string, extras: string[] = []): Ga
     !!state.primalItems &&
     state.primalItems.caster === actor
   const instant = info.instant || freeItem || primalFree || freeGrant || fromGrave
+  const offTurn = actor !== state.active
+  if (offTurn && !instant) {
+    return log(state, 'Only Instant cards can be played during an opponent\'s turn.')
+  }
+  // Off-turn instants: no multi-drop, no traps onto board as "plays" that need your turn structure.
+  if (offTurn && (extras.length > 0 || isTrapHero(held.card.defId))) {
+    return log(state, 'That Instant cannot be multi-dropped or planted off-turn.')
+  }
   if (cardsLocked(state, actor)) return log(state, 'Chronosphere stops you from playing cards.')
   if (!instant && state.players[actor].actions < 1) return state
-  if (held.card.kind === 'item' && itemsLocked(state, actor)) return log(state, 'Items are locked.')
+  if (held.card.kind === 'item' && itemsLocked(state, actor)) return log(state, 'Doom locks item cards.')
   if (instant && !freeItem && !primalFree && !freeGrant && !fromGrave && instantsLocked(state, actor)) {
-    return log(state, 'Battle Trance stops instant cards.')
+    return log(state, 'Battle Trance stops Instant cards.')
   }
-  if (held.card.kind === 'hero' && state.players[actor].noHeroNow) {
+  if (held.card.kind === 'hero' && state.players[actor].noHeroNow && !offTurn) {
     return log(state, 'You cannot play hero cards this turn.')
   }
+  // Instant heroes may still enter the board off-turn (e.g. Dazzle/Oracle onto a team).
   if (held.card.kind === 'hero' && state.attrBan && state.attrBan.caster !== actor) {
     const attr = HEROES.find((hero) => hero.id === held.card.defId)?.attr
     if (attr && attr === state.attrBan.attr) return log(state, "Reaper's Scythe bans that attribute.")
@@ -556,22 +569,25 @@ function play(state: Game, uid: string, team: string, extras: string[] = []): Ga
     state = {
       ...state,
       freeItems: Math.max(0, state.freeItems - 1),
-      clinkzExile: state.clinkzExile.filter((card) => card.uid !== held.card.uid),
+      clinkzExile: state.clinkzExile.filter((card) => card.uid !== held!.card.uid),
     }
   }
   if (freeGrant) {
     state = { ...state, freePlay: state.freePlay.filter((id) => id !== uid) }
   }
-  // Illusion counters hero/item plays; Nyx counters abilities (see offerNyxAbility).
-  if (held.card.kind === 'hero' || held.card.kind === 'item') {
+  if (offTurn) {
+    state = log(state, `${pname(state, actor)} plays Instant ${info.name}.`)
+  }
+  // Illusion counters on-turn hero/item plays; skip when reacting off-turn.
+  if (!offTurn && (held.card.kind === 'hero' || held.card.kind === 'item')) {
     return offerIllusion(state, actor, uid, team, companions)
   }
-  return resolvePlay(state, uid, team, companions)
+  return resolvePlay(state, actor, uid, team, companions)
 }
 
 function offerIllusion(state: Game, actor: PlayerId, uid: string, team: string, extras: string[] = []): Game {
   const enemy = holderWith(state, actor, 'illusion')
-  if (enemy === null) return resolvePlay(state, uid, team, extras)
+  if (enemy === null) return resolvePlay(state, actor, uid, team, extras)
   const cards = state.players[enemy]!.hand.filter((card) => card.defId === 'illusion')
   const played = findHand(state, uid)
   const name = played ? display(played.card.defId).name : 'that card'
@@ -590,12 +606,11 @@ function offerIllusion(state: Game, actor: PlayerId, uid: string, team: string, 
   })
 }
 
-function resolvePlay(state: Game, uid: string, team: string, extras: string[] = []): Game {
+function resolvePlay(state: Game, actor: PlayerId, uid: string, team: string, extras: string[] = []): Game {
   const held = findHand(state, uid)
   if (!held) {
-    return landSquad(state, state.active, null, extras, team, false)
+    return landSquad(state, actor, null, extras, team, false)
   }
-  const actor = held.player.id
   if (held.card.kind === 'hero') return landSquad(state, actor, held.card, extras, team, true)
   if (held.card.kind === 'neutral') return playToken(state, actor, held.card, team)
   if (held.card.kind === 'item') return playItem(state, actor, held.card)
@@ -653,11 +668,60 @@ function playHeroOnto(state: Game, actor: PlayerId, card: CardInst, teamId: stri
   if (!fires) return next
   const resume = { kind: 'cast' as const, actor, sourceUid: card.uid, defId: card.defId, picked: [], steps: 0 }
   if (landed.mined) return { ...next, after: { kind: 'alive', uid: card.uid, cast: resume } }
-  return gateAbility(next, card.uid, resume)
+  // Opponents may interrupt with Instant cards before the ability resolves.
+  return offerInstantWindow(next, card.uid, resume)
+}
+
+/** Let each opponent play an Instant (or pass) before a hero ability fires. */
+function offerInstantWindow(
+  state: Game,
+  heroUid: string,
+  resume: CastResumeLike,
+  seats?: PlayerId[],
+  index = 0,
+): Game {
+  const order = seats ?? opponents(state, resume.actor)
+  if (index >= order.length) return gateAbility(state, heroUid, resume)
+  const seat = order[index]!
+  const playable = state.players[seat]!.hand.filter((card) => {
+    const info = display(card.defId)
+    if (!info.instant) return false
+    if (card.kind === 'terrain') return false
+    // Illusion counters plays, not abilities.
+    if (card.defId === 'illusion') return false
+    return true
+  })
+  if (instantsLocked(state, seat)) {
+    if (playable.length > 0) {
+      state = log(state, `Battle Trance stops ${pname(state, seat)} from playing Instant cards.`)
+    }
+    return offerInstantWindow(state, heroUid, resume, order, index + 1)
+  }
+  if (playable.length === 0) return offerInstantWindow(state, heroUid, resume, order, index + 1)
+  return ask(state, {
+    actor: seat,
+    prompt: `${display(resume.defId).name} is about to fire — play an Instant to interrupt, or pass.`,
+    mode: 'pick',
+    min: 1,
+    max: 1,
+    choices: [
+      { id: 'pass', label: 'Pass' },
+      ...playable.map((card) => ({
+        id: `instant:${card.uid}`,
+        label: display(card.defId).name,
+        defId: card.defId,
+        hint: 'Instant',
+      })),
+    ],
+    resume: { kind: 'instant-window', cast: resume, heroUid, seats: order, index },
+  })
 }
 
 /** Pugna tax → Nyx ability counter → cast. */
 function gateAbility(state: Game, heroUid: string, resume: CastResumeLike): Game {
+  const loc = findHero(state, heroUid)
+  if (!loc) return log(state, 'The hero is gone — the ability fizzles.')
+  if (loc.hero.muted || state.silence) return log(state, 'The ability is nullified.')
   if (allLocs(state).some((loc) => loc.hero.defId === 'pugna' && loc.hero.controller !== resume.actor && !aurasSuppressedSafe(state, loc.hero.controller))) {
     return ask(state, {
       actor: resume.actor,
@@ -835,7 +899,7 @@ function satisfy(state: Game, ids: string[]): Game {
   if (resume.kind === 'counter') {
     const choice = ids[0]
     const extras = resume.extras ?? []
-    if (!choice || choice === 'pass') return resolvePlay(next, resume.uid, resume.team, extras)
+    if (!choice || choice === 'pass') return resolvePlay(next, resume.actor, resume.uid, resume.team, extras)
     const illuUid = choice.startsWith('illu:') ? choice.slice(5) : choice.slice(4)
     let dumped = next
     const rune = dumped.players[pending.actor]?.hand.find((entry) => entry.uid === illuUid)
@@ -877,6 +941,35 @@ function satisfy(state: Game, ids: string[]): Game {
     let dumped = discardUid(next, pending.actor, nyxUid)
     dumped = enqueue(dumped, resume.heroUid, 'Spiked Carapace', false, true, pending.actor)
     return log(dumped, 'Spiked Carapace counters the ability.')
+  }
+  if (resume.kind === 'instant-window') {
+    const choice = ids[0]
+    if (!choice || choice === 'pass') {
+      return offerInstantWindow(next, resume.heroUid, resume.cast, resume.seats, resume.index + 1)
+    }
+    const cardUid = choice.startsWith('instant:') ? choice.slice(8) : choice
+    const card = next.players[pending.actor]?.hand.find((entry) => entry.uid === cardUid)
+    if (!card) {
+      return offerInstantWindow(next, resume.heroUid, resume.cast, resume.seats, resume.index + 1)
+    }
+    // Nyx from hand: counter this ability and destroy the hero (do not put Nyx on the board).
+    if (card.defId === 'nyx_assassin') {
+      let dumped = discardUid(next, pending.actor, cardUid)
+      dumped = enqueue(dumped, resume.heroUid, 'Spiked Carapace', false, true, pending.actor)
+      return log(dumped, 'Spiked Carapace counters the ability.')
+    }
+    const team = needsTeam(card.defId, card.kind)
+      ? (next.players[pending.actor]!.teams[0]?.id ?? 'new')
+      : ''
+    let played = play(next, cardUid, team, [])
+    // After the Instant resolves (including its own prompts), resume the ability if the hero remains.
+    if (!played.after) {
+      played = {
+        ...played,
+        after: { kind: 'alive', uid: resume.heroUid, cast: resume.cast },
+      }
+    }
+    return played
   }
   if (resume.kind === 'free-play-offer') {
     if (ids[0] === 'yes') {
@@ -1051,12 +1144,35 @@ function finish(state: Game, reason: string): Game {
   }
 }
 
-export function teamsFor(state: Game, uid: string): { id: string; label: string; ok: boolean; reason?: string }[] {
+export function teamsFor(
+  state: Game,
+  uid: string,
+  extras: string[] = [],
+): { id: string; label: string; ok: boolean; reason?: string }[] {
   const held = findHand(state, uid)
   if (!held) return []
   const actor = held.player.id
+  // Traps plant face-down on any existing team (ally or enemy).
+  if (isTrapHero(held.card.defId)) {
+    const options: { id: string; label: string; ok: boolean; reason?: string }[] = []
+    for (const player of state.players) {
+      for (const team of player.teams) {
+        const scored = scoreTeam(state, team)
+        const whose = player.id === actor ? 'Your' : `${player.name}'s`
+        const blocked = team.trap || team.mine
+        options.push({
+          id: team.id,
+          label: `${whose} team · ${scored.why} · ${scored.points}`,
+          ok: !blocked,
+          reason: blocked ? 'That team already has a trap.' : undefined,
+        })
+      }
+    }
+    return options
+  }
   const token = held.card.kind === 'neutral'
-  const weight = 1
+  const companions = extras.filter((extra) => extra !== uid && findHand(state, extra)?.card.kind === 'hero')
+  const weight = (held.card.kind === 'hero' || held.card.kind === 'neutral' ? 1 : 0) + companions.length
   const options: { id: string; label: string; ok: boolean; reason?: string }[] = []
   for (const team of state.players[actor].teams) {
     const reason = enterReason(state, team, weight, token)
@@ -1069,7 +1185,7 @@ export function teamsFor(state: Game, uid: string): { id: string; label: string;
 }
 
 export function comboPlans(state: Game): { uids: string[]; label: string; detail: string }[] {
-  const hand = state.players[state.active].hand.filter((card) => card.kind === 'setting')
+  const hand = state.players[state.active].hand.filter((card) => card.kind === 'terrain')
   const plans: { uids: string[]; label: string; detail: string }[] = []
   const rules = getScoreRules()
   for (const kind of ['river', 'jungle', 'lane'] as const) {
@@ -1135,6 +1251,8 @@ function autoIds(state: Game): string[] {
   }
   if (pending.choices.some((choice) => choice.id === 'exile:yes')) return ['exile:no']
   if (pending.choices.some((choice) => choice.id.startsWith('illu:'))) return ['pass']
+  // Interrupt window: AI passes by default (humans decide).
+  if (pending.resume.kind === 'instant-window') return ['pass']
   if (pending.choices.some((choice) => choice.id.startsWith('player:'))) {
     return [pending.choices.find((choice) => choice.id.startsWith('player:'))!.id]
   }

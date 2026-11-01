@@ -105,6 +105,24 @@ describe('turn', () => {
     expect(game.players[1].actions).toBe(2)
   })
 
+  it('discards down to 7 only when ending the turn', () => {
+    let game = ready()
+    // Pad the hand well above the limit, then draw at turn start without a discard prompt.
+    while (game.players[1].hand.length < 8) game = give(game, 'river', 1)
+    const before = game.players[1].hand.length
+    game = apply(game, { type: 'end' })
+    game = apply(game, { type: 'ready' })
+    expect(game.active).toBe(1)
+    expect(game.players[1].hand.length).toBe(before + 3)
+    expect(game.pending).toBeNull()
+    expect(game.players[1].actions).toBe(2)
+    // Ending while over the limit opens the discard prompt.
+    game = apply(game, { type: 'end' })
+    expect(game.pending?.resume.kind).toBe('limit')
+    expect(game.pending?.prompt).toContain('Discard down to 7')
+    expect(game.active).toBe(1)
+  })
+
   it('spends an action to draw and nothing to set a combo', () => {
     let game = ready()
     const before = game.players[0].hand.length
@@ -131,7 +149,7 @@ describe('turn', () => {
     expect(game.players[0].actions).toBe(2)
   })
 
-  it('rejects playing a single setting', () => {
+  it('rejects playing a single terrain', () => {
     let game = ready()
     game = give(game, 'river', 0)
     const uid = game.players[0].hand.find((card) => card.defId === 'river')?.uid ?? ''
@@ -158,6 +176,50 @@ describe('turn', () => {
     // Axe's Berserker's Call should have resolved (or asked); companions did not cast.
     expect(game.log.some((line) => /plays Axe/.test(line))).toBe(true)
   })
+
+  it('lets Instant cards play during an opponent turn', () => {
+    let game = ready()
+    game = only(game, 0, ['sven'])
+    game = only(game, 1, ['faceless_void'])
+    game = apply(game, { type: 'play', uid: uid(game, 0, 'sven'), team: 'new' })
+    // Sven opens an Instant window because Dire holds Faceless Void — pass it, then Instant freely mid-turn.
+    expect(game.pending?.resume.kind).toBe('instant-window')
+    game = passInstants(game)
+    expect(game.active).toBe(0)
+    expect(game.players[0].actions).toBe(1)
+    const voidUid = uid(game, 1, 'faceless_void')
+    game = apply(game, { type: 'play', uid: voidUid, team: 'new' })
+    expect(game.log.some((line) => /Instant Faceless Void|plays Faceless Void/.test(line))).toBe(true)
+    expect(game.players[1].teams.some((team) => team.heroes.some((hero) => hero.defId === 'faceless_void'))).toBe(true)
+    game = passInstants(game)
+    if (game.pending?.prompt.toLowerCase().includes('opponent')) {
+      game = apply(game, { type: 'choose', ids: ['player:0'] })
+    }
+    expect(game.players[0].actions).toBe(0)
+  })
+
+  it('opens an Instant interrupt window before a cast ability', () => {
+    let game = ready()
+    game = only(game, 0, ['sven'])
+    game = only(game, 1, ['orchid'])
+    game = apply(game, { type: 'play', uid: uid(game, 0, 'sven'), team: 'new' })
+    expect(game.pending?.resume.kind).toBe('instant-window')
+    expect(game.pending?.actor).toBe(1)
+    expect(game.pending?.choices.some((choice) => choice.id.startsWith('instant:'))).toBe(true)
+    game = apply(game, { type: 'choose', ids: ['pass'] })
+    expect(game.players[0].teams[0]?.heroes.some((hero) => hero.defId === 'sven')).toBe(true)
+  })
+
+  it('logs Battle Trance when Troll blocks an Instant interrupt', () => {
+    let game = ready()
+    game = only(game, 0, ['troll_warlord', 'sven'])
+    game = only(game, 1, ['orchid'])
+    game = apply(game, { type: 'play', uid: uid(game, 0, 'troll_warlord'), team: 'new' })
+    const team = game.players[0].teams[0]?.id ?? 'new'
+    game = apply(game, { type: 'play', uid: uid(game, 0, 'sven'), team })
+    expect(game.log.some((line) => /Battle Trance stops/.test(line))).toBe(true)
+    expect(game.pending?.resume.kind === 'instant-window').toBe(false)
+  })
 })
 
 describe('heroes', () => {
@@ -175,6 +237,26 @@ describe('heroes', () => {
     expect(game.log.some((line) => /draws 1/.test(line))).toBe(true)
   })
 
+  it('lets traps plant on enemy teams', () => {
+    let game = ready()
+    game = only(game, 0, ['techies'])
+    game = only(game, 1, ['sven'])
+    game = apply(game, { type: 'end' })
+    game = apply(game, { type: 'ready' })
+    game = apply(game, { type: 'play', uid: uid(game, 1, 'sven'), team: 'new' })
+    game = passInstants(game)
+    const foeTeam = game.players[1].teams[0]?.id ?? ''
+    game = apply(game, { type: 'end' })
+    game = apply(game, { type: 'ready' })
+    const options = teamsFor(game, uid(game, 0, 'techies'))
+    expect(options.some((option) => option.id === foeTeam && option.ok)).toBe(true)
+    expect(options.some((option) => /Dire|Player|foe|team/i.test(option.label) || option.id === foeTeam)).toBe(true)
+    game = apply(game, { type: 'play', uid: uid(game, 0, 'techies'), team: foeTeam })
+    expect(game.players[1].teams[0]?.trap?.defId).toBe('techies')
+    expect(game.players[1].teams[0]?.trap?.owner).toBe(0)
+    expect(game.players[0].teams.some((team) => team.trap?.defId === 'techies')).toBe(false)
+  })
+
   it('plants Techies as a trap and Zeus clears traps', () => {
     let game = ready()
     game = only(game, 0, ['zeus'])
@@ -182,14 +264,56 @@ describe('heroes', () => {
     game = apply(game, { type: 'end' })
     game = apply(game, { type: 'ready' })
     game = apply(game, { type: 'play', uid: uid(game, 1, 'sven'), team: 'new' })
+    game = passInstants(game)
     const team = game.players[1].teams[0]?.id ?? ''
     game = apply(game, { type: 'play', uid: uid(game, 1, 'techies'), team })
     expect(game.players[1].teams[0]?.trap?.defId).toBe('techies')
     game = apply(game, { type: 'end' })
     game = apply(game, { type: 'ready' })
     game = apply(game, { type: 'play', uid: uid(game, 0, 'zeus'), team: 'new' })
+    game = passInstants(game)
     expect(game.players[1].teams[0]?.trap).toBeNull()
     expect(game.log.some((line) => line.includes('trap'))).toBe(true)
+  })
+
+  it('revealed non-sacrifice traps join the team; sacrifice traps go to the grave', () => {
+    let game = ready()
+    game = only(game, 0, ['monkey_king', 'phantom_assassin', 'sven'])
+    game = apply(game, { type: 'play', uid: uid(game, 0, 'phantom_assassin'), team: 'new' })
+    game = passInstants(game)
+    const team = game.players[0].teams[0]?.id ?? ''
+    game = apply(game, { type: 'play', uid: uid(game, 0, 'monkey_king'), team })
+    expect(game.players[0].teams[0]?.trap?.defId).toBe('monkey_king')
+    game = {
+      ...game,
+      players: [{ ...game.players[0], actions: 1 }, game.players[1]] as Game['players'],
+    }
+    game = apply(game, { type: 'play', uid: uid(game, 0, 'sven'), team })
+    game = passInstants(game)
+    expect(game.players[0].teams[0]?.trap).toBeNull()
+    expect(game.players[0].teams[0]?.heroes.map((hero) => hero.defId).sort()).toEqual([
+      'monkey_king',
+      'phantom_assassin',
+      'sven',
+    ])
+    expect(game.grave.some((card) => card.defId === 'monkey_king')).toBe(false)
+    expect(game.log.some((line) => /Monkey King joins the team/.test(line))).toBe(true)
+
+    // Techies still sacrifices.
+    game = ready()
+    game = only(game, 0, ['techies', 'sven', 'axe'])
+    game = apply(game, { type: 'play', uid: uid(game, 0, 'sven'), team: 'new' })
+    game = passInstants(game)
+    const mineTeam = game.players[0].teams[0]?.id ?? ''
+    game = apply(game, { type: 'play', uid: uid(game, 0, 'techies'), team: mineTeam })
+    game = {
+      ...game,
+      players: [{ ...game.players[0], actions: 1 }, game.players[1]] as Game['players'],
+    }
+    game = apply(game, { type: 'play', uid: uid(game, 0, 'axe'), team: mineTeam })
+    game = passInstants(game)
+    expect(game.grave.some((card) => card.defId === 'techies')).toBe(true)
+    expect(game.players[0].teams.some((entry) => entry.heroes.some((hero) => hero.defId === 'techies'))).toBe(false)
   })
 
   it('lets Night Stalker steal two cards', () => {
@@ -197,6 +321,7 @@ describe('heroes', () => {
     game = only(game, 0, ['night_stalker'])
     const before = game.players[1].hand.length
     game = apply(game, { type: 'play', uid: uid(game, 0, 'night_stalker'), team: 'new' })
+    game = passInstants(game)
     game = apply(game, { type: 'choose', ids: ['player:1'] })
     expect(game.players[1].hand.length).toBe(before - 2)
     expect(game.players[0].hand.length).toBe(2)
@@ -209,12 +334,13 @@ describe('heroes', () => {
     game = apply(game, { type: 'end' })
     game = apply(game, { type: 'ready' })
     game = apply(game, { type: 'play', uid: uid(game, 1, 'phantom_assassin'), team: 'new' })
+    game = passInstants(game)
     const foeTeam = game.players[1].teams[0]?.id ?? ''
     game = apply(game, { type: 'end' })
     game = apply(game, { type: 'ready' })
     game = apply(game, { type: 'play', uid: uid(game, 0, 'enigma'), team: 'new' })
+    game = passInstants(game)
     const ownTeam = game.players[0].teams[0]?.id ?? ''
-    // One team from each player (seat order).
     game = apply(game, { type: 'choose', ids: [`team:${ownTeam}`] })
     game = apply(game, { type: 'choose', ids: [`team:${foeTeam}`] })
     expect(game.players[1].teams.length).toBe(0)
@@ -225,14 +351,17 @@ describe('heroes', () => {
     game = only(game, 0, ['sven', 'tidehunter'])
     game = only(game, 1, ['phantom_assassin', 'earthshaker'])
     game = apply(game, { type: 'play', uid: uid(game, 0, 'sven'), team: 'new' })
+    game = passInstants(game)
     game = apply(game, { type: 'end' })
     game = apply(game, { type: 'ready' })
     game = apply(game, { type: 'play', uid: uid(game, 1, 'phantom_assassin'), team: 'new' })
+    game = passInstants(game)
     game = apply(game, { type: 'play', uid: uid(game, 1, 'earthshaker'), team: 'new' })
+    game = passInstants(game)
     game = apply(game, { type: 'end' })
     game = apply(game, { type: 'ready' })
     game = apply(game, { type: 'play', uid: uid(game, 0, 'tidehunter'), team: 'new' })
-    // Own heroes stay; one enemy team leaves the board (then discard 5 may pitch the returned cards).
+    game = passInstants(game)
     expect(game.players[0].teams.flatMap((team) => team.heroes.map((hero) => hero.defId)).sort()).toEqual(['sven', 'tidehunter'])
     expect(game.players[1].teams.length).toBe(1)
     expect(game.players[1].teams[0]?.heroes.map((hero) => hero.defId)).toEqual(['earthshaker'])
@@ -245,10 +374,13 @@ describe('heroes', () => {
     game = apply(game, { type: 'end' })
     game = apply(game, { type: 'ready' })
     game = apply(game, { type: 'play', uid: uid(game, 1, 'crystal_maiden'), team: 'new' })
+    game = passInstants(game)
     game = apply(game, { type: 'play', uid: uid(game, 1, 'phantom_assassin'), team: 'new' })
+    game = passInstants(game)
     game = apply(game, { type: 'end' })
     game = apply(game, { type: 'ready' })
     game = apply(game, { type: 'play', uid: uid(game, 0, 'anti_mage'), team: 'new' })
+    game = passInstants(game)
     if (game.pending?.prompt.toLowerCase().includes('opponent')) {
       game = apply(game, { type: 'choose', ids: ['player:1'] })
     }
@@ -264,17 +396,21 @@ describe('heroes', () => {
     game = apply(game, { type: 'end' })
     game = apply(game, { type: 'ready' })
     game = apply(game, { type: 'play', uid: uid(game, 1, 'earthshaker'), team: 'new' })
+    game = passInstants(game)
     game = apply(game, { type: 'play', uid: uid(game, 1, 'sven'), team: 'new' })
+    game = passInstants(game)
     game = apply(game, { type: 'end' })
     game = apply(game, { type: 'ready' })
     game = apply(game, { type: 'end' })
     game = apply(game, { type: 'ready' })
     game = apply(game, { type: 'play', uid: uid(game, 1, 'phantom_assassin'), team: 'new' })
+    game = passInstants(game)
     game = apply(game, { type: 'end' })
     game = apply(game, { type: 'ready' })
     const shaker = game.players[1].teams.flatMap((team) => team.heroes).find((hero) => hero.defId === 'earthshaker')?.uid ?? ''
     const sven = game.players[1].teams.flatMap((team) => team.heroes).find((hero) => hero.defId === 'sven')?.uid ?? ''
     game = apply(game, { type: 'play', uid: uid(game, 0, 'magnus'), team: 'new' })
+    game = passInstants(game)
     game = apply(game, { type: 'choose', ids: [`hero:${shaker}`, `hero:${sven}`] })
     const sizes = game.players[1].teams.map((team) => team.heroes.map((hero) => hero.defId).sort())
     expect(sizes).toContainEqual(['phantom_assassin'])
@@ -289,17 +425,21 @@ describe('heroes', () => {
     game = apply(game, { type: 'end' })
     game = apply(game, { type: 'ready' })
     game = apply(game, { type: 'play', uid: uid(game, 1, 'sven'), team: 'new' })
+    game = passInstants(game)
     const withSven = game.players[1].teams[0]?.id ?? ''
     game = apply(game, { type: 'play', uid: uid(game, 1, 'phantom_assassin'), team: withSven })
+    game = passInstants(game)
     game = apply(game, { type: 'end' })
     game = apply(game, { type: 'ready' })
     game = apply(game, { type: 'end' })
     game = apply(game, { type: 'ready' })
     game = apply(game, { type: 'play', uid: uid(game, 1, 'elder_titan'), team: 'new' })
+    game = passInstants(game)
     game = apply(game, { type: 'end' })
     game = apply(game, { type: 'ready' })
     const sven = game.players[1].teams.flatMap((team) => team.heroes).find((hero) => hero.defId === 'sven')?.uid ?? ''
     game = apply(game, { type: 'play', uid: uid(game, 0, 'gyrocopter'), team: 'new' })
+    game = passInstants(game)
     game = apply(game, { type: 'choose', ids: ['attr:STR'] })
     game = apply(game, { type: 'choose', ids: [`hero:${sven}`] })
     const left = game.players[1].teams.flatMap((team) => team.heroes.map((hero) => hero.defId)).sort()
@@ -314,10 +454,12 @@ describe('heroes', () => {
     game = apply(game, { type: 'end' })
     game = apply(game, { type: 'ready' })
     game = apply(game, { type: 'play', uid: uid(game, 1, 'sven'), team: 'new' })
+    game = passInstants(game)
     game = apply(game, { type: 'end' })
     game = apply(game, { type: 'ready' })
     const sven = game.players[1].teams.flatMap((team) => team.heroes).find((hero) => hero.defId === 'sven')
     game = apply(game, { type: 'play', uid: uid(game, 0, 'razor'), team: 'new' })
+    game = passInstants(game)
     game = apply(game, { type: 'choose', ids: [`hero:${sven?.uid ?? ''}`] })
     const razor = game.players[0].teams.flatMap((team) => team.heroes).find((hero) => hero.defId === 'razor')
     expect(razor?.held?.card.defId).toBe('sven')
@@ -336,10 +478,12 @@ describe('heroes', () => {
     game = apply(game, { type: 'end' })
     game = apply(game, { type: 'ready' })
     game = apply(game, { type: 'play', uid: uid(game, 1, 'sven'), team: 'new' })
+    game = passInstants(game)
     game = apply(game, { type: 'end' })
     game = apply(game, { type: 'ready' })
     const sven = game.players[1].teams.flatMap((team) => team.heroes).find((hero) => hero.defId === 'sven')
     game = apply(game, { type: 'play', uid: uid(game, 0, 'morphling'), team: 'new' })
+    game = passInstants(game)
     game = apply(game, { type: 'choose', ids: [`hero:${sven?.uid ?? ''}`] })
     const morph = game.players[0].teams.flatMap((team) => team.heroes).find((hero) => hero.defId === 'morphling')
     expect(morph?.held?.mode).toBe('morph')
@@ -360,8 +504,9 @@ describe('heroes', () => {
     game = only(game, 0, ['sven'])
     game = only(game, 1, ['nyx_assassin'])
     game = apply(game, { type: 'play', uid: uid(game, 0, 'sven'), team: 'new' })
-    expect(game.pending?.prompt).toContain('counter Sven')
-    const nyx = game.pending?.choices.find((choice) => choice.id.startsWith('nyx:'))?.id ?? ''
+    // Nyx is Instant — it appears in the interrupt window and counters the ability there.
+    expect(game.pending?.resume.kind).toBe('instant-window')
+    const nyx = game.pending?.choices.find((choice) => choice.id.startsWith('instant:'))?.id ?? ''
     game = apply(game, { type: 'choose', ids: [nyx] })
     expect(game.players[0].teams).toEqual([])
     expect(game.grave.map((card) => card.defId).sort()).toEqual(['nyx_assassin', 'sven'])
@@ -375,6 +520,7 @@ describe('heroes', () => {
     game = apply(game, { type: 'end' })
     game = apply(game, { type: 'ready' })
     game = apply(game, { type: 'play', uid: uid(game, 1, 'sven'), team: 'new' })
+    game = passInstants(game)
     const sven = game.players[1].teams.flatMap((team) => team.heroes).find((hero) => hero.defId === 'sven')
     game = apply(game, { type: 'end' })
     game = apply(game, { type: 'ready' })
@@ -393,6 +539,7 @@ describe('heroes', () => {
     game = apply(game, { type: 'ready' })
     const pile = game.neutrals.length
     game = apply(game, { type: 'play', uid: uid(game, 1, 'chen'), team: 'new' })
+    game = passInstants(game)
     expect(game.neutrals.length).toBe(pile - 1)
     const hand = game.players[1].hand.length
     const chen = game.players[1].teams.flatMap((team) => team.heroes).find((hero) => hero.defId === 'chen')
@@ -406,7 +553,6 @@ describe('heroes', () => {
     game = apply(game, { type: 'ready' })
     expect(game.phased).toEqual([])
     expect(game.players[1].teams.flatMap((team) => team.heroes.map((hero) => hero.defId))).toEqual(['chen'])
-    // Turn-start draw 3 lands when the seat becomes active again.
     expect(game.players[1].hand.length).toBe(hand + 3)
     expect(game.neutrals.length).toBe(pile - 1)
   })
@@ -418,6 +564,7 @@ describe('heroes', () => {
     game = apply(game, { type: 'end' })
     game = apply(game, { type: 'ready' })
     game = apply(game, { type: 'play', uid: uid(game, 1, 'sven'), team: 'new' })
+    game = passInstants(game)
     const hexed = game.players[1].teams[0]?.heroes[0]?.uid ?? ''
     game = apply(game, { type: 'end' })
     game = apply(game, { type: 'ready' })
@@ -433,6 +580,7 @@ describe('heroes', () => {
     game = apply(game, { type: 'end' })
     game = apply(game, { type: 'ready' })
     game = apply(game, { type: 'play', uid: uid(game, 1, 'sven'), team: 'new' })
+    game = passInstants(game)
     const sven = game.players[1].teams[0]?.heroes[0]?.uid ?? ''
     game = apply(game, { type: 'end' })
     game = apply(game, { type: 'ready' })
@@ -456,6 +604,7 @@ describe('heroes', () => {
     game = apply(game, { type: 'end' })
     game = apply(game, { type: 'ready' })
     game = apply(game, { type: 'play', uid: uid(game, 1, 'sven'), team: 'new' })
+    game = passInstants(game)
     const stolen = game.players[1].teams[0]?.heroes[0]?.uid ?? ''
     game = apply(game, { type: 'end' })
     game = apply(game, { type: 'ready' })
@@ -487,11 +636,10 @@ describe('heroes', () => {
     game = apply(game, { type: 'end' })
     game = apply(game, { type: 'ready' })
     game = apply(game, { type: 'play', uid: uid(game, 0, 'faceless_void'), team: 'new' })
+    game = passInstants(game)
     if (game.pending?.prompt.toLowerCase().includes('opponent')) {
       game = apply(game, { type: 'choose', ids: ['player:1'] })
     }
-    // Instant: play on own turn targeting opponent — set their actions to 0 for the ongoing turn is N/A;
-    // verify the ability logged.
     expect(game.log.some((line) => line.includes('Chronosphere'))).toBe(true)
   })
 })
@@ -529,6 +677,16 @@ describe('match', () => {
 function ready(): Game {
   const game = createGame({ seed: 2, mode: 'hotseat', names: ['Radiant', 'Dire'] })
   return apply(game, { type: 'ready' })
+}
+
+/** Pass every Instant interrupt window so cast abilities can finish in tests. */
+function passInstants(game: Game): Game {
+  let next = game
+  let guard = 0
+  while (next.pending?.resume.kind === 'instant-window' && guard++ < 12) {
+    next = apply(next, { type: 'choose', ids: ['pass'] })
+  }
+  return next
 }
 
 function give(game: Game, defId: string, player: PlayerId): Game {

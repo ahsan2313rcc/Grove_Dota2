@@ -1,12 +1,12 @@
 import { display } from './catalog.ts'
 import { apply, comboPlans, needsTeam, teamsFor } from './engine.ts'
-import { drawsLocked, preferredFoe, preferredFoeFromScores, scoreState, scoreTeam } from './flow.ts'
+import { drawsLocked, preferredFoe, preferredFoeFromScores, scoreState, scoreTeam, teamById } from './flow.ts'
 import type { Action, AiStrat, Game, PlayerId } from './types.ts'
 
 export const AI_STRATS: { id: AiStrat; label: string; blurb: string }[] = [
-  { id: 'balanced', label: 'Balanced', blurb: 'Banks free settings, joins teams, and finishes scoring boards.' },
-  { id: 'tempo', label: 'Tempo', blurb: 'Banks free settings, then floods heroes onto the board; draws when stalled.' },
-  { id: 'architect', label: 'Architect', blurb: 'Builds teams and setting paths before racing.' },
+  { id: 'balanced', label: 'Balanced', blurb: 'Banks free terrains, joins teams, and finishes scoring boards.' },
+  { id: 'tempo', label: 'Tempo', blurb: 'Banks free terrains, then floods heroes onto the board; draws when stalled.' },
+  { id: 'architect', label: 'Architect', blurb: 'Builds teams and terrain paths before racing.' },
   { id: 'spite', label: 'Spite', blurb: 'Chases relative swings and denies the table.' },
 ]
 
@@ -33,7 +33,7 @@ export function chooseAiAction(state: Game): Action {
   const core = plans.find((plan) => plan.detail.startsWith('core'))
   const mixed = plans.find((plan) => plan.detail.startsWith('mixed'))
 
-  // Free setting combos first for every personality. Never play a lone setting.
+  // Free terrain combos first for every personality. Never play a lone terrain.
   if (mixed) return { type: 'combo', uids: mixed.uids }
   if (core) return { type: 'combo', uids: core.uids }
 
@@ -44,7 +44,7 @@ export function chooseAiAction(state: Game): Action {
   const hand = state.players[actor].hand
   const heroUids = hand.filter((card) => card.kind === 'hero').map((card) => card.uid)
   for (const card of hand) {
-    if (card.kind === 'setting') continue
+    if (card.kind === 'terrain') continue
     if (seen.has(card.defId)) continue
     seen.add(card.defId)
     const instant = display(card.defId).instant
@@ -82,7 +82,7 @@ export function chooseAiAction(state: Game): Action {
     }
   }
 
-  // Softlock escape: hand full of lone settings / Poison-Nova-locked items — pitch one and dig.
+  // Softlock escape: hand full of lone terrains / Poison-Nova-locked items — pitch one and dig.
   if (best.type === 'end' && state.players[actor].actions > 0) {
     const uid = stuckDiscardUid(state, actor)
     if (uid) return { type: 'discard', uid }
@@ -95,7 +95,7 @@ function stuckDiscardUid(state: Game, actor: PlayerId): string | null {
   const hand = state.players[actor].hand
   if (hand.length === 0) return null
   const playable = hand.some((card) => {
-    if (card.kind === 'setting') return false
+    if (card.kind === 'terrain') return false
     const teams = needsTeam(card.defId, card.kind) ? teamsFor(state, card.uid).filter((team) => team.ok) : [{ id: 'new', ok: true }]
     return teams.some((team) => {
       const next = apply({ ...state, autoAll: true }, { type: 'play', uid: card.uid, team: team.id })
@@ -106,9 +106,9 @@ function stuckDiscardUid(state: Game, actor: PlayerId): string | null {
   // Only pitch when the hand is clogged, draws are locked, or the deck is empty.
   if (hand.length < state.players[actor].handLimit && state.deck.length > 0 && !drawsLocked(state, actor)) return null
 
-  // Combo plans already ran — leftover settings cannot be played alone.
-  const setting = hand.find((card) => card.kind === 'setting')
-  if (setting) return setting.uid
+  // Combo plans already ran — leftover terrains cannot be played alone.
+  const terrain = hand.find((card) => card.kind === 'terrain')
+  if (terrain) return terrain.uid
   const item = hand.find((card) => card.kind === 'item')
   if (item) return item.uid
   return hand[0]?.uid ?? null
@@ -126,8 +126,8 @@ function endBias(state: Game, actor: PlayerId, strat: AiStrat): number {
 
 function drawBias(state: Game, actor: PlayerId, strat: AiStrat): number {
   const hand = state.players[actor].hand
-  const playable = hand.filter((card) => card.kind !== 'setting').length
-  const settings = hand.filter((card) => card.kind === 'setting').length
+  const playable = hand.filter((card) => card.kind !== 'terrain').length
+  const terrains = hand.filter((card) => card.kind === 'terrain').length
   if (strat === 'tempo') {
     if (playable === 0) return 1.1
     if (hand.length <= 2) return 0.55
@@ -137,8 +137,8 @@ function drawBias(state: Game, actor: PlayerId, strat: AiStrat): number {
   }
   if (strat === 'architect') return 0.85 + (hand.length < 5 ? 0.25 : 0)
   if (strat === 'spite') return 0.25
-  // Balanced: dig when the hand is thin or settings are stacking toward a combo.
-  return 0.7 + (playable <= 1 ? 0.45 : 0) + (settings >= 2 ? 0.25 : 0) + (hand.length <= 3 ? 0.2 : 0)
+  // Balanced: dig when the hand is thin or terrains are stacking toward a combo.
+  return 0.7 + (playable <= 1 ? 0.45 : 0) + (terrains >= 2 ? 0.25 : 0) + (hand.length <= 3 ? 0.2 : 0)
 }
 
 function playBias(before: Game, after: Game, actor: PlayerId, strat: AiStrat, kind: string, teamId: string): number {
@@ -149,6 +149,10 @@ function playBias(before: Game, after: Game, actor: PlayerId, strat: AiStrat, ki
   const beforePts = scoreState(before, actor).total
   const afterPts = scoreState(after, actor).total
   const ptsGain = afterPts - beforePts
+  const trapOnEnemy = (() => {
+    const found = teamById(after, teamId)
+    return !!found && found.player.id !== actor && !!found.team.trap && found.team.trap.owner === actor
+  })()
 
   if (strat === 'tempo') {
     let bonus = ptsGain * 0.35
@@ -159,6 +163,7 @@ function playBias(before: Game, after: Game, actor: PlayerId, strat: AiStrat, ki
       if (afterFilled > beforeFilled) bonus += 0.75
     }
     if (kind === 'item') bonus += 0.35
+    if (trapOnEnemy) bonus += 0.55
     return bonus
   }
   if (strat === 'architect') {
@@ -174,12 +179,13 @@ function playBias(before: Game, after: Game, actor: PlayerId, strat: AiStrat, ki
       if (afterTeams > beforeTeams) bonus += 0.15
     }
     if (afterCombos > beforeCombos) bonus += 1.1
+    if (trapOnEnemy) bonus += 0.35
     return bonus
   }
   if (strat === 'spite') {
     const beforeOpp = rivalPts(before, actor)
     const afterOpp = rivalPts(after, actor)
-    return (beforeOpp - afterOpp) * 0.35 + ptsGain * 0.15
+    return (beforeOpp - afterOpp) * 0.35 + ptsGain * 0.15 + (trapOnEnemy ? 0.9 : 0)
   }
 
   // Balanced: join and complete teams; reward real point swings.
@@ -192,6 +198,7 @@ function playBias(before: Game, after: Game, actor: PlayerId, strat: AiStrat, ki
     if (teamId === 'new') bonus -= 0.25
   }
   if (kind === 'item') bonus += 0.3
+  if (trapOnEnemy) bonus += 0.7
   return bonus
 }
 
@@ -208,7 +215,7 @@ function evaluate(state: Game, actor: PlayerId, strat: AiStrat): number {
   const mine = scoreState(state, actor).total
   const foe = rivalPts(state, actor)
   const hand = state.players[actor].hand.length
-  const settings = state.players[actor].hand.filter((card) => card.kind === 'setting').length
+  const terrains = state.players[actor].hand.filter((card) => card.kind === 'terrain').length
   const teams = state.players[actor].teams
   const heroes = teams.reduce((sum, team) => sum + team.heroes.length, 0)
   const filled = teams.filter((team) => team.heroes.length >= 3).length
@@ -229,7 +236,7 @@ function evaluate(state: Game, actor: PlayerId, strat: AiStrat): number {
     )
   }
   if (strat === 'architect') {
-    return mine * 0.9 - foe * 0.45 + boardShape * 0.25 + filled * 0.8 + comboPts * 0.55 + settings * 0.4 + hand * 0.18 + heroes * 0.22
+    return mine * 0.9 - foe * 0.45 + boardShape * 0.25 + filled * 0.8 + comboPts * 0.55 + terrains * 0.4 + hand * 0.18 + heroes * 0.22
   }
   if (strat === 'spite') {
     return mine * 0.75 - foe * 1.55 + hand * 0.08
@@ -241,7 +248,7 @@ function evaluate(state: Game, actor: PlayerId, strat: AiStrat): number {
     filled * 0.85 +
     nearly * 0.4 +
     comboPts * 0.55 +
-    settings * 0.35 +
+    terrains * 0.35 +
     hand * 0.12 +
     heroes * 0.28
   )

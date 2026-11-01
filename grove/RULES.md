@@ -6,9 +6,9 @@ Authoritative rules for agents and implementers. Card text lives in `src/game/ca
 
 ## 1. Overview
 
-Grove is a competitive multiplayer card game (typically **2 seats**; engine supports more). Players build **teams of heroes** and play **setting combos** for points. One **shared deck**, shared **grave**, and shared **exile**. Separate face-down reward piles: **runes**, **neutrals**, **towers**.
+Grove is a competitive multiplayer card game (typically **2 seats**; engine supports more). Players build **teams of heroes** and play **terrain combos** for points. One **shared deck**, shared **grave**, and shared **exile**. Separate face-down reward piles: **runes**, **neutrals**, **towers**.
 
-**Win condition:** When the shared deck is empty, the game ends. Highest total score wins (teams + setting combo points). Ties are possible (no forced tiebreak in engine finish).
+**Win condition:** When the shared deck is empty, the game ends. Highest total score wins (teams + terrain combo points). Ties are possible (no forced tiebreak in engine finish).
 
 ---
 
@@ -18,7 +18,7 @@ Grove is a competitive multiplayer card game (typically **2 seats**; engine supp
 |------|--------|------|
 | **Hero** | Main deck | Has attribute (STR/AGI/INT/UNI), attack type (Melee/Ranged), ability timing |
 | **Item** | Main deck | Played from hand; often targeted |
-| **Setting** | Main deck (36 total: river/jungle/lane) | Never played alone — always as a **combo of exactly 3** |
+| **Terrain** | Main deck (36 total: river/jungle/lane) | Never played alone — always as a **combo of exactly 3** |
 | **Rune** | Rune pile | Reward from 3 Rivers |
 | **Neutral** | Neutral pile | Reward from 3 Jungles; token body on a team (except Tormentor) |
 | **Tower** | Tower pile | Reward from 3 Lanes |
@@ -27,7 +27,7 @@ Grove is a competitive multiplayer card game (typically **2 seats**; engine supp
 
 - **`cast`** — Ability fires when the hero is played as the **active** hero (unless silenced/blocked).
 - **`aura`** — No on-play fire; passive while on the board.
-- **`instant`** — Can be played as a free instant (no action) on your turn; some are also hand answers (Nyx, saves).
+- **`instant`** — Free (no action). Playable on **your turn** and on **opponents’ turns** to interrupt. Before a hero ability fires, opponents get an Instant window.
 - **`trap`** — Played face down onto a team. Does **not** fire on play. Reveals and resolves when its trigger is met (see §7.1).
 
 **Item / reward `instant: true`:** Does not cost an action.
@@ -45,7 +45,7 @@ Engine should track a `stolenCast` (or depth) flag for the duration of that nest
 
 ## 3. Setup
 
-1. Build and shuffle the main deck: all heroes (1 each) + item copies + 36 settings.
+1. Build and shuffle the main deck: all heroes (1 each) + item copies + 36 terrains.
 2. Fill and shuffle reward piles from `REWARDS` by kind.
 3. Each player draws **5**.
 4. Seat 0 is active, starts with **2 actions** (no turn-start draw on the very first partial turn — opening hand is the 5). Subsequent turns: draw 3 + 2 actions.
@@ -66,7 +66,7 @@ For the active seat (after previous player ends):
 4. If `skip`: clear skip, pass to next seat.
 5. If `noHeroNext`: convert to `noHeroNow` for this turn (cannot play heroes).
 6. Set **actions = 2**.
-7. **Draw 3** (via pending draws; may trigger Slark, hand-limit discard, empty-deck finish).
+7. **Draw 3** (via pending draws; may trigger Slark or empty-deck finish). Hand may exceed 7 until end of turn.
 
 Hotseat: optional veil between seats.
 
@@ -77,9 +77,9 @@ Legal actions (when no `pending` prompt):
 | Action | Cost | Effect |
 |--------|------|--------|
 | **Play** hero/item/reward | 1 action (0 if instant) | See §6–7 |
-| **Combo** 3 settings | Free | See §5 |
+| **Combo** 3 terrains | Free | See §5 |
 | **Draw** | 1 action | Draw 1 if hand &lt; limit and deck nonempty |
-| **Discard stuck** | 1 action | Pitch a hand card to grave (escape Poison Nova / lone settings) |
+| **Discard stuck** | 1 action | Pitch a hand card to grave (escape Poison Nova / lone terrains) |
 | **Move** Ember Spirit | Free | Aura move between own teams |
 | **Morph cast** | — | Fire stolen Morph ability if eligible |
 | **End** | — | End turn (must discard down to 7 first if over limit) |
@@ -98,10 +98,10 @@ Whenever the game is live and the deck is empty after settling effects/draws, **
 
 ---
 
-## 5. Settings (combos)
+## 5. Terrains (combos)
 
-- Settings **cannot** be played as a single card.
-- Play **exactly three** setting cards from hand as one free combo.
+- Terrains **cannot** be played as a single card.
+- Play **exactly three** terrain cards from hand as one free combo.
 - Can be countered by **Nyx Assassin** (like other plays).
 
 **Three of a kind** (3 River / 3 Jungle / 3 Lane):
@@ -116,7 +116,7 @@ Whenever the game is live and the deck is empty after settling effects/draws, **
 
 **Luna aura:** For each Jungle card in the combo, if you control Luna, draw an item from the main deck (first item found; cards above it stay).
 
-Combos remain as scored setting piles; some effects destroy/protect them (Hoodwink, Windranger, Treant).
+Combos remain as scored terrain piles; some effects destroy/protect them (Hoodwink, Windranger, Treant).
 
 ---
 
@@ -125,9 +125,11 @@ Combos remain as scored setting piles; some effects destroy/protect them (Hoodwi
 ### 6.1 Cost and locks
 
 - Non-instant plays cost 1 action (check before resolve).
+- **Instant** cards cost 0 and may be played on an opponent’s turn (including to interrupt before an ability fires).
 - **Chronosphere / lockPlay:** Opponents of the lock caster cannot play cards or combo.
-- **Venomancer:** Opponents cannot play items.
+- **Doom (aura):** Opponents cannot play items.
 - **Doom / Halberd (`noHeroNow`):** Cannot play heroes this turn.
+- **Troll Warlord (Battle Trance):** Opponents cannot play Instant cards (logged when it blocks an interrupt).
 - **Shadow Demon ban:** Listed UIDs cannot be played while that SD is controlled by the banner.
 
 ### 6.2 Nyx counter window
@@ -135,14 +137,14 @@ Combos remain as scored setting piles; some effects destroy/protect them (Hoodwi
 Before a play (or combo) resolves, an opponent holding **Nyx Assassin** may discard it:
 
 - Countered **card** → grave (companions in a multi-drop still enter silently).
-- Countered **combo** → all three settings → grave; no score/reward.
+- Countered **combo** → all three terrains → grave; no score/reward.
 
 ### 6.3 Heroes — multi-drop
 
 - One action can play **one active hero** plus any number of **companion** heroes into the **same** team.
 - Only the **active** hero’s on-play ability fires; companions are silent (auras still apply).
 - Destination: existing team you own, or `new` (create team if under TEAM_CAP).
-- Team size weight: Meepo = 2, others = 1; max **5** weight per team.
+- Team size weight: max **5** heroes per team (weight 1 each in current engine).
 - At most **one neutral token** per team.
 
 **On enter (`arrived`):**
@@ -151,12 +153,13 @@ Before a play (or combo) resolves, an opponent holding **Nyx Assassin** may disc
 - If team has Techies **mine**, destroy the entering hero and grave the mine card.
 - Each **Lycan** already on that team (same controller) → controller draws 1.
 
-**On-play fire** (active hero only, timing ≠ aura, not Nyx, not global silence):
+**On-play fire** (active hero only, timing ≠ aura, not Nyx/Spirit Breaker hand-counter, not global silence):
 
 1. If mined, queue cast for if-still-alive.
-2. Else if enemy **Pugna**: choose discard 1 or fizzle fire.
-3. Else **Tormentor** window (enemy may exile Tormentor from hand to destroy the new hero; if hero dies, cast cancelled; if saved/alive, cast proceeds).
-4. Else `cast(...)` the ability.
+2. Else **Instant interrupt window**: each opponent may play one Instant (or pass). Battle Trance skips a seat and logs if they held Instant cards.
+3. Else if enemy **Pugna**: choose discard 1 or fizzle fire.
+4. Else **Nyx ability counter** window (discard Nyx to destroy the firing hero).
+5. Else `cast(...)` the ability.
 
 ### 6.4 Neutrals (tokens)
 
@@ -182,7 +185,7 @@ Trap heroes (`timing: 'trap'`):
 1. Play face down on **any** team (ally or enemy).
 2. **At most one trap per team** (optional hard limit; recommended).
 3. **Trigger (automatic):** when a hero **enters** that team, **or** when that team / a hero in it is **targeted by an effect**, the trap **reveals and resolves** — no owner choice to pass.
-4. Resolve printed text (often sacrifice the trap hero, then the effect).
+4. Resolve printed text. If the text says **Sacrifice**, the trap goes to the grave; otherwise the revealed hero **joins that team** as a normal body (if the team cannot hold it, return the card to the trap owner’s hand).
 5. **Zeus** removes all face-down traps from the board.
 
 Trap roster: Techies, Riki, Kez, Monkey King, Templar Assassin, Ogre Magi, Slark, Bounty Hunter, Shadow Shaman.
@@ -260,7 +263,7 @@ Grave is shared; `graveThisTurn` / `lastGrave` track for effects.
 
 ## 9. Scoring
 
-Total = **sum of team scores** + **sum of setting combo points**.
+Total = **sum of team scores** + **sum of terrain combo points**.
 
 ### 9.1 Per team
 
@@ -286,7 +289,7 @@ Bodies: each hero contributes `count` slots (`Meepo` = 2). Neutrals: `scoresFlat
 
 Max illustrative mono team: 5 same attr → 5 + 10 = **15**. Mix + attack e.g. 5 heroes 4 attrs melee: 5 + 4 + 3 = **12**.
 
-### 9.2 Settings
+### 9.2 Terrains
 
 Each completed combo adds its stored `points` (default 5).
 
@@ -314,7 +317,8 @@ Each completed combo adds its stored `points` (default 5).
 
 ## 11. Hand limit and draws
 
-- Limit **7**. Over limit → must discard (prompt). Cannot voluntary draw-action if already at limit.
+- Limit **7**. Discard down to 7 happens **only at end of turn** (not after draws or mid-turn gains).
+- Cannot take the voluntary draw action if already at 7.
 - Draws may be queued (`pendingDraws`) and resolved in `settle`.
 - **Crystal Maiden / Lotus:** Draw until hand has 7.
 
@@ -341,14 +345,14 @@ AI strats: `balanced` | `tempo` | `architect` | `spite`.
 
 ## 14. Rules agents often miss
 
-1. Settings are **only** via 3-card combo; never lone play.
+1. Terrains are **only** via 3-card combo; never lone play.
 2. Multi-hero drop = **one** action; **one** fire.
 3. Nyx counters only the **active** hero; companions still land.
 4. Neutrals are **0** flat points but count for bonuses; one per team.
 5. Mono attr and attack bonus **do not stack** (default); mix + attack **do**.
 6. UNI is its **own** mono color; it does not patch STR/AGI/INT holes.
 7. Team cap **12**; team size weight cap **5**.
-8. Instant ≠ always playable on opponent’s turn — play is still only on your active turn (unless a save/answer prompt gives you a choose).
+8. Instant cards **are** playable on an opponent’s turn (and before abilities fire); Battle Trance is the lockout.
 9. Destroy is asynchronous via **queue**; protection order matters.
 10. Card text in `catalog.ts` is the player-facing contract; if code and text disagree, treat text as design intent and code as current behavior — prefer aligning them.
 
@@ -366,4 +370,4 @@ AI strats: `balanced` | `tempo` | `architect` | `spite`.
 | Short human rules UI | `src/ui/Rules.tsx` |
 | Card browser UI | `src/ui/Glossary.tsx` |
 
-For the full card text dump, read `HEROES`, `ITEMS`, `REWARDS`, and `SETTINGS` in `catalog.ts`.
+For the full card text dump, read `HEROES`, `ITEMS`, `REWARDS`, and `TERRAINS` in `catalog.ts`.

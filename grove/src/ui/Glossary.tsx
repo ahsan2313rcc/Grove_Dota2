@@ -1,13 +1,13 @@
 import { useMemo, useState } from 'react'
-import { HEROES, ITEMS, REWARDS, SETTINGS } from '../game/catalog.ts'
+import { HEROES, ITEMS, REWARDS, TERRAINS } from '../game/catalog.ts'
 import type { Attr } from '../game/types.ts'
 
-type Tab = 'heroes' | 'items' | 'settings' | 'runes' | 'neutrals' | 'towers'
+type Tab = 'heroes' | 'items' | 'terrains' | 'runes' | 'neutrals' | 'towers'
 
 const TABS: { id: Tab; label: string }[] = [
   { id: 'heroes', label: 'Heroes' },
   { id: 'items', label: 'Items' },
-  { id: 'settings', label: 'Settings' },
+  { id: 'terrains', label: 'Terrains' },
   { id: 'runes', label: 'Runes' },
   { id: 'neutrals', label: 'Neutrals' },
   { id: 'towers', label: 'Towers' },
@@ -50,8 +50,8 @@ export function Glossary({ onClose }: { onClose: () => void }) {
       .sort((a, b) => a.name.localeCompare(b.name) || b.copies - a.copies)
   }, [needle])
 
-  const settings = useMemo(() => {
-    return SETTINGS.filter((setting) => matches(needle, setting.name, setting.text))
+  const terrains = useMemo(() => {
+    return TERRAINS.filter((terrain) => matches(needle, terrain.name, terrain.text))
   }, [needle])
 
   const rewards = useMemo(() => {
@@ -66,7 +66,7 @@ export function Glossary({ onClose }: { onClose: () => void }) {
 
   const count = tab === 'heroes' ? heroes.length
     : tab === 'items' ? items.length
-      : tab === 'settings' ? settings.length
+      : tab === 'terrains' ? terrains.length
         : rewards.length
 
   return (
@@ -74,7 +74,7 @@ export function Glossary({ onClose }: { onClose: () => void }) {
       <article className="sheet glossary" role="dialog" aria-modal="true" aria-labelledby="glossary-title" onClick={(event) => event.stopPropagation()}>
         <p className="eyebrow">Card reference</p>
         <h2 id="glossary-title">Glossary</h2>
-        <p className="quiet">Browse every hero, item, setting, and reward in the shared decks.</p>
+        <p className="quiet">Browse every hero, item, terrain, and reward in the shared decks.</p>
 
         <div className="glossary-tabs" role="tablist" aria-label="Card type">
           {TABS.map((entry) => (
@@ -151,15 +151,15 @@ export function Glossary({ onClose }: { onClose: () => void }) {
           </ul>
         ) : null}
 
-        {tab === 'settings' ? (
+        {tab === 'terrains' ? (
           <ul className="glossary-list">
-            {settings.map((setting) => (
-              <li key={setting.id} className="glossary-entry" data-kind={setting.id}>
+            {terrains.map((terrain) => (
+              <li key={terrain.id} className="glossary-entry" data-kind={terrain.id}>
                 <header>
-                  <strong>{setting.name}</strong>
+                  <strong>{terrain.name}</strong>
                   <span className="glossary-marks"><span className="pill muted">12× in deck</span></span>
                 </header>
-                <p>{setting.text}</p>
+                <p>{terrain.text}</p>
               </li>
             ))}
           </ul>

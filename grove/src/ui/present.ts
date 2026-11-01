@@ -1,5 +1,5 @@
 import { display } from '../game/catalog.ts'
-import { attrsOf, enterReason, findHero, graveLocked, itemsLocked, rangeOf, scoreTeam, TEAM_CAP } from '../game/flow.ts'
+import { attrsOf, enterReason, findHero, graveLocked, instantsLocked, itemsLocked, rangeOf, scoreTeam, TEAM_CAP } from '../game/flow.ts'
 import type { Attr, BoardHero, CardInst, Game, PlayerId, Range, Team } from '../game/types.ts'
 
 export function opponentOf(game: Game, id: PlayerId): PlayerId {
@@ -13,7 +13,7 @@ export function handRevealed(game: Game, viewer: PlayerId, target: PlayerId): bo
 }
 
 export function isCombo(cards: CardInst[]): boolean {
-  if (cards.length !== 3 || cards.some((card) => card.kind !== 'setting')) return false
+  if (cards.length !== 3 || cards.some((card) => card.kind !== 'terrain')) return false
   const kinds = new Set(cards.map((card) => card.defId))
   if (kinds.size === 1) return true
   return kinds.size === 3
@@ -63,8 +63,16 @@ export function statusLines(game: Game, viewer: PlayerId): string[] {
   if (game.lockPlay && game.lockPlay.caster !== viewer) lines.push('Chronosphere: you cannot play cards.')
   if (game.silence) lines.push('Global Silence: hero abilities do not fire.')
   if (game.naga) lines.push('Song of the Siren: heroes cannot be destroyed.')
-  if (itemsLocked(game, viewer)) lines.push('Poison Nova: you cannot play items.')
+  if (itemsLocked(game, viewer)) lines.push('Doom: you cannot play items.')
+  if (instantsLocked(game, viewer)) lines.push('Battle Trance: you cannot play Instant cards.')
+  if (game.noDraw && game.noDraw.caster !== viewer) lines.push("Berserker's Call: you cannot draw.")
+  if (game.attrBan && game.attrBan.caster !== viewer) {
+    lines.push(`Reaper's Scythe: ${game.attrBan.attr} heroes are banned.`)
+  }
   if (graveLocked(game, viewer)) lines.push('Muerta: you cannot take cards from the grave.')
+  if (game.active !== viewer && !game.over && !instantsLocked(game, viewer)) {
+    lines.push('You may play Instant cards to interrupt.')
+  }
   return lines
 }
 
@@ -85,10 +93,14 @@ export function emberTargets(game: Game, uid: string): { id: string; label: stri
 }
 
 export function playBlock(game: Game, viewer: PlayerId, card: CardInst): string | null {
-  if (card.kind === 'setting') return 'Play three settings together.'
+  if (card.kind === 'terrain') return 'Play three terrains together.'
   if (game.lockPlay && game.lockPlay.caster !== viewer) return 'Chronosphere stops cards.'
-  if (card.kind === 'hero' && game.players[viewer].noHeroNow) return 'Doom stops heroes.'
-  if (card.kind === 'item' && itemsLocked(game, viewer)) return 'Poison Nova stops items.'
-  if (!display(card.defId).instant && game.players[viewer].actions < 1) return 'No actions left.'
+  const instant = display(card.defId).instant
+  const offTurn = game.active !== viewer
+  if (offTurn && !instant) return "Only Instant cards play on an opponent's turn."
+  if (instant && instantsLocked(game, viewer)) return 'Battle Trance stops Instant cards.'
+  if (card.kind === 'hero' && game.players[viewer].noHeroNow && !offTurn) return 'Doom stops heroes.'
+  if (card.kind === 'item' && itemsLocked(game, viewer)) return 'Doom stops items.'
+  if (!instant && game.players[viewer].actions < 1) return 'No actions left.'
   return null
 }

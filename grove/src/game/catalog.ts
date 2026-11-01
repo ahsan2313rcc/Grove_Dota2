@@ -1,4 +1,4 @@
-import type { Attr, CardKind, Range, SettingKind, Timing } from './types.ts'
+import type { Attr, CardKind, Range, TerrainKind, Timing } from './types.ts'
 
 export interface HeroDef {
   id: string
@@ -29,8 +29,8 @@ export interface RewardDef {
   token: boolean
 }
 
-export interface SettingDef {
-  id: SettingKind
+export interface TerrainDef {
+  id: TerrainKind
   name: string
   text: string
 }
@@ -65,7 +65,7 @@ export const HEROES: HeroDef[] = [
   hero('clockwerk', 'Clockwerk', 'STR', 'Melee', 'Hookshot', 'Reveal the top 3 cards of the deck. Put one into your hand, one on top of the deck, and one into the grave.', 'cast'),
   hero('dawnbreaker', 'Dawnbreaker', 'STR', 'Melee', 'Solar Guardian', 'If target hero would be destroyed this turn, return it to your hand instead. Instant.', 'instant'),
   hero('doom', 'Doom', 'STR', 'Melee', 'Doom', 'Opponents cannot play item cards.', 'aura'),
-  hero('dragon_knight', 'Dragon Knight', 'STR', 'Melee', 'Elder Dragon Form', 'Reveal the top 5 cards of the deck. Put all setting cards into your hand and the rest into the grave.', 'cast'),
+  hero('dragon_knight', 'Dragon Knight', 'STR', 'Melee', 'Elder Dragon Form', 'Reveal the top 5 cards of the deck. Put all terrain cards into your hand and the rest into the grave.', 'cast'),
   hero('earth_spirit', 'Earth Spirit', 'STR', 'Melee', 'Boulder Smash', 'Return target enemy hero to the bottom of the deck. Instant.', 'instant'),
   hero('earthshaker', 'Earthshaker', 'STR', 'Melee', 'Echo Slam', 'Destroy target enemy team with 3 or more heroes.', 'cast'),
   hero('elder_titan', 'Elder Titan', 'STR', 'Melee', 'Natural Order', 'All enemy heroes lose their attribute bonus.', 'aura'),
@@ -90,13 +90,13 @@ export const HEROES: HeroDef[] = [
   hero('phoenix', 'Phoenix', 'STR', 'Ranged', 'Supernova', 'You may exile Phoenix, then return target enemy team to the bottom of the deck.', 'cast'),
   hero('primal_beast', 'Primal Beast', 'STR', 'Melee', 'Uproar', 'Until your next turn, you cannot play hero cards, but you may play item cards as if they were instants.', 'cast'),
   hero('pudge', 'Pudge', 'STR', 'Melee', 'Meat Hook', 'Take control of target enemy hero. That opponent discards a card.', 'cast'),
-  hero('slardar', 'Slardar', 'STR', 'Melee', 'Corrosive Haze', 'Draw a card for each River setting combo you control.', 'cast'),
+  hero('slardar', 'Slardar', 'STR', 'Melee', 'Corrosive Haze', 'Draw a card for each River terrain combo you control.', 'cast'),
   hero('spirit_breaker', 'Spirit Breaker', 'STR', 'Melee', 'Charge of Darkness', 'Counter and destroy the hero card that was played last. Instant.', 'instant'),
   hero('sven', 'Sven', 'STR', 'Melee', "God's Strength", 'If this team has 3 or more Strength heroes, destroy target enemy team.', 'cast'),
   hero('tidehunter', 'Tidehunter', 'STR', 'Melee', 'Ravage', 'Return a team from each enemy to their hand. They each discard 5 cards.', 'cast'),
   hero('timbersaw', 'Timbersaw', 'STR', 'Melee', 'Whirling Death', 'Destroy all Strength heroes target opponent controls.', 'cast'),
   hero('tiny', 'Tiny', 'STR', 'Melee', 'Toss', 'Move a hero in this team to target enemy team and destroy 2 other heroes in that team.', 'cast'),
-  hero('treant_protector', 'Treant Protector', 'STR', 'Melee', 'Living Armor', 'Your setting combos cannot be stolen or destroyed.', 'aura'),
+  hero('treant_protector', 'Treant Protector', 'STR', 'Melee', 'Living Armor', 'Your terrain combos cannot be stolen or destroyed.', 'aura'),
   hero('tusk', 'Tusk', 'STR', 'Melee', 'Snowball', 'Target allied hero and Tusk become immune until your next turn. Instant.', 'instant'),
   hero('underlord', 'Underlord', 'UNI', 'Melee', 'Dark Rift', 'Move all heroes in this team to another team you control.', 'cast'),
   hero('undying', 'Undying', 'STR', 'Melee', 'Flesh Golem', 'Whenever Undying would be destroyed, you may discard a card instead and Undying is not destroyed.', 'aura'),
@@ -117,13 +117,13 @@ export const HEROES: HeroDef[] = [
     TRAP + 'Sacrifice Bounty Hunter. Target opponent reveals their hand; take all hero cards from it.',
     'trap',
   ),
-  hero('broodmother', 'Broodmother', 'AGI', 'Melee', 'Spin Web', 'Reveal cards from the top of the deck until you reveal a setting. Put it into your hand; put the rest into the grave.', 'cast'),
+  hero('broodmother', 'Broodmother', 'AGI', 'Melee', 'Spin Web', 'Reveal cards from the top of the deck until you reveal a terrain. Put it into your hand; put the rest into the grave.', 'cast'),
   hero('clinkz', 'Clinkz', 'AGI', 'Ranged', 'Death Pact', 'Exile the top 5 cards of the deck. You may play any number of those exiled item cards for free this turn.', 'cast'),
   hero('drow_ranger', 'Drow Ranger', 'AGI', 'Ranged', 'Marksmanship', 'If this team has 3 or more Ranged heroes, destroy target enemy hero.', 'cast'),
-  hero('ember_spirit', 'Ember Spirit', 'AGI', 'Melee', 'Fire Remnant', 'Move up to X heroes you own to other teams you control, where X is the number of Lane setting combos you control.', 'cast'),
+  hero('ember_spirit', 'Ember Spirit', 'AGI', 'Melee', 'Fire Remnant', 'Move up to X heroes you own to other teams you control, where X is the number of Lane terrain combos you control.', 'cast'),
   hero('faceless_void', 'Faceless Void', 'AGI', 'Melee', 'Chronosphere', 'Target opponent loses their remaining actions. Instant.', 'instant'),
   hero('gyrocopter', 'Gyrocopter', 'AGI', 'Ranged', 'Call Down', 'Choose an attribute (STR / AGI / INT / UNI). Destroy one hero of that attribute from each opponent.', 'cast'),
-  hero('hoodwink', 'Hoodwink', 'AGI', 'Ranged', 'Sharpshooter', 'If you control a Jungle combo, destroy any enemy setting combo or enemy hero.', 'cast'),
+  hero('hoodwink', 'Hoodwink', 'AGI', 'Ranged', 'Sharpshooter', 'If you control a Jungle combo, destroy any enemy terrain combo or enemy hero.', 'cast'),
   hero('juggernaut', 'Juggernaut', 'AGI', 'Melee', 'Blade Fury', 'Whenever a hero in this team activates an ability, this team becomes immune until your next turn.', 'aura'),
   hero(
     'kez',
@@ -137,7 +137,7 @@ export const HEROES: HeroDef[] = [
   hero('lone_druid', 'Lone Druid', 'AGI', 'Ranged', 'Summon Spirit Bear', 'Take the top Tower card into your hand. You may play it immediately for free.', 'cast'),
   hero('luna', 'Luna', 'AGI', 'Ranged', 'Moon Glaives', 'Whenever you play a Jungle combo, search the deck for an item card and put it into your hand.', 'aura'),
   hero('medusa', 'Medusa', 'AGI', 'Ranged', 'Stone Gaze', 'Exile target enemy team. Return it to its owner whenever Medusa leaves the board.', 'cast'),
-  hero('meepo', 'Meepo', 'AGI', 'Melee', 'Divided We Stand', 'Gain +1 point for each setting combo you control.', 'aura'),
+  hero('meepo', 'Meepo', 'AGI', 'Melee', 'Divided We Stand', 'Gain +1 point for each terrain combo you control.', 'aura'),
   hero('mirana', 'Mirana', 'AGI', 'Ranged', 'Sacred Arrow', 'Reveal the top card of the deck. If it is a hero, you may play it immediately for free; otherwise put it into the grave.', 'cast'),
   hero('monkey_king', 'Monkey King', 'AGI', 'Melee', 'Wukong\'s Command', TRAP + 'Opponents lose their remaining actions.', 'trap'),
   hero(
@@ -217,7 +217,7 @@ export const HEROES: HeroDef[] = [
     'Take control of target Strength hero. You may reactivate its ability immediately.' + NO_CHAIN,
     'cast',
   ),
-  hero('grimstroke', 'Grimstroke', 'INT', 'Ranged', 'Soulbind', 'Sacrifice a setting combo to take control of target enemy team.', 'cast'),
+  hero('grimstroke', 'Grimstroke', 'INT', 'Ranged', 'Soulbind', 'Sacrifice a terrain combo to take control of target enemy team.', 'cast'),
   hero('invoker', 'Invoker', 'INT', 'Ranged', 'Cataclysm', 'All players discard their hands and draw 3 cards from the deck.', 'cast'),
   hero('jakiro', 'Jakiro', 'INT', 'Ranged', 'Ice Path', 'Target opponent cannot play hero cards until your next turn.', 'cast'),
   hero(
@@ -280,16 +280,16 @@ export const HEROES: HeroDef[] = [
   hero('io', 'Io', 'UNI', 'Ranged', 'Tether', 'Draw cards equal to the number of players from the deck. Give a card of your choosing to each player.', 'cast'),
   hero('magnus', 'Magnus', 'UNI', 'Melee', 'Reverse Polarity', 'Redistribute up to 5 heroes target opponent controls to form a new team they control.', 'cast'),
   hero('marci', 'Marci', 'UNI', 'Melee', 'Dispose', 'Move an allied hero to another team you own. Instant.', 'instant'),
-  hero('natures_prophet', "Nature's Prophet", 'UNI', 'Ranged', 'Wrath of Nature', 'Destroy an enemy hero for each setting combo each opponent controls.', 'cast'),
-  hero('pangolier', 'Pangolier', 'UNI', 'Melee', 'Lucky Shot', 'Target an opponent, then name a setting. That opponent loses their next turn unless they discard the named setting card.', 'cast'),
+  hero('natures_prophet', "Nature's Prophet", 'UNI', 'Ranged', 'Wrath of Nature', 'Destroy an enemy hero for each terrain combo each opponent controls.', 'cast'),
+  hero('pangolier', 'Pangolier', 'UNI', 'Melee', 'Lucky Shot', 'Target an opponent, then name a terrain. That opponent loses their next turn unless they discard the named terrain card.', 'cast'),
   hero('snapfire', 'Snapfire', 'UNI', 'Ranged', 'Mortimer Kisses', 'Exile 3 cards from your hand. Take any 2 cards from the grave into your hand.', 'cast'),
   hero('venomancer', 'Venomancer', 'UNI', 'Ranged', 'Poison Nova', 'Whenever an opponent plays an item card, they must discard a card from their hand or nullify its effect.', 'aura'),
   hero('void_spirit', 'Void Spirit', 'UNI', 'Melee', 'Dissimilate', 'Swap hands with target opponent.', 'cast'),
-  hero('windranger', 'Windranger', 'UNI', 'Ranged', 'Focus Fire', 'Take control of target enemy setting combo.', 'cast'),
+  hero('windranger', 'Windranger', 'UNI', 'Ranged', 'Focus Fire', 'Take control of target enemy terrain combo.', 'cast'),
 ]
 
 export const ITEMS: ItemDef[] = [
-  { id: 'clarity', name: 'Clarity', copies: 3, instant: false, text: 'Search the deck for a setting card and put it into your hand. Shuffle.' },
+  { id: 'clarity', name: 'Clarity', copies: 3, instant: false, text: 'Search the deck for a terrain card and put it into your hand. Shuffle.' },
   { id: 'tp_scroll', name: 'Teleportation Scroll', copies: 3, instant: false, text: 'Move target hero you own to another team you control.' },
   { id: 'ward', name: 'Observer Ward', copies: 3, instant: false, text: "Reveal target opponent's hand." },
   { id: 'gloves', name: 'Gloves of Haste', copies: 3, instant: false, text: "Steal a random card from an opponent's hand." },
@@ -343,10 +343,10 @@ export const REWARDS: RewardDef[] = [
   { id: 'gate', name: "Fiend's Gate", kind: 'tower', copies: 2, instant: false, token: false, text: 'Move up to 5 heroes you own to form a new team you control.' },
 ]
 
-export const SETTINGS: SettingDef[] = [
-  { id: 'river', name: 'River', text: 'A setting — cannot be played alone. Three Rivers score 5 and take the top rune. A River, a Jungle, and a Lane score 5.' },
-  { id: 'jungle', name: 'Jungle', text: 'A setting — cannot be played alone. Three Jungles score 5 and take the top neutral. A River, a Jungle, and a Lane score 5.' },
-  { id: 'lane', name: 'Lane', text: 'A setting — cannot be played alone. Three Lanes score 5 and take the top tower. A River, a Jungle, and a Lane score 5.' },
+export const TERRAINS: TerrainDef[] = [
+  { id: 'river', name: 'River', text: 'A terrain — cannot be played alone. Three Rivers score 5 and take the top rune. A River, a Jungle, and a Lane score 5.' },
+  { id: 'jungle', name: 'Jungle', text: 'A terrain — cannot be played alone. Three Jungles score 5 and take the top neutral. A River, a Jungle, and a Lane score 5.' },
+  { id: 'lane', name: 'Lane', text: 'A terrain — cannot be played alone. Three Lanes score 5 and take the top tower. A River, a Jungle, and a Lane score 5.' },
 ]
 
 export const HERO_BY_ID = Object.fromEntries(HEROES.map((entry) => [entry.id, entry])) as Record<string, HeroDef>
@@ -404,8 +404,8 @@ export function display(defId: string): { name: string; text: string; spell?: st
       instant: reward.instant,
     }
   }
-  const setting = SETTINGS.find((entry) => entry.id === defId)
-  if (setting) return { name: setting.name, text: setting.text, kind: 'setting', instant: false }
+  const terrain = TERRAINS.find((entry) => entry.id === defId)
+  if (terrain) return { name: terrain.name, text: terrain.text, kind: 'terrain', instant: false }
   return { name: defId, text: '', kind: 'hero', instant: false }
 }
 

@@ -17,8 +17,8 @@ describe('balance', () => {
 
     const summary = summarizeReports([report])
     expect(summary.finished).toBe(1)
-    expect(summary.heroHigh.length + summary.settingHigh.length + summary.lootHigh.length).toBeGreaterThan(0)
-    expect(summary.heroLow.length + summary.settingLow.length + summary.lootLow.length).toBeGreaterThan(0)
+    expect(summary.heroHigh.length + summary.terrainHigh.length + summary.lootHigh.length).toBeGreaterThan(0)
+    expect(summary.heroLow.length + summary.terrainLow.length + summary.lootLow.length).toBeGreaterThan(0)
     expect(summary.shapeCompare).toHaveLength(9)
     expect(summary.eventStats.length).toBeGreaterThan(8)
     expect(summary.avgPtsByTurn.length).toBeGreaterThan(0)

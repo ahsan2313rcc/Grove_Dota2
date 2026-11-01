@@ -6,7 +6,7 @@ import { teamShape } from './scoring.ts'
 import type { Action, AiStrat, Attr, CardInst, CardKind, Game, Team } from './types.ts'
 
 export type PlayKind = CardKind | 'combo' | 'draw' | 'morph' | 'move' | 'other'
-export type RelBucket = 'hero' | 'setting' | 'loot' | 'other'
+export type RelBucket = 'hero' | 'terrain' | 'loot' | 'other'
 
 /** Empty `strats` means every personality. `mixOnly` keeps matches where seats use different strats. */
 export type StratFilter = {
@@ -55,7 +55,7 @@ export interface EventCounts {
   playHero: number
   playItem: number
   playInstant: number
-  playSetting: number
+  playTerrain: number
   playRune: number
   playNeutral: number
   playTower: number
@@ -81,8 +81,8 @@ export interface ShapeCounts {
   /** Mixed teams with 3 / 4 attrs and exactly that many heroes. */
   pureMix3: number
   pureMix4: number
-  coreSettings: number
-  mixSettings: number
+  coreTerrains: number
+  mixTerrains: number
   coreTeamPoints: number
   mixTeamPoints: number
   coreTeamPoints3: number
@@ -97,8 +97,8 @@ export interface ShapeCounts {
   coreTeamHeroes5: number
   mixTeamHeroes3: number
   mixTeamHeroes4: number
-  coreSettingPoints: number
-  mixSettingPoints: number
+  coreTerrainPoints: number
+  mixTerrainPoints: number
 }
 
 export interface MatchReport {
@@ -155,8 +155,8 @@ export interface ShapeCompareRow {
     | 'mix_team'
     | 'mix_team_3'
     | 'mix_team_4'
-    | 'core_setting'
-    | 'mix_setting'
+    | 'core_terrain'
+    | 'mix_terrain'
   label: string
   count: number
   avgCount: number
@@ -194,8 +194,8 @@ export interface BalanceSummary {
   cardsLow: CardBalanceRow[]
   heroHigh: CardBalanceRow[]
   heroLow: CardBalanceRow[]
-  settingHigh: CardBalanceRow[]
-  settingLow: CardBalanceRow[]
+  terrainHigh: CardBalanceRow[]
+  terrainLow: CardBalanceRow[]
   lootHigh: CardBalanceRow[]
   lootLow: CardBalanceRow[]
   contested: CardBalanceRow[]
@@ -218,7 +218,7 @@ const EMPTY_EVENTS = (): EventCounts => ({
   playHero: 0,
   playItem: 0,
   playInstant: 0,
-  playSetting: 0,
+  playTerrain: 0,
   playRune: 0,
   playNeutral: 0,
   playTower: 0,
@@ -241,8 +241,8 @@ const EMPTY_SHAPES = (): ShapeCounts => ({
   pureCore5: 0,
   pureMix3: 0,
   pureMix4: 0,
-  coreSettings: 0,
-  mixSettings: 0,
+  coreTerrains: 0,
+  mixTerrains: 0,
   coreTeamPoints: 0,
   mixTeamPoints: 0,
   coreTeamPoints3: 0,
@@ -257,8 +257,8 @@ const EMPTY_SHAPES = (): ShapeCounts => ({
   coreTeamHeroes5: 0,
   mixTeamHeroes3: 0,
   mixTeamHeroes4: 0,
-  coreSettingPoints: 0,
-  mixSettingPoints: 0,
+  coreTerrainPoints: 0,
+  mixTerrainPoints: 0,
 })
 
 export class BalanceTracker {
@@ -304,7 +304,7 @@ export class BalanceTracker {
 
     if (action.type === 'play') {
       const held = before.players[before.active]?.hand.find((card) => card.uid === action.uid)
-      // Rejected plays (e.g. lone setting) leave the card in hand — do not pollute Rel tables.
+      // Rejected plays (e.g. lone terrain) leave the card in hand — do not pollute Rel tables.
       const resolved = held && !after.players[before.active]?.hand.some((card) => card.uid === action.uid)
       if (held && resolved) {
         this.turnCards += 1
@@ -317,8 +317,8 @@ export class BalanceTracker {
         .map((uid) => before.players[before.active]?.hand.find((card) => card.uid === uid)?.defId)
         .filter((id): id is string => !!id)
       const mixed = new Set(ids).size > 1
-      this.recordSwing(before, after, before.active, mixed ? 'mixed_path' : (ids[0] ?? 'setting'), 'combo')
-      this.bumpEvent(before.active, 'playSetting')
+      this.recordSwing(before, after, before.active, mixed ? 'mixed_path' : (ids[0] ?? 'terrain'), 'combo')
+      this.bumpEvent(before.active, 'playTerrain')
     } else if (action.type === 'morph') {
       this.turnCards += 1
       const loc = before.players.flatMap((player) => player.teams.flatMap((team) => team.heroes)).find((hero) => hero.uid === action.uid)
@@ -594,7 +594,7 @@ export function summarizeReports(reports: MatchReport[], filter: StratFilter = A
 
   const ranked = cards.filter((row) => row.kind !== 'draw' && row.plays >= 1)
   const heroRows = ranked.filter((row) => row.bucket === 'hero')
-  const settingRows = ranked.filter((row) => row.bucket === 'setting')
+  const terrainRows = ranked.filter((row) => row.bucket === 'terrain')
   const lootRows = ranked.filter((row) => row.bucket === 'loot')
 
   const spreads = finished.map((report) => Math.max(...report.finalScores) - Math.min(...report.finalScores))
@@ -614,8 +614,8 @@ export function summarizeReports(reports: MatchReport[], filter: StratFilter = A
     cardsLow: rankLow(ranked),
     heroHigh: rankHigh(heroRows),
     heroLow: rankLow(heroRows),
-    settingHigh: rankHigh(settingRows),
-    settingLow: rankLow(settingRows),
+    terrainHigh: rankHigh(terrainRows),
+    terrainLow: rankLow(terrainRows),
     lootHigh: rankHigh(lootRows),
     lootLow: rankLow(lootRows),
     contested: [...ranked]
@@ -653,8 +653,8 @@ export function summarizeReports(reports: MatchReport[], filter: StratFilter = A
       shapeRow('mix_team', 'Mixed team', shapeTotals.mixTeams, shapeTotals.mixTeamPoints, shapeTotals.mixTeamHeroes, shapeTotals.pureMix3 + shapeTotals.pureMix4, matchCount),
       shapeRow('mix_team_3', 'Mixed · 3 attrs', shapeTotals.mixTeams3, shapeTotals.mixTeamPoints3, shapeTotals.mixTeamHeroes3, shapeTotals.pureMix3, matchCount),
       shapeRow('mix_team_4', 'Mixed · 4 attrs', shapeTotals.mixTeams4, shapeTotals.mixTeamPoints4, shapeTotals.mixTeamHeroes4, shapeTotals.pureMix4, matchCount),
-      shapeRow('core_setting', 'Core setting', shapeTotals.coreSettings, shapeTotals.coreSettingPoints, shapeTotals.coreSettings * 3, shapeTotals.coreSettings, matchCount),
-      shapeRow('mix_setting', 'Mixed setting', shapeTotals.mixSettings, shapeTotals.mixSettingPoints, shapeTotals.mixSettings * 3, shapeTotals.mixSettings, matchCount),
+      shapeRow('core_terrain', 'Core terrain', shapeTotals.coreTerrains, shapeTotals.coreTerrainPoints, shapeTotals.coreTerrains * 3, shapeTotals.coreTerrains, matchCount),
+      shapeRow('mix_terrain', 'Mixed terrain', shapeTotals.mixTerrains, shapeTotals.mixTerrainPoints, shapeTotals.mixTerrains * 3, shapeTotals.mixTerrains, matchCount),
     ],
     eventStats: [
       eventRow('drawDeck', 'Draw from deck', eventTotals.drawDeck, matchCount),
@@ -666,7 +666,7 @@ export function summarizeReports(reports: MatchReport[], filter: StratFilter = A
       eventRow('playHero', 'Hero plays', eventTotals.playHero, matchCount),
       eventRow('playItem', 'Item plays', eventTotals.playItem, matchCount),
       eventRow('playInstant', 'Instant plays', eventTotals.playInstant, matchCount),
-      eventRow('playSetting', 'Setting combos', eventTotals.playSetting, matchCount),
+      eventRow('playTerrain', 'Terrain combos', eventTotals.playTerrain, matchCount),
       eventRow('playRune', 'Rune plays', eventTotals.playRune, matchCount),
       eventRow('playNeutral', 'Neutral plays', eventTotals.playNeutral, matchCount),
       eventRow('playTower', 'Tower plays', eventTotals.playTower, matchCount),
@@ -798,7 +798,7 @@ export function runMatchFast(seed: number, seats: number, strats?: AiStrat[], gu
 
 function relBucket(kind: PlayKind, defId: string): RelBucket {
   if (kind === 'hero' || kind === 'morph') return 'hero'
-  if (kind === 'combo' || kind === 'setting' || defId === 'mixed_path' || defId === 'river' || defId === 'jungle' || defId === 'lane') return 'setting'
+  if (kind === 'combo' || kind === 'terrain' || defId === 'mixed_path' || defId === 'river' || defId === 'jungle' || defId === 'lane') return 'terrain'
   if (kind === 'item' || kind === 'rune' || kind === 'neutral' || kind === 'tower') return 'loot'
   return 'other'
 }
@@ -882,11 +882,11 @@ function shapeCountsFor(game: Game, playerId: number): ShapeCounts {
   }
   for (const combo of player.combos) {
     if (combo.kind === 'mixed') {
-      shapes.mixSettings += 1
-      shapes.mixSettingPoints += combo.points
+      shapes.mixTerrains += 1
+      shapes.mixTerrainPoints += combo.points
     } else {
-      shapes.coreSettings += 1
-      shapes.coreSettingPoints += combo.points
+      shapes.coreTerrains += 1
+      shapes.coreTerrainPoints += combo.points
     }
   }
   return shapes

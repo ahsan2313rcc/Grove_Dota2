@@ -22,7 +22,7 @@ export interface ScoreRules {
   attackOnCore: boolean
   /** When true, mixed / open teams take the attack bonus. */
   attackOnMix: boolean
-  /** Three-of-a-kind setting combo points. */
+  /** Three-of-a-kind terrain combo points. */
   coreCombo: number
   /** Mixed River/Jungle/Lane combo points. */
   mixCombo: number

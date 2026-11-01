@@ -33,7 +33,7 @@ describe('ai strats', () => {
     expect(standingOf([20, 12, 8], 0)).toBe(1)
   })
 
-  it('never tries to play a lone setting', () => {
+  it('never tries to play a lone terrain', () => {
     for (const strat of AI_STRATS.map((entry) => entry.id) as AiStrat[]) {
       let game = createGame({
         seed: 91,
@@ -54,7 +54,7 @@ describe('ai strats', () => {
         const action = chooseAiAction(game)
         if (action.type === 'play') {
           const card = game.players[game.active]?.hand.find((entry) => entry.uid === action.uid)
-          expect(card?.kind).not.toBe('setting')
+          expect(card?.kind).not.toBe('terrain')
         }
         game = apply(game, action)
       }

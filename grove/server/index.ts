@@ -170,7 +170,7 @@ function leaveMatch(client: Client) {
       over: room.game.over ?? {
         reason: `${room.seats[seat]?.name ?? 'A player'} left.`,
         scores,
-        parts: scores.map((total) => ({ teams: 0, settings: 0, total })),
+        parts: scores.map((total) => ({ teams: 0, terrains: 0, total })),
       },
     }
   }

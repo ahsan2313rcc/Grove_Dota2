@@ -10,7 +10,7 @@ describe('card retunes', () => {
     expect(HERO_BY_ID.puck?.timing).toBe('aura')
     expect(HERO_BY_ID.puck?.text).toMatch(/cannot enter or leave teams/i)
     expect(HERO_BY_ID.jakiro?.text).toMatch(/cannot play hero cards/i)
-    expect(HERO_BY_ID.meepo?.text).toMatch(/\+1 point for each setting combo/i)
+    expect(HERO_BY_ID.meepo?.text).toMatch(/\+1 point for each terrain combo/i)
     expect(HERO_BY_ID.keeper_of_the_light?.text).toMatch(/Reactivate the ability/i)
     expect(HERO_BY_ID.batrider?.text).toMatch(/top of the deck/i)
     expect(HERO_BY_ID.zeus?.text).toMatch(/Remove all trap cards/i)

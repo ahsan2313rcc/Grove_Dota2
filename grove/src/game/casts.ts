@@ -41,7 +41,6 @@ import {
   removeHand,
   removeHero,
   setPlayer,
-  settingKinds,
   shuffle,
   strengthCount,
   teamById,
@@ -580,7 +579,7 @@ function questions(state: Game, resume: CastResume): Ask {
     case 'hoodwink': {
       if (at > 0) return ready()
       if (!state.players[actor].combos.some((combo) => combo.kind === 'jungle')) {
-        return fizzle('Sharpshooter needs a Jungle setting combo.')
+        return fizzle('Sharpshooter needs a Jungle terrain combo.')
       }
       const heroes = enemyHeroes(state, actor, kind)
       const combos: Choice[] = []
@@ -590,7 +589,7 @@ function questions(state: Game, resume: CastResume): Ask {
           combos.push({ id: `combo:${combo.id}`, label: `${pname(state, id)} · ${combo.kind} combo`, hint: `${combo.points} pts` })
         }
       }
-      return pose(actor, 'Destroy an enemy hero or setting combo.', [...heroes, ...combos])
+      return pose(actor, 'Destroy an enemy hero or terrain combo.', [...heroes, ...combos])
     }
     case 'windranger': {
       if (at > 0) return ready()
@@ -605,16 +604,16 @@ function questions(state: Game, resume: CastResume): Ask {
           })
         }
       }
-      if (combos.length === 0) return fizzle('No enemy setting combo to steal.')
-      return pose(actor, 'Take control of an enemy setting combo.', combos)
+      if (combos.length === 0) return fizzle('No enemy terrain combo to steal.')
+      return pose(actor, 'Take control of an enemy terrain combo.', combos)
     }
     case 'treant_protector':
       return ready()
     case 'grimstroke': {
       if (at === 0) {
         const combos = state.players[actor].combos.filter((combo) => !comboLocked(state, combo.id))
-        if (combos.length === 0) return fizzle('No setting combo to sacrifice.')
-        return pose(actor, 'Sacrifice a setting combo.', combos.map((combo) => ({
+        if (combos.length === 0) return fizzle('No terrain combo to sacrifice.')
+        return pose(actor, 'Sacrifice a terrain combo.', combos.map((combo) => ({
           id: `combo:${combo.id}`,
           label: `${combo.kind} combo`,
           hint: `${combo.points}`,
@@ -683,7 +682,7 @@ function questions(state: Game, resume: CastResume): Ask {
       if (resume.defId === 'pangolier') {
         if (at === 0) return pose(actor, 'Choose an opponent.', opponentChoices(state, actor))
         if (at === 1) {
-          return pose(actor, 'Name a setting.', [
+          return pose(actor, 'Name a terrain.', [
             { id: 'set:river', label: 'River' },
             { id: 'set:jungle', label: 'Jungle' },
             { id: 'set:lane', label: 'Lane' },
@@ -696,7 +695,7 @@ function questions(state: Game, resume: CastResume): Ask {
         if (matches.length === 0) {
           return ready() // they lose next turn in effect
         }
-        return pose(target, `Discard a ${named} setting or lose your next turn.`, [
+        return pose(target, `Discard a ${named} terrain or lose your next turn.`, [
           ...matches,
           { id: 'skip', label: 'Lose next turn' },
         ])
@@ -797,7 +796,7 @@ function questions(state: Game, resume: CastResume): Ask {
     }
     case 'ember_spirit': {
       const lanes = state.players[actor].combos.filter((combo) => combo.kind === 'lane').length
-      if (lanes === 0) return fizzle('Sleight of Fist needs a Lane setting combo.')
+      if (lanes === 0) return fizzle('Sleight of Fist needs a Lane terrain combo.')
       if (at === 0) {
         return pose(actor, `Move up to ${lanes} hero(es) you own.`, ownHeroes(state, actor, kind), 1, lanes)
       }
@@ -818,7 +817,7 @@ function questions(state: Game, resume: CastResume): Ask {
     case 'clarity': {
       if (at > 0) return ready()
       const kinds = ['river', 'jungle', 'lane'].filter((id) => state.deck.some((card) => card.defId === id))
-      return pose(actor, 'Search for a setting.', kinds.map((id) => ({ id: `type:${id}`, label: display(id).name, defId: id })))
+      return pose(actor, 'Search for a terrain.', kinds.map((id) => ({ id: `type:${id}`, label: display(id).name, defId: id })))
     }
     case 'euls':
       if (at > 0) return ready()
@@ -1364,7 +1363,7 @@ function effect(state: Game, resume: CastResume): Game {
     case 'double_damage':
       return log({ ...state, freeItems: Math.max(state.freeItems, 2) }, 'Amplify Rune: play up to 2 items for free.')
     case 'clarity':
-      return searchSetting(state, actor, resume.picked.find((id) => id.startsWith('type:'))?.slice(5) ?? '')
+      return searchTerrain(state, actor, resume.picked.find((id) => id.startsWith('type:'))?.slice(5) ?? '')
     case 'gloves':
       return stealRandom(state, enemy, actor, 1)
     case 'pangolier': {
@@ -1374,7 +1373,7 @@ function effect(state: Game, resume: CastResume): Game {
         return log(setPlayer(state, target, (player) => ({ ...player, skip: true })), 'Swashbuckle: they lose their next turn.')
       }
       const uid = cards[0]
-      if (uid) return discardUid(log(state, 'Swashbuckle: setting discarded.'), target, uid)
+      if (uid) return discardUid(log(state, 'Swashbuckle: terrain discarded.'), target, uid)
       return log(setPlayer(state, target, (player) => ({ ...player, skip: true })), 'Swashbuckle: they lose their next turn.')
     }
     case 'abyssal': {
@@ -1634,7 +1633,7 @@ function protectCombo(state: Game, resume: CastResume): Game {
   const comboId = resume.picked.find((id) => id.startsWith('combo:'))?.slice(6)
   if (!comboId) return state
   return {
-    ...log(state, 'Living Armor protects a setting.'),
+    ...log(state, 'Living Armor protects a terrain.'),
     players: state.players.map((player) => ({
       ...player,
       combos: player.combos.map((combo) => (combo.id === comboId ? { ...combo, protectedBy: resume.sourceUid } : combo)),
@@ -1660,7 +1659,7 @@ function removeCombo(state: Game, comboId: string): Game {
   }) as Game['players']
   let next: Game = { ...state, players }
   for (const card of cards) next = toGrave(next, card, { type: 'deck' })
-  return log(next, 'A setting combo is destroyed.')
+  return log(next, 'A terrain combo is destroyed.')
 }
 
 function pact(state: Game, resume: CastResume, uid: string | undefined): Game {
@@ -1676,8 +1675,8 @@ function pact(state: Game, resume: CastResume, uid: string | undefined): Game {
 }
 
 function brood(state: Game, actor: PlayerId): Game {
-  const found = state.deck.findIndex((card) => card.kind === 'setting')
-  if (found < 0) return log(state, 'Spin Web finds no setting.')
+  const found = state.deck.findIndex((card) => card.kind === 'terrain')
+  if (found < 0) return log(state, 'Spin Web finds no terrain.')
   const taken = state.deck[found]
   if (!taken) return state
   const milled = state.deck.slice(0, found)
@@ -1724,7 +1723,7 @@ function spray(state: Game, resume: CastResume): Game {
     }
     return next
   }
-  // Nature's Prophet: one kill per setting combo each opponent controls.
+  // Nature's Prophet: one kill per terrain combo each opponent controls.
   let kills = 0
   for (const id of opponents(state, actor)) kills += state.players[id]!.combos.length
   let next = state
@@ -2026,7 +2025,7 @@ function regen(state: Game, actor: PlayerId): Game {
   return log(addHand({ ...state, grave: state.grave.slice(0, -1) }, actor, [card]), `${display(card.defId).name} returns.`)
 }
 
-function searchSetting(state: Game, actor: PlayerId, kind: string, label = 'Clarity'): Game {
+function searchTerrain(state: Game, actor: PlayerId, kind: string, label = 'Clarity'): Game {
   const card = state.deck.find((entry) => entry.defId === kind)
   if (!card) return log(state, `${label} finds nothing.`)
   const deck = state.deck.filter((entry) => entry.uid !== card.uid)
@@ -2240,11 +2239,11 @@ function clockwerkPeek(state: Game, actor: PlayerId, resume: CastResume): Game {
 function dragonKnightReveal(state: Game, actor: PlayerId): Game {
   const [pulled, taken] = pullTop(state, 5)
   let next = pulled
-  const settings = taken.filter((card) => card.kind === 'setting')
-  const rest = taken.filter((card) => card.kind !== 'setting')
-  if (settings.length) next = addHand(next, actor, settings)
+  const terrains = taken.filter((card) => card.kind === 'terrain')
+  const rest = taken.filter((card) => card.kind !== 'terrain')
+  if (terrains.length) next = addHand(next, actor, terrains)
   for (const card of rest) next = toGrave(next, card, { type: 'deck' })
-  return log(next, `Elder Dragon Form finds ${settings.length} setting(s).`)
+  return log(next, `Elder Dragon Form finds ${terrains.length} terrain(s).`)
 }
 
 /** Tiny: move a hero from Tiny's team onto an enemy team, then destroy 2 other heroes there. */
@@ -2388,7 +2387,7 @@ function visageSoul(state: Game, resume: CastResume): Game {
   return log(next, 'Soul Assumption.')
 }
 
-/** Windranger: take control of an enemy setting combo. */
+/** Windranger: take control of an enemy terrain combo. */
 function stealCombo(state: Game, resume: CastResume, actor: PlayerId): Game {
   const comboId = resume.picked.find((id) => id.startsWith('combo:'))?.slice(6)
   if (!comboId) return state
@@ -2405,7 +2404,7 @@ function stealCombo(state: Game, resume: CastResume, actor: PlayerId): Game {
   const nextPlayers = players.map((player) =>
     player.id === actor ? { ...player, combos: [...player.combos, moved] } : player,
   ) as Game['players']
-  return log({ ...state, nextId: state.nextId + 1, players: nextPlayers }, 'Focus Fire steals a setting combo.')
+  return log({ ...state, nextId: state.nextId + 1, players: nextPlayers }, 'Focus Fire steals a terrain combo.')
 }
 
 /** Fiend's Gate: move up to 5 owned heroes into a brand-new team. */

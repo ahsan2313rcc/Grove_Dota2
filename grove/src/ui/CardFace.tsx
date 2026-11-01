@@ -42,7 +42,7 @@ export function CardFace({
   const info = display(defId)
   const shownAttrs = attrs ?? (info.attr ? [info.attr] : [])
   const shownRange = range === undefined ? info.range : range
-  const kindLabel = info.kind === 'hero' ? 'Hero' : info.kind === 'item' ? 'Item' : info.kind === 'setting' ? 'Setting' : info.kind === 'rune' ? 'Rune' : info.kind === 'neutral' ? 'Neutral' : 'Tower'
+  const kindLabel = info.kind === 'hero' ? 'Hero' : info.kind === 'item' ? 'Item' : info.kind === 'terrain' ? 'Terrain' : info.kind === 'rune' ? 'Rune' : info.kind === 'neutral' ? 'Neutral' : 'Tower'
   const className = `card${selected ? ' selected' : ''}${compact ? ' compact' : ''}${peek ? ' peek' : ''}`
   const body = peek ? (
     <>
@@ -81,7 +81,7 @@ export function CardFace({
   )
   const title = `${info.name}. ${info.text}`
   const data = {
-    'data-kind': info.kind === 'setting' ? defId : info.kind,
+    'data-kind': info.kind === 'terrain' ? defId : info.kind,
     'data-attr': shownAttrs[0] ?? info.attr ?? '',
   }
   if (!onClick) {

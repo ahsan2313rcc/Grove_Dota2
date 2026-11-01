@@ -735,7 +735,7 @@ p { margin: 0; }
 .card[data-attr="AGI"] { box-shadow: inset 4px 0 0 var(--agi), 0 12px 24px rgba(0, 0, 0, 0.28); }
 .card[data-attr="INT"] { box-shadow: inset 4px 0 0 var(--int), 0 12px 24px rgba(0, 0, 0, 0.28); }
 .card[data-attr="UNI"] { box-shadow: inset 4px 0 0 var(--uni), 0 12px 24px rgba(0, 0, 0, 0.28); }
-.card[data-kind="setting"][data-attr=""], .card[data-kind="item"] { box-shadow: inset 4px 0 0 var(--gold-deep), 0 12px 24px rgba(0, 0, 0, 0.28); }
+.card[data-kind="terrain"][data-attr=""], .card[data-kind="item"] { box-shadow: inset 4px 0 0 var(--gold-deep), 0 12px 24px rgba(0, 0, 0, 0.28); }
 .card[data-kind="river"], .mini.kind-river { background: #d5ebea; }
 .card[data-kind="jungle"], .mini.kind-jungle { background: #e3ecd4; }
 .card[data-kind="lane"], .mini.kind-lane { background: #f3e2cf; }

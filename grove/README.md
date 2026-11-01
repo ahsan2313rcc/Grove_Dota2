@@ -1,6 +1,6 @@
 # Grove
 
-A two-player card game of Dota heroes, items, and settings. One shared deck. Two actions a turn. A setting combo is free.
+A two-player card game of Dota heroes, items, and terrains. One shared deck. Two actions a turn. A terrain combo is free.
 
 This app lives in `grove/` and is separate from the lane game at the repository root.
 
@@ -37,7 +37,7 @@ Add `?mode=ai&seed=58` to deal a known game. Seed `d58` opens debug spectate wit
 
 ## Rules
 
-At turn start you draw 3, then you have two actions. Draw one more, or play a hero, item, or reward. Instant cards are free. You may multi-drop several heroes into one team for one action — only the active hero’s ability fires. Three settings at once are free (a lone setting cannot be played): three of a kind score 5 and take the top of the matching face-down pile (River a rune, Jungle a neutral, Lane a tower). One River, one Jungle, and one Lane also score 5.
+At turn start you draw 3, then you have two actions. Draw one more, or play a hero, item, or reward. Instant cards are free. You may multi-drop several heroes into one team for one action — only the active hero’s ability fires. Three terrains at once are free (a lone terrain cannot be played): three of a kind score 5 and take the top of the matching face-down pile (River a rune, Jungle a neutral, Lane a tower). One River, one Jungle, and one Lane also score 5.
 
 Heroes score in teams of up to five. A player can field at most 12 teams.
 

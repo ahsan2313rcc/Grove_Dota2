@@ -300,12 +300,12 @@ export function scoreTeam(state: Game, team: Team): { points: number; why: strin
   return best
 }
 
-export function scoreState(state: Game, id: PlayerId): { teams: number; settings: number; total: number } {
+export function scoreState(state: Game, id: PlayerId): { teams: number; terrains: number; total: number } {
   const player = state.players[id]
   const teams = player.teams.reduce((sum, team) => sum + scoreTeam(state, team).points, 0)
-  const settings = player.combos.reduce((sum, combo) => sum + combo.points, 0)
+  const terrains = player.combos.reduce((sum, combo) => sum + combo.points, 0)
   const meepoBonus = controls(state, id, 'meepo') ? player.combos.length : 0
-  return { teams, settings, total: teams + settings + meepoBonus }
+  return { teams, terrains, total: teams + terrains + meepoBonus }
 }
 
 export function controls(state: Game, id: PlayerId, defId: string): boolean {
@@ -444,7 +444,7 @@ export function comboLocked(state: Game, comboId: string): boolean {
     const combo = player.combos.find((entry) => entry.id === comboId)
     if (!combo) continue
     if (combo.protectedBy && findHero(state, combo.protectedBy)) return true
-    // Treant Protector: your setting combos cannot be stolen or destroyed.
+    // Treant Protector: your terrain combos cannot be stolen or destroyed.
     if (controls(state, player.id, 'treant_protector') && !aurasSuppressed(state, player.id)) return true
   }
   return false
@@ -1170,7 +1170,7 @@ export function resolveTeam(state: Game, owner: PlayerId, teamId: string): [Game
   return [state, teamId]
 }
 
-export function settingKinds(state: Game, id: PlayerId): Set<string> {
+export function terrainKinds(state: Game, id: PlayerId): Set<string> {
   const kinds = new Set<string>()
   for (const combo of state.players[id].combos) {
     for (const card of combo.cards) kinds.add(card.defId)
@@ -1339,6 +1339,11 @@ export function isTrapHero(defId: string): boolean {
   return TRAP_IDS.has(defId)
 }
 
+/** True when trap text says to sacrifice the hero on reveal (otherwise it joins the team). */
+export function trapSacrifices(defId: string): boolean {
+  return /Sacrifice /i.test(HERO_BY_ID[defId]?.text ?? '')
+}
+
 export function plantTrap(state: Game, actor: PlayerId, card: CardInst, teamId: string): Game {
   const found = teamById(state, teamId)
   if (!found) return log(state, 'That team is gone.')
@@ -1364,6 +1369,23 @@ export function clearAllTraps(state: Game, cause = "Thundergod's Wrath"): Game {
   return log(next, `${cause}: all traps are removed.`)
 }
 
+/** After reveal: sacrifice → grave, otherwise join the trapped team as a face-up hero. */
+function settleRevealedTrap(state: Game, teamId: string, trap: TeamTrap, card: CardInst): Game {
+  if (trapSacrifices(trap.defId)) return toGrave(state, card, { type: 'deck' })
+  const found = teamById(state, teamId)
+  if (!found) {
+    return log(addHand(state, trap.owner, [card]), `${display(card.defId).name} returns to hand — that team is gone.`)
+  }
+  const hero = makeHero(card, trap.owner, found.player.id, state)
+  if (enterReason(state, found.team, heroWeight(hero), false)) {
+    return log(addHand(state, trap.owner, [card]), `${display(card.defId).name} cannot join — returned to hand.`)
+  }
+  let next = putOnTeam(state, found.player.id, teamId, hero)
+  // Trap slot is already cleared; arrived won't re-fire this trap.
+  next = arrived(next, hero.uid).state
+  return log(next, `${display(card.defId).name} joins the team.`)
+}
+
 export function fireTeamTrap(
   state: Game,
   teamId: string,
@@ -1376,7 +1398,7 @@ export function fireTeamTrap(
 
   if (trap.defId === 'templar_assassin' && opts.targeted && !opts.enteringUid) {
     state = updateTeam(state, teamId, (team) => ({ ...team, trap: null }))
-    state = toGrave(state, card, { type: 'deck' })
+    state = settleRevealedTrap(state, teamId, trap, card)
     return { state: log(state, 'Refraction nullifies the effect.'), stopped: true }
   }
 
@@ -1384,7 +1406,7 @@ export function fireTeamTrap(
 
   switch (trap.defId) {
     case 'techies': {
-      state = toGrave(state, card, { type: 'deck' })
+      state = settleRevealedTrap(state, teamId, trap, card)
       state = log(state, 'Proximity Mines!')
       for (const hero of [...found.team.heroes]) {
         state = enqueue(state, hero.uid, 'Proximity Mines', false, true, trap.owner)
@@ -1392,14 +1414,14 @@ export function fireTeamTrap(
       return { state: queueDraw(state, found.player.id, 1), stopped: false }
     }
     case 'riki': {
-      state = toGrave(state, card, { type: 'deck' })
+      state = settleRevealedTrap(state, teamId, trap, card)
       return {
         state: log({ ...state, silence: { caster: trap.owner, fromTurn: state.turn } }, 'Cloak and Dagger silences abilities.'),
         stopped: false,
       }
     }
     case 'monkey_king': {
-      state = toGrave(state, card, { type: 'deck' })
+      state = settleRevealedTrap(state, teamId, trap, card)
       let next = log(state, "Wukong's Command.")
       for (const id of opponents(next, trap.owner)) {
         next = setPlayer(next, id, (player) => ({ ...player, actions: 0 }))
@@ -1407,7 +1429,7 @@ export function fireTeamTrap(
       return { state: next, stopped: false }
     }
     case 'slark': {
-      state = toGrave(state, card, { type: 'deck' })
+      state = settleRevealedTrap(state, teamId, trap, card)
       const foes = opponents(state, trap.owner)
       if (foes.length === 0) return { state: log(state, 'Shadow Dance finds no enemy.'), stopped: false }
       if (foes.length === 1) {
@@ -1430,7 +1452,7 @@ export function fireTeamTrap(
       }
     }
     case 'bounty_hunter': {
-      state = toGrave(state, card, { type: 'deck' })
+      state = settleRevealedTrap(state, teamId, trap, card)
       const heroes = state.players[found.player.id]!.hand.filter((entry) => entry.kind === 'hero')
       let next = log(state, 'Track.')
       for (const hero of heroes) {
@@ -1441,16 +1463,16 @@ export function fireTeamTrap(
       return { state: next, stopped: false }
     }
     case 'ogre_magi': {
-      state = toGrave(state, card, { type: 'deck' })
       if (opts.enteringUid && firesAbility(findHero(state, opts.enteringUid)?.hero.defId ?? '')) {
         state = { ...state, multicast: trap.owner }
       }
+      state = settleRevealedTrap(state, teamId, trap, card)
       return { state: log(state, 'Multicast.'), stopped: false }
     }
     case 'kez': {
       const handHeroes = state.players[trap.owner]!.hand.filter((entry) => entry.kind === 'hero')
       if (handHeroes.length === 0) {
-        state = toGrave(state, card, { type: 'deck' })
+        state = settleRevealedTrap(state, teamId, trap, card)
         return { state: log(state, 'Switch Discipline finds no hero in hand.'), stopped: false }
       }
       return {
@@ -1473,7 +1495,7 @@ export function fireTeamTrap(
     case 'shadow_shaman': {
       const enemies = allLocs(state).filter((loc) => loc.hero.controller !== trap.owner)
       if (enemies.length === 0) {
-        state = toGrave(state, card, { type: 'deck' })
+        state = settleRevealedTrap(state, teamId, trap, card)
         return { state: log(state, 'Shackles finds no enemy.'), stopped: false }
       }
       return {
@@ -1494,11 +1516,11 @@ export function fireTeamTrap(
       }
     }
     case 'templar_assassin': {
-      state = toGrave(state, card, { type: 'deck' })
+      state = settleRevealedTrap(state, teamId, trap, card)
       return { state: log(state, 'Refraction.'), stopped: false }
     }
     default:
-      state = toGrave(state, card, { type: 'deck' })
+      state = settleRevealedTrap(state, teamId, trap, card)
       return { state, stopped: false }
   }
 }
