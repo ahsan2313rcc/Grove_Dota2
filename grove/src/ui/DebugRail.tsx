@@ -75,15 +75,17 @@ export function DebugRail({
         <p className="eyebrow">Debug balance</p>
         <h2>d{seed}</h2>
         <p className="quiet">
-          {queueLeft > 0
-            ? `${queueLeft} queued · ${finishedCount} done`
-            : game?.over
-              ? 'Match over'
-              : stuck
-                ? 'AI stuck'
-                : game
-                  ? `${active?.name ?? '—'} · T${game.turn}`
-                  : 'Stats only'}
+          {runningBatch && view === 'stats'
+            ? `Fast sim… ${finishedCount} done · ${queueLeft} left`
+            : queueLeft > 0 && view === 'watch'
+              ? `${queueLeft} queued · ${finishedCount} done`
+              : game?.over
+                ? 'Match over'
+                : stuck
+                  ? 'AI stuck'
+                  : game
+                    ? `${active?.name ?? '—'} · T${game.turn}`
+                    : 'Stats only'}
         </p>
       </div>
 
@@ -127,8 +129,8 @@ export function DebugRail({
               onChange={(event) => onBatchSize(Math.max(1, Math.min(256, Number(event.target.value) || 1)))}
             />
           </label>
-          <button type="button" className="primary" data-testid="debug-run-batch" onClick={onRunBatch}>
-            Queue {batchSize}
+          <button type="button" className="primary" data-testid="debug-run-batch" disabled={runningBatch && view === 'stats'} onClick={onRunBatch}>
+            {view === 'stats' ? `Sim ${batchSize} fast` : `Queue ${batchSize}`}
           </button>
           {onPlayNext ? (
             <button type="button" data-testid="debug-play-next" onClick={onPlayNext}>
@@ -137,8 +139,8 @@ export function DebugRail({
           ) : null}
         </div>
         <p className="quiet">
-          One live match at a time. {queueLeft > 0 ? `${queueLeft} waiting after this one. ` : ''}
-          {finishedCount} finished · {summary.matches} traced · {runCount} in flight{runningBatch ? ' · advancing' : ''}
+          Stats runs at max speed, one game at a time. Switch to Watch to slow the board. {queueLeft > 0 ? `${queueLeft} left. ` : ''}
+          {finishedCount} finished · {summary.matches} traced{runningBatch ? ' · running' : ''}
         </p>
       </div>
 
@@ -225,7 +227,7 @@ export function DebugRail({
 
       <div className="debug-block">
         <h3>Shape compare</h3>
-        <p className="quiet debug-legend">n for Core ×N = teams with a same-attr stack of at least N (mixed boards count). Avg pts / pts/card use mono-core teams of that size only. Pure = exact-size mono core, or mix with hero count matching attr count.</p>
+        <p className="quiet debug-legend">Core / mix rows need 3+ heroes. n for Core ×N = teams with a same-attr stack of at least N (mixed boards count). Avg pts / pts/card use mono-core teams of that size only. Pure = exact-size mono core, or mix with hero count matching attr count.</p>
         <table className="debug-table">
           <thead>
             <tr><th>Shape</th><th>n</th><th>Pure</th><th>/match</th><th>Avg pts</th><th>Pts/card</th></tr>

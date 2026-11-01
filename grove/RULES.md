@@ -277,15 +277,19 @@ Bodies: each hero contributes `count` slots (`Meepo` = 2). Neutrals: `scoresFlat
 
 **Flat:** `heroPoints` × flat bodies (default 1 each).
 
-**Mono-attribute** (every body has attr, union size 1, including UNI-only):
+**Shape gate:** Core and mix bonuses (and shape classification) require **at least 3 bodies**. Teams of 1–2 are **Small** — flat points only (+ attack if `attackOnMix`).
 
-- Core bonus by size 1..5: default `[0, 0, 3, 6, 10]`.
+**Mono-attribute core** (every body has attr, union size 1, including UNI-only, **size ≥ 3**):
+
+- Core bonus by size 1..5: default `[0, 0, 3, 6, 10]` (slots 1–2 unused in practice).
 - Attack bonus **off** by default (`attackOnCore: false`).
 
-**Otherwise (mixed / open):**
+**Mixed** (**size ≥ 3**, 2+ distinct attrs):
 
-- Mix bonus by distinct attr count 1..4: default `[0, 0, 2, 4]`.
+- Mix bonus by distinct attr count 1..4: default `[0, 0, 2, 4]` (needs 3+ attrs for points).
 - Attack bonus **on** by default (`attackOnMix: true`): if all non-null ranges are the same Melee or Ranged, size 1..5 → `[0, 0, 1, 2, 3]`. Neutrals have `range: null` and do not spoil sameness of hero ranges.
+
+**Open / no attribute** (size ≥ 3, zero attrs, or otherwise not core/mix): flat + attack when `attackOnMix`.
 
 **Brewmaster:** Counts as exactly one of STR/AGI/INT — engine picks the assignment that **maximizes that team’s score**.
 

@@ -1005,7 +1005,8 @@ function shapeCountsFor(game: Game, playerId: number): ShapeCounts {
     if (sameAttr >= 4) shapes.coreTeams4 += 1
     if (sameAttr >= 5) shapes.coreTeams5 += 1
 
-    if (shape === 'core') {
+    // Core / mix tallies require 3+ heroes (matches scoring SHAPE_MIN_HEROES).
+    if (shape === 'core' && size >= 3) {
       shapes.coreTeams += 1
       shapes.coreTeamPoints += scored.points
       shapes.coreTeamHeroes += size
@@ -1023,7 +1024,7 @@ function shapeCountsFor(game: Game, playerId: number): ShapeCounts {
         shapes.coreTeamPoints5 += scored.points
         shapes.coreTeamHeroes5 += size
       }
-    } else if (shape === 'mix') {
+    } else if (shape === 'mix' && size >= 3) {
       shapes.mixTeams += 1
       shapes.mixTeamPoints += scored.points
       shapes.mixTeamHeroes += size

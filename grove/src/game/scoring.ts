@@ -92,6 +92,9 @@ export function normalizeRules(rules: ScoreRules): ScoreRules {
   }
 }
 
+/** Minimum team size for core / mix bonuses and shape classification. */
+export const SHAPE_MIN_HEROES = 3
+
 export function scoreBodies(bodies: ScoreBody[], rules: ScoreRules = current): { points: number; why: string } {
   const expanded = bodies.flatMap((body) => Array.from({ length: body.count }, () => body))
   if (expanded.length === 0) return { points: 0, why: 'Empty' }
@@ -108,20 +111,36 @@ export function scoreBodies(bodies: ScoreBody[], rules: ScoreRules = current): {
   const flatBodies = expanded.filter((body) => body.scoresFlat !== false)
   const base = flatBodies.length * rules.heroPoints
   const attack = attackBonus(expanded, rules)
-  if (allHaveAttr && union.size === 1) {
+  const size = expanded.length
+
+  // Core: mono-attribute and at least 3 bodies.
+  if (allHaveAttr && union.size === 1 && size >= SHAPE_MIN_HEROES) {
     const color = [...union][0] ?? 'STR'
-    const size = Math.min(expanded.length, 5)
-    const bonus = rules.coreBonus[size - 1] ?? 0
+    const capped = Math.min(size, 5)
+    const bonus = rules.coreBonus[capped - 1] ?? 0
     const atk = rules.attackOnCore ? attack.points : 0
     const whyAtk = rules.attackOnCore ? attack.why : ''
-    return { points: base + bonus + atk, why: `${label(color)} ×${size}${whyAtk}` }
+    return { points: base + bonus + atk, why: `${label(color)} ×${capped}${whyAtk}` }
   }
 
-  const mix = mixBonus(union.size, rules)
+  // Mix: 3+ bodies with 2+ attributes (bonus table still zeros 1–2 attrs).
+  if (size >= SHAPE_MIN_HEROES && union.size >= 2) {
+    const mix = mixBonus(union.size, rules)
+    const atk = rules.attackOnMix ? attack.points : 0
+    const whyAtk = rules.attackOnMix ? attack.why : ''
+    return { points: base + mix.points + atk, why: `${mix.why}${whyAtk}` }
+  }
+
+  // Small / open teams: flat points only (+ attack when attackOnMix).
   const atk = rules.attackOnMix ? attack.points : 0
   const whyAtk = rules.attackOnMix ? attack.why : ''
-  const why = union.size === 0 ? 'No attribute' : mix.why
-  return { points: base + mix.points + atk, why: `${why}${whyAtk}` }
+  if (size < SHAPE_MIN_HEROES) {
+    return { points: base + atk, why: `Small ×${size}${whyAtk}` }
+  }
+  if (union.size === 0) {
+    return { points: base + atk, why: `No attribute${whyAtk}` }
+  }
+  return { points: base + atk, why: `Open ×${size}${whyAtk}` }
 }
 
 function mixBonus(colors: number, rules: ScoreRules): { points: number; why: string } {
@@ -141,8 +160,9 @@ function attackBonus(bodies: ScoreBody[], rules: ScoreRules): { points: number; 
 }
 
 export function teamShape(why: string): 'core' | 'mix' | 'open' {
-  if (/^(Strength|Agility|Intelligence|Universal) /.test(why)) return 'core'
-  if (why.includes('attributes')) return 'mix'
+  const core = /^(Strength|Agility|Intelligence|Universal) ×(\d+)/.exec(why)
+  if (core && Number(core[2]) >= SHAPE_MIN_HEROES) return 'core'
+  if (why.includes('attributes ×')) return 'mix'
   return 'open'
 }
 

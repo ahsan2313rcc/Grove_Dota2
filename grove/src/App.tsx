@@ -4,6 +4,7 @@ import {
   ALL_STRAT_FILTER,
   aiRoster,
   BalanceTracker,
+  runMatchFast,
   summarizeReports,
   type MatchReport,
   type StratFilter,
@@ -122,9 +123,8 @@ function readStart(): { debug: boolean; seed: number; seats: SeatCount; runs: Li
     tracker.start(game)
     return { debug: false, seed, seats: count, runs: [{ seed, game, tracker, stuck: false }], view: 'watch' }
   }
-  // Debug always watches one live match; queue more via the rail.
-  const runs = [makeRun(seed, count)]
-  return { debug: true, seed, seats: count, runs, view }
+  // Debug defaults to Stats (fast sim); open Watch from the rail to slow the board.
+  return { debug: true, seed, seats: count, runs: [], view: 'stats' }
 }
 
 export default function App() {
@@ -135,15 +135,16 @@ export default function App() {
   const [runs, setRuns] = useState<LiveRun[]>(boot?.runs ?? [])
   const [focus, setFocus] = useState(0)
   const [debugSpeed, setDebugSpeed] = useState<DebugSpeed>(1)
-  const [debugView, setDebugView] = useState<DebugView>(boot?.view ?? 'watch')
+  const [debugView, setDebugView] = useState<DebugView>(boot?.view ?? 'stats')
   const [queueSize, setQueueSize] = useState(1)
   const [reports, setReports] = useState<MatchReport[]>([])
   const [match, setMatch] = useState(boot ? 1 : 0)
   const [queueLeft, setQueueLeft] = useState(0)
-  const [advancing, setAdvancing] = useState(false)
+  const [runningFast, setRunningFast] = useState(false)
   const [stratFilter, setStratFilter] = useState<StratFilter>(ALL_STRAT_FILTER)
   const [debugStrats, setDebugStrats] = useState<AiStrat[]>(() => Array.from({ length: boot?.seats ?? 2 }, (_, index) => cycleStrat(index)))
   const queueToken = useRef(0)
+  const watchRef = useRef(false)
 
   const live = runs[0] ?? null
   const game = live?.game ?? null
@@ -158,10 +159,11 @@ export default function App() {
   }, [reports, runs, stratFilter])
 
   const finishedCount = reports.filter((report) => report.over).length
-  const runCount = (live && !live.game.over ? 1 : 0) + queueLeft
+  const runCount = (live && !live.game.over ? 1 : 0) + queueLeft + (runningFast ? 1 : 0)
 
+  // Watch mode: tick the live board at the chosen speed.
   useEffect(() => {
-    if (!debug || debugView === 'stats') return
+    if (!debug || debugView !== 'watch') return
     if (runs.length === 0) return
     if (debugSpeed === 0) return
     const run = runs[0]
@@ -182,29 +184,26 @@ export default function App() {
     return () => window.clearTimeout(timer)
   }, [debug, debugView, debugSpeed, runs])
 
-  // Archive a finished watch match once, then auto-start the next queued seed (one at a time).
+  // Archive a finished watch match; if still watching with queue left, start the next live seed.
   useEffect(() => {
-    if (!debug || !live?.game.over) return
+    if (!debug || debugView !== 'watch' || !live?.game.over) return
     const finished = live
     setReports((current) => {
       if (current.some((report) => report.seed === finished.seed)) return current
       return [...current, finished.tracker.snapshot(finished.game)]
     })
-    if (queueLeft <= 0 || advancing) return
+    if (queueLeft <= 0) return
     const token = ++queueToken.current
-    setAdvancing(true)
     const nextSeed = finished.seed + 1
     const timer = window.setTimeout(() => {
-      if (queueToken.current !== token) return
+      if (queueToken.current !== token || !watchRef.current) return
       setSeed(nextSeed)
       setQueueLeft((left) => Math.max(0, left - 1))
       setMatch((value) => value + 1)
       setRuns([makeRun(nextSeed, seatCount, debugStrats)])
-      setDebugView('watch')
-      setAdvancing(false)
-    }, 280)
+    }, 200)
     return () => window.clearTimeout(timer)
-  }, [debug, live, queueLeft, advancing, seatCount, debugStrats])
+  }, [debug, debugView, live, queueLeft, seatCount, debugStrats])
 
   useEffect(() => {
     if (debug) return
@@ -258,15 +257,16 @@ export default function App() {
 
   function leave() {
     queueToken.current += 1
+    watchRef.current = false
     window.history.replaceState({}, '', window.location.pathname)
     setRuns([])
     setReports([])
     setDebug(false)
     setDebugSpeed(1)
-    setDebugView('watch')
+    setDebugView('stats')
     setFocus(0)
     setQueueLeft(0)
-    setAdvancing(false)
+    setRunningFast(false)
     setStratFilter(ALL_STRAT_FILTER)
     setDebugStrats(Array.from({ length: 2 }, (_, index) => cycleStrat(index)))
     resetScoreRules()
@@ -274,7 +274,7 @@ export default function App() {
 
   function resetDebug() {
     queueToken.current += 1
-    setAdvancing(false)
+    setRunningFast(false)
     setReports([])
     setQueueLeft(0)
     setFocus(0)
@@ -286,25 +286,61 @@ export default function App() {
     setRuns([makeRun(seed, seatCount, debugStrats)])
   }
 
-  /** Queue more sequential matches after the current one (still one live game at a time). */
+  /** Run N matches in the background at full speed (one finished report at a time). */
+  async function runFastQueue(fromSeed: number, count: number, seats: SeatCount, strats: AiStrat[]) {
+    const token = ++queueToken.current
+    const total = Math.max(1, Math.min(256, count))
+    setRunningFast(true)
+    setDebugView('stats')
+    watchRef.current = false
+    setRuns([])
+    setQueueLeft(total)
+    for (let index = 0; index < total; index += 1) {
+      if (queueToken.current !== token) return
+      if (watchRef.current) {
+        // User switched to Watch — hand off remaining queue to live playback.
+        const nextSeed = fromSeed + index
+        setSeed(nextSeed)
+        setQueueLeft(total - index)
+        setMatch((value) => value + 1)
+        setRuns([makeRun(nextSeed, seats, strats)])
+        setRunningFast(false)
+        return
+      }
+      const report = runMatchFast(fromSeed + index, seats, strats)
+      setSeed(fromSeed + index)
+      setReports((current) => [...current, report])
+      setQueueLeft(total - index - 1)
+      await new Promise((resolve) => window.setTimeout(resolve, 0))
+    }
+    if (queueToken.current !== token) return
+    setQueueLeft(0)
+    setRunningFast(false)
+  }
+
   function queueMore() {
     const extra = Math.max(1, Math.min(256, queueSize))
-    if (!live || live.game.over) {
-      const jump = live?.game.over ? live.seed + 1 : seed
-      setSeed(jump)
-      setMatch((value) => value + 1)
-      setRuns([makeRun(jump, seatCount, debugStrats)])
-      setQueueLeft((left) => Math.min(256, left + Math.max(0, extra - 1)))
-    } else {
-      setQueueLeft((left) => Math.min(256, left + extra))
+    if (debugView === 'watch') {
+      if (!live || live.game.over) {
+        const jump = live?.game.over ? live.seed + 1 : seed
+        setSeed(jump)
+        setMatch((value) => value + 1)
+        setRuns([makeRun(jump, seatCount, debugStrats)])
+        setQueueLeft((left) => Math.min(256, left + Math.max(0, extra - 1)))
+      } else {
+        setQueueLeft((left) => Math.min(256, left + extra))
+      }
+      if (debugSpeed === 0) setDebugSpeed(1)
+      return
     }
-    setDebugView('watch')
-    if (debugSpeed === 0) setDebugSpeed(1)
+    const fromSeed = (reports.at(-1)?.seed ?? seed - 1) + 1
+    void runFastQueue(fromSeed, extra, seatCount, debugStrats)
   }
 
   function playNext() {
     queueToken.current += 1
-    setAdvancing(false)
+    setRunningFast(false)
+    watchRef.current = true
     if (live && !live.game.over) {
       setReports((current) => [...current, live.tracker.snapshot(live.game)])
     }
@@ -317,6 +353,7 @@ export default function App() {
   }
 
   function startWatchFromStats() {
+    watchRef.current = true
     const created = [makeRun(seed, seatCount, debugStrats)]
     setRuns(created)
     setFocus(0)
@@ -326,11 +363,17 @@ export default function App() {
   }
 
   function onDebugView(view: DebugView) {
-    if (view === 'watch' && runs.length === 0) {
-      startWatchFromStats()
+    if (view === 'watch') {
+      watchRef.current = true
+      if (runs.length === 0) {
+        startWatchFromStats()
+        return
+      }
+      setDebugView('watch')
       return
     }
-    setDebugView(view)
+    watchRef.current = false
+    setDebugView('stats')
   }
 
   function startDebugSession(nextSeed: number, seats: SeatCount, queue: number, strats: AiStrat[], rules: ScoreRules) {
@@ -343,14 +386,17 @@ export default function App() {
     setDebugSpeed(1)
     setFocus(0)
     setReports([])
-    setAdvancing(false)
     setDebugStrats(strats)
     setStratFilter(ALL_STRAT_FILTER)
     const total = Math.max(1, Math.min(256, queue))
     setQueueSize(total)
-    setQueueLeft(Math.max(0, total - 1))
-    setDebugView('watch')
-    setRuns([makeRun(nextSeed, seats, strats)])
+    setQueueLeft(0)
+    setRuns([])
+    setDebugView('stats')
+    watchRef.current = false
+    window.setTimeout(() => {
+      void runFastQueue(nextSeed, total, seats, strats)
+    }, 0)
   }
 
   const [online, setOnline] = useState(false)
@@ -396,7 +442,7 @@ export default function App() {
         debugFocus={0}
         debugRunCount={runCount}
         debugFinished={finishedCount}
-        debugRunningBatch={advancing || queueLeft > 0}
+        debugRunningBatch={runningFast || queueLeft > 0}
         debugQueueLeft={queueLeft}
         debugSummary={summary}
         debugReports={reports}
@@ -609,9 +655,9 @@ function Lobby({
                   onChange={(event) => setQueue(Math.max(1, Math.min(256, Number(event.target.value) || 1)))}
                 />
               </label>
-              <p className="quiet">
-                Plays one live match at a time. When a match ends, the next seed starts automatically until the queue is empty (max 256).
-              </p>
+            <p className="quiet">
+              Sims one game at a time at full speed in Stats. Open Watch to slow the board. Queue up to 256.
+            </p>
               <button type="button" data-testid="lobby-scoring" onClick={() => setScoreOpen(true)}>
                 Scoring…
               </button>

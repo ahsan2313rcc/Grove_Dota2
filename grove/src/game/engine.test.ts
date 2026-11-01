@@ -45,7 +45,10 @@ describe('scoring', () => {
     ]).points).toBe(8)
     expect(scoreBodies([{ attrs: [], range: 'Melee', count: 4 }]).points).toBe(6)
     expect(scoreBodies([{ attrs: [], range: 'Melee', count: 5 }]).points).toBe(8)
-    expect(scoreBodies([{ attrs: ['STR', 'AGI', 'INT'], range: 'Melee', count: 1 }]).points).toBe(3)
+    // Under 3 bodies: no mix/core — flat only (1), even with multiple attrs on one body.
+    expect(scoreBodies([{ attrs: ['STR', 'AGI', 'INT'], range: 'Melee', count: 1 }]).points).toBe(1)
+    expect(scoreBodies([{ attrs: ['STR'], range: 'Melee', count: 2 }]).why).toMatch(/^Small/)
+    expect(scoreBodies([{ attrs: ['STR'], range: 'Melee', count: 3 }]).why).toMatch(/^Strength ×3/)
     // Neutrals fill attr size but grant no flat points.
     expect(scoreBodies([
       { attrs: ['STR'], range: 'Melee', count: 2, scoresFlat: true },
