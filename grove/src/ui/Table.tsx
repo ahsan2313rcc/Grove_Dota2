@@ -78,6 +78,7 @@ export function Table({
   const [combo, setCombo] = useState<string[]>([])
   const [focus, setFocus] = useState<Focus | null>(null)
   const [placing, setPlacing] = useState<string | null>(null)
+  const [extras, setExtras] = useState<string[]>([])
   const [moving, setMoving] = useState<string | null>(null)
   const [pile, setPile] = useState<PileName | null>(null)
   const [rules, setRules] = useState(false)
@@ -248,7 +249,11 @@ export function Table({
   const handIds = new Set(you.hand.map((card) => card.uid))
   const liveCombo = combo.filter((uid) => handIds.has(uid))
   if (liveCombo.length !== combo.length) setCombo(liveCombo)
-  if (placing && !handIds.has(placing)) setPlacing(null)
+  if (placing && !handIds.has(placing)) {
+    setPlacing(null)
+    setExtras([])
+  }
+  if (extras.some((uid) => !handIds.has(uid))) setExtras((current) => current.filter((uid) => handIds.has(uid)))
   if (focus?.kind === 'hand' && !handIds.has(focus.uid)) setFocus(null)
   if (focus?.kind === 'hero' && !findHero(game, focus.uid)) setFocus(null)
   const plans = canAct ? comboPlans(game) : []
@@ -298,6 +303,7 @@ export function Table({
     setMoving(null)
     if (card.kind === 'setting') {
       setPlacing(null)
+      setExtras([])
       setCombo((current) => {
         if (current.includes(card.uid)) return current.filter((uid) => uid !== card.uid)
         if (current.length >= 3) return current
@@ -306,7 +312,14 @@ export function Table({
       setFocus({ kind: 'hand', uid: card.uid })
       return
     }
+    // While placing a hero, further hero clicks toggle silent companions.
+    if (placing && card.kind === 'hero' && card.uid !== placing) {
+      setExtras((current) => (current.includes(card.uid) ? current.filter((uid) => uid !== card.uid) : [...current, card.uid]))
+      setFocus({ kind: 'hand', uid: card.uid })
+      return
+    }
     setCombo([])
+    setExtras([])
     setPlacing(null)
     setFocus({ kind: 'hand', uid: card.uid })
   }
@@ -317,6 +330,7 @@ export function Table({
     if (!card || !canAct || playBlock(game, viewer, card)) return
     if (needsTeam(card.defId, card.kind)) {
       setPlacing(uid)
+      setExtras([])
       setMoving(null)
       return
     }
@@ -488,21 +502,30 @@ export function Table({
                 canAct={canAct}
                 focus={focus}
                 placing={placing}
+                extras={extras}
                 moving={moving}
                 comboReady={comboReady}
                 chosen={chosen}
                 onPlay={playFocused}
                 onPlace={() => onAction({ type: 'combo', uids: chosen.map((card) => card.uid) })}
                 onTeam={(team) => {
-                  if (placing) onAction({ type: 'play', uid: placing, team })
+                  if (placing) {
+                    onAction({
+                      type: 'play',
+                      uid: placing,
+                      team,
+                      extras: extras.length > 0 ? extras : undefined,
+                    })
+                  }
                   setPlacing(null)
+                  setExtras([])
                 }}
                 onMove={(team) => {
                   if (moving) onAction({ type: 'move', uid: moving, team })
                   setMoving(null)
                 }}
                 onMorph={(uid) => onAction({ type: 'morph', uid })}
-                onCancel={() => { setPlacing(null); setMoving(null) }}
+                onCancel={() => { setPlacing(null); setExtras([]); setMoving(null) }}
               />
             ) : null}
             <p className="log-last" data-testid="log-last">{lastLog}</p>
@@ -521,7 +544,12 @@ export function Table({
             <CardFace
               key={card.uid}
               defId={card.defId}
-              selected={liveCombo.includes(card.uid) || (focus?.kind === 'hand' && focus.uid === card.uid)}
+              selected={
+                liveCombo.includes(card.uid)
+                || placing === card.uid
+                || extras.includes(card.uid)
+                || (focus?.kind === 'hand' && focus.uid === card.uid)
+              }
               onClick={() => clickHand(card)}
               testId={`hand-${card.defId}`}
             />
@@ -702,6 +730,7 @@ function Detail({
   canAct,
   focus,
   placing,
+  extras,
   moving,
   comboReady,
   chosen,
@@ -717,6 +746,7 @@ function Detail({
   canAct: boolean
   focus: Focus | null
   placing: string | null
+  extras: string[]
   moving: string | null
   comboReady: boolean
   chosen: CardInst[]
@@ -730,9 +760,17 @@ function Detail({
   if (placing) {
     const card = game.players[viewer].hand.find((entry) => entry.uid === placing)
     const options = card ? teamsFor(game, placing) : []
+    const mates = extras
+      .map((uid) => game.players[viewer].hand.find((entry) => entry.uid === uid))
+      .filter((entry): entry is CardInst => !!entry)
     return (
       <div className="detail">
-        <p>Play {card ? display(card.defId).name : 'this card'} onto</p>
+        <p>
+          Active {card ? display(card.defId).name : 'hero'}
+          {mates.length > 0 ? ` + ${mates.map((entry) => display(entry.defId).name).join(', ')} (silent)` : ''}
+          {' '}onto
+        </p>
+        <p className="quiet">Click more heroes in hand to bring them in silently. Only the active ability fires.</p>
         <div className="inline-choices">
           {options.map((option) => (
             <button key={option.id} type="button" disabled={!option.ok} data-testid={option.id === 'new' ? 'team-new' : `team-pick-${option.id}`} onClick={() => onTeam(option.id)}>

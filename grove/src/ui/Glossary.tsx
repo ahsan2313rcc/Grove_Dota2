@@ -26,6 +26,7 @@ const TIMING_LABEL = {
   cast: 'On play',
   aura: 'Aura',
   instant: 'Instant',
+  trap: 'Trap',
 } as const
 
 export function Glossary({ onClose }: { onClose: () => void }) {
