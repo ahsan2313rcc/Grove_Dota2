@@ -302,12 +302,13 @@ export function DebugRail({
         </table>
       </div>
 
+      <p className="quiet debug-legend">Impact = score swing after the card&apos;s full resolution (targets / Instant windows included). Rel = your Δ minus average opponent Δ. Win% = matches won when that seat resolved the card.</p>
       <RelPair title="Heroes" high={summary.heroHigh} low={summary.heroLow} />
       <RelPair title="Terrains" high={summary.terrainHigh} low={summary.terrainLow} />
       <RelPair title="Items / runes / neutrals / towers" high={summary.lootHigh} low={summary.lootLow} />
 
       <div className="debug-block">
-        <h3>Most contested</h3>
+        <h3>Highest impact</h3>
         <CardTable rows={summary.contested} />
       </div>
 
@@ -397,7 +398,7 @@ function CardTable({ rows, empty = 'No card plays yet.' }: { rows: CardBalanceRo
   return (
     <table className="debug-table">
       <thead>
-        <tr><th>Card</th><th>n</th><th>Self</th><th>Rel</th></tr>
+        <tr><th>Card</th><th>n</th><th>Rel</th><th>|Rel|</th><th>Self</th><th>Win%</th></tr>
       </thead>
       <tbody>
         {rows.slice(0, 12).map((row) => (
@@ -411,8 +412,10 @@ function CardTable({ rows, empty = 'No card plays yet.' }: { rows: CardBalanceRo
               </small>
             </td>
             <td>{row.plays}</td>
-            <td>{signed(row.avgActorSwing)}</td>
             <td>{signed(row.avgRelativeSwing)}</td>
+            <td>{fmt(row.avgAbsSwing)}</td>
+            <td>{signed(row.avgActorSwing)}</td>
+            <td>{row.presence > 0 ? `${Math.round(row.winRate * 100)}%` : '—'}</td>
           </tr>
         ))}
       </tbody>

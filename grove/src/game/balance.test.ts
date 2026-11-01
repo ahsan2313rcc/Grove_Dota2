@@ -15,9 +15,16 @@ describe('balance', () => {
     expect(report.shapes.coreTeams + report.shapes.mixTeams + report.shapes.openTeams).toBeGreaterThan(0)
     expect(report.swings.every((swing) => AI_STRATS.some((entry) => entry.id === swing.actorStrat))).toBe(true)
 
+    expect(report.seatPlays.length).toBe(2)
+    expect(report.seatPlays.some((plays) => plays.length > 0)).toBe(true)
     const summary = summarizeReports([report])
     expect(summary.finished).toBe(1)
     expect(summary.heroHigh.length + summary.terrainHigh.length + summary.lootHigh.length).toBeGreaterThan(0)
+    const sample = [...summary.heroHigh, ...summary.terrainHigh, ...summary.lootHigh][0]
+    if (sample) {
+      expect(sample.avgAbsSwing).toBeGreaterThanOrEqual(0)
+      expect(sample.presence).toBeGreaterThanOrEqual(0)
+    }
     expect(summary.heroLow.length + summary.terrainLow.length + summary.lootLow.length).toBeGreaterThan(0)
     expect(summary.shapeCompare).toHaveLength(9)
     expect(summary.eventStats.length).toBeGreaterThan(8)

@@ -147,13 +147,13 @@ export const HEROES: HeroDef[] = [
     'Ranged',
     'Morph',
     'Exile target hero until Morphling leaves the board. You may play its ability immediately.' + NO_CHAIN,
-    'aura',
+    'cast',
   ),
   hero('naga_siren', 'Naga Siren', 'AGI', 'Melee', 'Song of the Siren', 'Heroes cannot be destroyed until your next turn.', 'cast'),
   hero('nyx_assassin', 'Nyx Assassin', 'AGI', 'Melee', 'Spiked Carapace', "Counter target hero's ability. The countered hero is destroyed. Instant.", 'instant'),
   hero('phantom_assassin', 'Phantom Assassin', 'AGI', 'Melee', 'Coup de Grace', "Whenever an enemy hero returns to its owner's hand, exile it instead.", 'aura'),
   hero('phantom_lancer', 'Phantom Lancer', 'AGI', 'Melee', 'Juxtapose', 'Whenever Phantom Lancer would be destroyed, return him to your hand instead.', 'aura'),
-  hero('razor', 'Razor', 'AGI', 'Ranged', 'Static Link', 'Exile target enemy hero. Return it to its owner when Razor is removed from the board.', 'aura'),
+  hero('razor', 'Razor', 'AGI', 'Ranged', 'Static Link', 'Exile target enemy hero. Return it to its owner when Razor is removed from the board.', 'cast'),
   hero(
     'riki',
     'Riki',
@@ -362,9 +362,7 @@ export const TRAP_IDS = new Set(HEROES.filter((entry) => entry.timing === 'trap'
 /** True when the hero's ability can fire on play / via reactivate (not aura or trap). */
 export function firesAbility(defId: string): boolean {
   const timing = HERO_BY_ID[defId]?.timing
-  if (timing === 'cast' || timing === 'instant') return true
-  // Aura attachments that still choose a target when the hero is played.
-  return defId === 'morphling' || defId === 'razor' || defId === 'medusa'
+  return timing === 'cast' || timing === 'instant'
 }
 
 export const SAVE_IDS = new Set([

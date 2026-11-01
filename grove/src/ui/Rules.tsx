@@ -36,7 +36,7 @@ export function Rules({ onClose }: { onClose: () => void }) {
             <li>Elder Titan strips attributes from enemy heroes. They keep 1 point each, and a shared attack type still scores.</li>
             <li>Tidehunter returns every other hero to its owner’s hand. His own team stays.</li>
             <li>Magnus gathers up to 5 enemy heroes into a new team. The rest stay.</li>
-            <li>Razor exiles an enemy hero while you control him. Morphling does the same, copies the attribute, and may cast the ability on the turn he takes it.</li>
+            <li>Razor and Morphling exile a target on play; the exile ends when they leave the board. Morphling may also fire the taken ability.</li>
             <li>Gate merges two teams you own. Overflow returns to hand and does not fire again.</li>
           </ul>
         </section>

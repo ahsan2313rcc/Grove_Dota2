@@ -1,7 +1,7 @@
 import { chooseAiAction, chooseAiPending, cycleStrat, DEFAULT_STRAT } from './ai.ts'
 import { display, HERO_BY_ID } from './catalog.ts'
 import { apply, createGame, type SeatSpec } from './engine.ts'
-import { attrsOf, heroWeight, scoreState, scoreTeam, standingOf } from './flow.ts'
+import { attrsOf, findHand, heroWeight, scoreState, scoreTeam, standingOf } from './flow.ts'
 import { teamShape } from './scoring.ts'
 import type { Action, AiStrat, Attr, CardInst, CardKind, Game, Team } from './types.ts'
 
@@ -112,6 +112,8 @@ export interface MatchReport {
   winner: number | null
   winnerStrat: AiStrat | null
   swings: SwingEvent[]
+  /** Unique card defIds each seat resolved (for presence / win-rate). */
+  seatPlays: string[][]
   rounds: RoundEvent[]
   events: EventCounts
   seatEvents: EventCounts[]
@@ -132,6 +134,11 @@ export interface CardBalanceRow {
   avgRelativeSwing: number
   avgAbsSwing: number
   totalActorSwing: number
+  /** Matches where a filtered seat played this card at least once. */
+  presence: number
+  /** Wins among those presence matches. */
+  wins: number
+  winRate: number
 }
 
 export interface StratBalanceRow {
@@ -261,18 +268,30 @@ const EMPTY_SHAPES = (): ShapeCounts => ({
   mixTerrainPoints: 0,
 })
 
+type ImpactFrame = {
+  actor: number
+  actorStrat: AiStrat
+  defId: string
+  kind: PlayKind
+  turn: number
+  startTotals: number[]
+}
+
 export class BalanceTracker {
   readonly seed: number
   private swings: SwingEvent[] = []
   private rounds: RoundEvent[] = []
   private events: EventCounts = EMPTY_EVENTS()
   private seatEvents: EventCounts[] = []
+  private seatPlaySets: Set<string>[] = []
   private actions = 0
   private turnActor = 0
   private turnNo = 1
   private turnCards = 0
   private turnStartScores: number[] = []
   private started = false
+  /** Open card resolution — score delta is attributed when prompts / queues settle. */
+  private impact: ImpactFrame | null = null
 
   constructor(seed: number) {
     this.seed = seed
@@ -285,6 +304,7 @@ export class BalanceTracker {
     this.turnCards = 0
     this.turnStartScores = totals(game)
     this.seatEvents = game.players.map(() => EMPTY_EVENTS())
+    this.seatPlaySets = game.players.map(() => new Set())
   }
 
   observe(before: Game, action: Action, after: Game) {
@@ -302,14 +322,27 @@ export class BalanceTracker {
 
     this.tallyEvents(before, after, actor)
 
+    // Instant / Illusion spent from a prompt: close the interrupted card, open the interrupt card.
+    if (action.type === 'choose' && before.pending) {
+      const choice = action.ids[0] ?? ''
+      if (choice.startsWith('instant:') || choice.startsWith('illu:') || choice.startsWith('play:')) {
+        const spent = handCardSpent(before, after, before.pending.actor)
+        if (spent) {
+          this.sealImpact(before)
+          this.openImpact(before, before.pending.actor, spent.defId, spent.kind as PlayKind)
+          this.tallyPlay(before.pending.actor, spent.kind, display(spent.defId).instant)
+        }
+      }
+    }
+
     if (action.type === 'play') {
-      const held = before.players[before.active]?.hand.find((card) => card.uid === action.uid)
-      // Rejected plays (e.g. lone terrain) leave the card in hand — do not pollute Rel tables.
-      const resolved = held && !after.players[before.active]?.hand.some((card) => card.uid === action.uid)
+      const held = findHand(before, action.uid)
+      const resolved = held && !after.players[held.player.id]?.hand.some((card) => card.uid === action.uid)
       if (held && resolved) {
-        this.turnCards += 1
-        this.recordSwing(before, after, actor, held.defId, held.kind)
-        this.tallyPlay(actor, held.kind, display(held.defId).instant)
+        if (held.player.id === before.active) this.turnCards += 1
+        this.sealImpact(before)
+        this.openImpact(before, held.player.id, held.card.defId, held.card.kind)
+        this.tallyPlay(held.player.id, held.card.kind, display(held.card.defId).instant)
       }
     } else if (action.type === 'combo') {
       this.turnCards += 1
@@ -317,23 +350,31 @@ export class BalanceTracker {
         .map((uid) => before.players[before.active]?.hand.find((card) => card.uid === uid)?.defId)
         .filter((id): id is string => !!id)
       const mixed = new Set(ids).size > 1
-      this.recordSwing(before, after, before.active, mixed ? 'mixed_path' : (ids[0] ?? 'terrain'), 'combo')
+      this.sealImpact(before)
+      this.openImpact(before, before.active, mixed ? 'mixed_path' : (ids[0] ?? 'terrain'), 'combo')
       this.bumpEvent(before.active, 'playTerrain')
     } else if (action.type === 'morph') {
       this.turnCards += 1
       const loc = before.players.flatMap((player) => player.teams.flatMap((team) => team.heroes)).find((hero) => hero.uid === action.uid)
-      this.recordSwing(before, after, before.active, loc?.defId ?? 'morphling', 'morph')
+      this.sealImpact(before)
+      this.openImpact(before, before.active, loc?.defId ?? 'morphling', 'morph')
       this.bumpEvent(before.active, 'playMorph')
     } else if (action.type === 'draw') {
       this.turnCards += 1
-      this.recordSwing(before, after, before.active, 'draw', 'draw')
+      this.sealImpact(before)
+      this.openImpact(before, before.active, 'draw', 'draw')
       this.bumpEvent(before.active, 'drawAction')
     } else if (action.type === 'move') {
-      this.recordSwing(before, after, before.active, 'ember_spirit', 'move')
+      this.sealImpact(before)
+      this.openImpact(before, before.active, 'ember_spirit', 'move')
       this.bumpEvent(before.active, 'playMove')
     }
 
-    if (after.over) this.flushRound(after)
+    if (!resolving(after)) this.sealImpact(after)
+    if (after.over) {
+      this.sealImpact(after)
+      this.flushRound(after)
+    }
   }
 
   snapshot(game: Game): MatchReport {
@@ -414,6 +455,7 @@ export class BalanceTracker {
         endScore: end,
       })
     }
+    this.sealImpact(game)
     return {
       seed: this.seed,
       seats: game.players.length,
@@ -425,6 +467,7 @@ export class BalanceTracker {
       winner: winners.length === 1 ? winners[0]! : null,
       winnerStrat: winners.length === 1 ? (seatStrats[winners[0]!] ?? null) : null,
       swings: this.swings.slice(),
+      seatPlays: game.players.map((_, index) => [...(this.seatPlaySets[index] ?? [])]),
       rounds,
       events: { ...this.events },
       seatEvents: game.players.map((_, index) => ({ ...(this.seatEvents[index] ?? EMPTY_EVENTS()) })),
@@ -452,25 +495,48 @@ export class BalanceTracker {
     this.turnStartScores = endScores
   }
 
-  private recordSwing(before: Game, after: Game, actor: number, defId: string, kind: PlayKind) {
-    const beforeTotals = totals(before)
-    const afterTotals = totals(after)
+  private openImpact(at: Game, actor: number, defId: string, kind: PlayKind) {
+    this.impact = {
+      actor,
+      actorStrat: at.players[actor]?.strat ?? DEFAULT_STRAT,
+      defId,
+      kind,
+      turn: at.turn,
+      startTotals: totals(at),
+    }
+    if (defId !== 'draw' && defId !== 'mixed_path' && defId !== 'ember_spirit') {
+      const set = this.seatPlaySets[actor] ?? (this.seatPlaySets[actor] = new Set())
+      set.add(defId)
+    }
+  }
+
+  private sealImpact(at: Game) {
+    const frame = this.impact
+    if (!frame) return
+    this.impact = null
+    this.commitSwing(frame, totals(at))
+  }
+
+  private commitSwing(frame: ImpactFrame, afterTotals: number[]) {
+    const actor = frame.actor
+    const beforeTotals = frame.startTotals
     const actorSwing = (afterTotals[actor] ?? 0) - (beforeTotals[actor] ?? 0)
     const oppBefore = mean(beforeTotals.filter((_, id) => id !== actor))
     const oppAfter = mean(afterTotals.filter((_, id) => id !== actor))
     const relativeSwing = actorSwing - (oppAfter - oppBefore)
     const fieldSwing = afterTotals.reduce((sum, score, id) => sum + Math.abs(score - (beforeTotals[id] ?? 0)), 0)
+    const defId = frame.defId
     const info = defId === 'draw' || defId === 'mixed_path' ? null : display(defId)
     const name = defId === 'draw' ? 'Draw' : defId === 'mixed_path' ? 'Mixed path' : (info?.name ?? defId)
-    const shownKind: PlayKind = kind === 'combo' ? 'combo' : kind
+    const shownKind: PlayKind = frame.kind === 'combo' ? 'combo' : frame.kind
     const bucket = relBucket(shownKind, defId)
-    const attr = shownKind === 'hero' ? (HERO_BY_ID[defId]?.attr ?? info?.attr ?? null) : null
+    const attr = shownKind === 'hero' || shownKind === 'morph' ? (HERO_BY_ID[defId]?.attr ?? info?.attr ?? null) : null
     const instant = !!info?.instant || (shownKind === 'hero' && HERO_BY_ID[defId]?.timing === 'instant')
     this.swings.push({
       seed: this.seed,
-      turn: before.turn,
+      turn: frame.turn,
       actor,
-      actorStrat: before.players[actor]?.strat ?? DEFAULT_STRAT,
+      actorStrat: frame.actorStrat,
       defId,
       name,
       kind: shownKind,
@@ -484,6 +550,19 @@ export class BalanceTracker {
   }
 }
 
+function resolving(game: Game): boolean {
+  return !!(game.pending || game.after || game.queue.length > 0 || game.echoes.length > 0)
+}
+
+function handCardSpent(before: Game, after: Game, seat: number): CardInst | null {
+  const prior = before.players[seat]?.hand ?? []
+  const next = new Set((after.players[seat]?.hand ?? []).map((card) => card.uid))
+  for (const card of prior) {
+    if (!next.has(card.uid)) return card
+  }
+  return null
+}
+
 export function summarizeReports(reports: MatchReport[], filter: StratFilter = ALL_STRAT_FILTER): BalanceSummary {
   const scoped = reports.filter((report) => {
     if (filter.mixOnly && !report.mixture) return false
@@ -491,7 +570,22 @@ export function summarizeReports(reports: MatchReport[], filter: StratFilter = A
     return filter.strats.some((strat) => report.seatStrats.includes(strat))
   })
   const finished = scoped.filter((report) => report.over)
-  const cardMap = new Map<string, { defId: string; name: string; kind: PlayKind; bucket: RelBucket; attr: Attr | null; instant: boolean; plays: number; actor: number; relative: number; abs: number }>()
+  type CardAgg = {
+    defId: string
+    name: string
+    kind: PlayKind
+    bucket: RelBucket
+    attr: Attr | null
+    instant: boolean
+    plays: number
+    actor: number
+    relative: number
+    abs: number
+    presence: number
+    wins: number
+  }
+  const cardMap = new Map<string, CardAgg>()
+  const presenceMap = new Map<string, { presence: number; wins: number }>()
   const kindMap = new Map<PlayKind, { plays: number; actor: number; relative: number }>()
   const attrMap = new Map<Attr | 'none', { plays: number; actor: number; relative: number }>()
   const ptsByTurn = new Map<number, number[]>()
@@ -524,6 +618,18 @@ export function summarizeReports(reports: MatchReport[], filter: StratFilter = A
       }
     }
 
+    for (let seat = 0; seat < report.seatStrats.length; seat += 1) {
+      const strat = report.seatStrats[seat]!
+      if (!allowsStrat(filter, strat)) continue
+      const won = report.over && report.winner === seat
+      for (const defId of report.seatPlays?.[seat] ?? []) {
+        const entry = presenceMap.get(defId) ?? { presence: 0, wins: 0 }
+        entry.presence += 1
+        if (won) entry.wins += 1
+        presenceMap.set(defId, entry)
+      }
+    }
+
     for (const swing of report.swings) {
       if (!allowsStrat(filter, swing.actorStrat)) continue
       const key = `${swing.kind}:${swing.defId}`
@@ -538,6 +644,8 @@ export function summarizeReports(reports: MatchReport[], filter: StratFilter = A
         actor: 0,
         relative: 0,
         abs: 0,
+        presence: 0,
+        wins: 0,
       }
       row.plays += 1
       row.actor += swing.actorSwing
@@ -578,21 +686,29 @@ export function summarizeReports(reports: MatchReport[], filter: StratFilter = A
     }
   }
 
-  const cards = [...cardMap.values()].map((row) => ({
-    defId: row.defId,
-    name: row.name,
-    kind: row.kind,
-    bucket: row.bucket,
-    attr: row.attr,
-    instant: row.instant,
-    plays: row.plays,
-    avgActorSwing: row.actor / row.plays,
-    avgRelativeSwing: row.relative / row.plays,
-    avgAbsSwing: row.abs / row.plays,
-    totalActorSwing: row.actor,
-  }))
+  const cards = [...cardMap.values()].map((row) => {
+    const presence = presenceMap.get(row.defId) ?? { presence: 0, wins: 0 }
+    return {
+      defId: row.defId,
+      name: row.name,
+      kind: row.kind,
+      bucket: row.bucket,
+      attr: row.attr,
+      instant: row.instant,
+      plays: row.plays,
+      avgActorSwing: row.actor / row.plays,
+      avgRelativeSwing: row.relative / row.plays,
+      avgAbsSwing: row.abs / row.plays,
+      totalActorSwing: row.actor,
+      presence: presence.presence,
+      wins: presence.wins,
+      winRate: presence.presence ? presence.wins / presence.presence : 0,
+    }
+  })
 
-  const ranked = cards.filter((row) => row.kind !== 'draw' && row.plays >= 1)
+  // Prefer cards with enough samples so one-off spikes don't dominate Rel tables.
+  const minPlays = Math.max(1, Math.min(6, Math.floor(Math.max(1, finished.length) / 8)))
+  const ranked = cards.filter((row) => row.kind !== 'draw' && row.plays >= minPlays)
   const heroRows = ranked.filter((row) => row.bucket === 'hero')
   const terrainRows = ranked.filter((row) => row.bucket === 'terrain')
   const lootRows = ranked.filter((row) => row.bucket === 'loot')
@@ -619,7 +735,7 @@ export function summarizeReports(reports: MatchReport[], filter: StratFilter = A
     lootHigh: rankHigh(lootRows),
     lootLow: rankLow(lootRows),
     contested: [...ranked]
-      .sort((a, b) => b.plays - a.plays || b.avgAbsSwing - a.avgAbsSwing)
+      .sort((a, b) => b.avgAbsSwing * Math.sqrt(b.plays) - a.avgAbsSwing * Math.sqrt(a.plays) || b.plays - a.plays)
       .slice(0, 16),
     avgPtsByTurn: turnSeries.pts,
     avgCardsByTurn: turnSeries.cards,
@@ -685,11 +801,15 @@ export function summarizeReports(reports: MatchReport[], filter: StratFilter = A
 }
 
 function rankHigh(rows: CardBalanceRow[]): CardBalanceRow[] {
-  return [...rows].sort((a, b) => b.avgRelativeSwing - a.avgRelativeSwing || b.plays - a.plays).slice(0, 12)
+  return [...rows]
+    .sort((a, b) => b.avgRelativeSwing - a.avgRelativeSwing || b.winRate - a.winRate || b.plays - a.plays)
+    .slice(0, 12)
 }
 
 function rankLow(rows: CardBalanceRow[]): CardBalanceRow[] {
-  return [...rows].sort((a, b) => a.avgRelativeSwing - b.avgRelativeSwing || b.plays - a.plays).slice(0, 12)
+  return [...rows]
+    .sort((a, b) => a.avgRelativeSwing - b.avgRelativeSwing || a.winRate - b.winRate || b.plays - a.plays)
+    .slice(0, 12)
 }
 
 function shapeRow(

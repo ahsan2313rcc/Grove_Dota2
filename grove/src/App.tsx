@@ -261,7 +261,7 @@ export default function App() {
     const strats = debugStrats
     const total = Math.max(1, Math.min(1024, batchSize))
     const chunk: MatchReport[] = []
-    const yieldEvery = total >= 64 ? 8 : 1
+    const yieldEvery = total >= 256 ? 32 : total >= 64 ? 16 : 4
     for (let index = 0; index < total; index += 1) {
       if (batchToken.current !== token) return
       const report = runMatchFast(baseSeed + index, seats, strats)
@@ -319,7 +319,7 @@ export default function App() {
           const token = ++batchToken.current
           setRunningBatch(true)
           const chunk: MatchReport[] = []
-          const yieldEvery = total >= 64 ? 8 : 1
+          const yieldEvery = total >= 256 ? 32 : total >= 64 ? 16 : 4
           for (let index = 0; index < total; index += 1) {
             if (batchToken.current !== token) return
             chunk.push(runMatchFast(nextSeed + index, seats, strats))
