@@ -191,7 +191,7 @@ Trap heroes (`timing: 'trap'`):
 1. Play face down on **any** team (ally or enemy).
 2. **At most one trap per team** (optional hard limit; recommended).
 3. **Trigger (automatic):** when a hero **enters** that team, **or** when that team / a hero in it is **targeted by an effect**, the trap **reveals and resolves** — no owner choice to pass.
-4. Resolve printed text. If the text says **Sacrifice**, the trap goes to the grave; otherwise the revealed hero **joins that team** as a normal body (if the team cannot hold it, return the card to the trap owner’s hand).
+4. Resolve printed text. The revealed hero **joins that team** as a normal body unless the text specifies the trap is **destroyed** / **Sacrificed** (then it goes to the grave). If the team cannot hold it, return the card to the trap owner’s hand.
 5. **Zeus** removes all face-down traps from the board.
 
 Trap roster: Techies, Riki, Kez, Monkey King, Templar Assassin, Ogre Magi, Slark, Bounty Hunter, Shadow Shaman.

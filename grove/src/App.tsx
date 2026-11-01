@@ -10,7 +10,7 @@ import {
   type StratFilter,
 } from './game/balance.ts'
 import { apply, createGame, type SeatSpec } from './game/engine.ts'
-import { log } from './game/flow.ts'
+import { log, scoreState } from './game/flow.ts'
 import {
   cloneRules,
   DEFAULT_SCORE_RULES,
@@ -38,6 +38,8 @@ type LiveRun = {
   game: Game
   tracker: BalanceTracker
   stuck: boolean
+  /** Consecutive no-op advances — escalate escapes so Watch never freezes forever. */
+  stall: number
 }
 
 function defaultSeats(count: SeatCount): LobbySeat[] {
@@ -66,38 +68,95 @@ function makeRun(seed: number, seats: number, strats?: AiStrat[]): LiveRun {
   })
   const tracker = new BalanceTracker(seed)
   tracker.start(game)
-  return { seed, game, tracker, stuck: false }
+  return { seed, game, tracker, stuck: false, stall: 0 }
+}
+
+function pendingMark(pending: Game['pending']): string {
+  if (!pending) return ''
+  return `${pending.actor}|${pending.resume.kind}|${pending.prompt}|${pending.choices.length}|${pending.min}|${pending.max}`
+}
+
+function softFinishLive(game: Game, reason: string): Game {
+  const parts = game.players.map((player) => scoreState(game, player.id))
+  return {
+    ...game,
+    pending: null,
+    veil: false,
+    queue: [],
+    echoes: [],
+    after: null,
+    pendingDraws: [],
+    over: { reason, scores: parts.map((part) => part.total), parts },
+    log: [...game.log, reason],
+  }
 }
 
 function advanceTracked(run: LiveRun): LiveRun {
   const game = run.game
   if (game.over) return run
-  if (game.veil) {
-    const next = apply(game, { type: 'ready' })
-    run.tracker.observe(game, { type: 'ready' }, next)
-    return { ...run, game: next, stuck: false }
-  }
-  if (game.pending) {
-    if (game.players[game.pending.actor]?.ai || game.autoAll) {
-      const ids = chooseAiPending(game)
-      const next = apply(game, { type: 'choose', ids })
-      run.tracker.observe(game, { type: 'choose', ids }, next)
-      return { ...run, game: next, stuck: false }
+  try {
+    if (game.veil) {
+      const next = apply(game, { type: 'ready' })
+      run.tracker.observe(game, { type: 'ready' }, next)
+      return { ...run, game: next, stuck: false, stall: 0 }
     }
-    return run
+    if (game.pending) {
+      if (game.players[game.pending.actor]?.ai || game.autoAll) {
+        const ids = chooseAiPending(game)
+        let next = apply(game, { type: 'choose', ids })
+        run.tracker.observe(game, { type: 'choose', ids }, next)
+        if (next.pending && pendingMark(next.pending) === pendingMark(game.pending)) {
+          const stall = run.stall + 1
+          if (stall >= 3) {
+            next = { ...next, pending: null, log: [...next.log, 'Forced past a stuck choice.'] }
+            return { ...run, game: next, stuck: false, stall: 0 }
+          }
+          return { ...run, game: next, stuck: true, stall }
+        }
+        return { ...run, game: next, stuck: false, stall: 0 }
+      }
+      return run
+    }
+    if (!game.players[game.active]?.ai) return run
+
+    // Escalating escapes when prior ticks made no progress.
+    if (run.stall >= 8) {
+      const finished = softFinishLive(game, 'Match halted (soft-lock).')
+      return { ...run, game: finished, stuck: false, stall: 0 }
+    }
+    if (run.stall >= 5) {
+      const next = apply(game, { type: 'end' })
+      run.tracker.observe(game, { type: 'end' }, next)
+      const progressed = next.active !== game.active || next.turn !== game.turn || !!next.over
+      return { ...run, game: next, stuck: !progressed, stall: progressed ? 0 : run.stall + 1 }
+    }
+    if (run.stall >= 3) {
+      const hand = game.players[game.active]?.hand ?? []
+      const pitch = hand.find((card) => card.kind === 'terrain') ?? hand[0]
+      if (pitch && (game.players[game.active]?.actions ?? 0) > 0) {
+        const next = apply(game, { type: 'discard', uid: pitch.uid })
+        run.tracker.observe(game, { type: 'discard', uid: pitch.uid }, next)
+        const progressed = next !== game && (next.log.at(-1) !== game.log.at(-1) || next.deck.length !== game.deck.length)
+        return { ...run, game: next, stuck: !progressed, stall: progressed ? 0 : run.stall + 1 }
+      }
+    }
+
+    const action = chooseAiAction(game)
+    const next = apply(game, action)
+    run.tracker.observe(game, action, next)
+    const same = next === game
+      || (next.active === game.active
+        && next.turn === game.turn
+        && next.log.at(-1) === game.log.at(-1)
+        && next.deck.length === game.deck.length
+        && !next.pending
+        && next.veil === game.veil
+        && !next.over)
+    return { ...run, game: next, stuck: same, stall: same ? run.stall + 1 : 0 }
+  } catch (error) {
+    const text = error instanceof Error ? error.message : 'The Grove could not finish a play.'
+    return { ...run, game: log(game, text), stuck: true, stall: run.stall + 1 }
   }
-  if (!game.players[game.active]?.ai) return run
-  const action = chooseAiAction(game)
-  const next = apply(game, action)
-  run.tracker.observe(game, action, next)
-  const same = next === game
-    || (next.active === game.active
-      && next.turn === game.turn
-      && next.log.at(-1) === game.log.at(-1)
-      && next.deck.length === game.deck.length
-      && !next.pending
-      && next.veil === game.veil)
-  return { ...run, game: next, stuck: same }
 }
 
 function readStart(): { debug: boolean; seed: number; seats: SeatCount; runs: LiveRun[]; view: DebugView } | null {
@@ -121,7 +180,7 @@ function readStart(): { debug: boolean; seed: number; seats: SeatCount; runs: Li
     const game = createGame({ seed, seats })
     const tracker = new BalanceTracker(seed)
     tracker.start(game)
-    return { debug: false, seed, seats: count, runs: [{ seed, game, tracker, stuck: false }], view: 'watch' }
+    return { debug: false, seed, seats: count, runs: [{ seed, game, tracker, stuck: false, stall: 0 }], view: 'watch' }
   }
   // Debug defaults to Stats (fast sim); open Watch from the rail to slow the board.
   return { debug: true, seed, seats: count, runs: [], view: 'stats' }
@@ -145,6 +204,12 @@ export default function App() {
   const [debugStrats, setDebugStrats] = useState<AiStrat[]>(() => Array.from({ length: boot?.seats ?? 2 }, (_, index) => cycleStrat(index)))
   const queueToken = useRef(0)
   const watchRef = useRef(false)
+  const watchAdvanceRef = useRef(0)
+  const archivedWatchRef = useRef<number | null>(null)
+  const seatCountRef = useRef(seatCount)
+  const debugStratsRef = useRef(debugStrats)
+  seatCountRef.current = seatCount
+  debugStratsRef.current = debugStrats
 
   const live = runs[0] ?? null
   const game = live?.game ?? null
@@ -161,49 +226,53 @@ export default function App() {
   const finishedCount = reports.filter((report) => report.over).length
   const runCount = (live && !live.game.over ? 1 : 0) + queueLeft + (runningFast ? 1 : 0)
 
-  // Watch mode: tick the live board at the chosen speed.
+  // Watch mode: tick the live board at the chosen speed (stats mode never ticks).
   useEffect(() => {
-    if (!debug || debugView !== 'watch') return
+    if (!debug || debugView !== 'watch' || runningFast) return
     if (runs.length === 0) return
     if (debugSpeed === 0) return
     const run = runs[0]
-    if (!run || run.game.over || run.stuck) return
-    const delay = Math.round(BASE_TICK_MS / debugSpeed)
+    if (!run || run.game.over) return
+    // Auto-unstick: keep ticking even if a prior noop marked stuck.
+    const delay = Math.round(BASE_TICK_MS / Math.max(debugSpeed, 0.5))
     const timer = window.setTimeout(() => {
       setRuns((current) => {
         const liveRun = current[0]
-        if (!liveRun || liveRun.game.over || liveRun.stuck) return current
+        if (!liveRun || liveRun.game.over) return current
         try {
           return [advanceTracked(liveRun)]
         } catch (error) {
           const text = error instanceof Error ? error.message : 'The Grove could not finish a play.'
-          return [{ ...liveRun, game: log(liveRun.game, text), stuck: true }]
+          return [{ ...liveRun, game: log(liveRun.game, text), stuck: true, stall: liveRun.stall + 1 }]
         }
       })
     }, delay)
     return () => window.clearTimeout(timer)
-  }, [debug, debugView, debugSpeed, runs])
+  }, [debug, debugView, debugSpeed, runs, runningFast])
 
   // Archive a finished watch match; if still watching with queue left, start the next live seed.
   useEffect(() => {
-    if (!debug || debugView !== 'watch' || !live?.game.over) return
+    if (!debug || debugView !== 'watch' || runningFast || !live?.game.over) return
     const finished = live
-    setReports((current) => {
-      if (current.some((report) => report.seed === finished.seed)) return current
-      return [...current, finished.tracker.snapshot(finished.game)]
-    })
-    if (queueLeft <= 0) return
-    const token = ++queueToken.current
+    if (archivedWatchRef.current !== finished.seed) {
+      archivedWatchRef.current = finished.seed
+      setReports((current) => {
+        if (current.some((report) => report.seed === finished.seed)) return current
+        return [...current, finished.tracker.snapshot(finished.game)]
+      })
+    }
+    if (queueLeft <= 0 || !watchRef.current) return
+    const gen = ++watchAdvanceRef.current
     const nextSeed = finished.seed + 1
     const timer = window.setTimeout(() => {
-      if (queueToken.current !== token || !watchRef.current) return
+      if (watchAdvanceRef.current !== gen || !watchRef.current) return
       setSeed(nextSeed)
       setQueueLeft((left) => Math.max(0, left - 1))
       setMatch((value) => value + 1)
-      setRuns([makeRun(nextSeed, seatCount, debugStrats)])
-    }, 200)
+      setRuns([makeRun(nextSeed, seatCountRef.current, debugStratsRef.current)])
+    }, 120)
     return () => window.clearTimeout(timer)
-  }, [debug, debugView, live, queueLeft, seatCount, debugStrats])
+  }, [debug, debugView, live, queueLeft, runningFast])
 
   useEffect(() => {
     if (debug) return
@@ -219,7 +288,7 @@ export default function App() {
           return [advanceTracked(run)]
         } catch (error) {
           const text = error instanceof Error ? error.message : 'The Grove could not finish a play.'
-          return [{ ...run, game: log(run.game, text), stuck: true }]
+          return [{ ...run, game: log(run.game, text), stuck: true, stall: run.stall + 1 }]
         }
       })
     }, BASE_TICK_MS)
@@ -234,7 +303,7 @@ export default function App() {
       try {
         const next = apply(run.game, action)
         run.tracker.observe(run.game, action, next)
-        return [{ ...run, game: next, stuck: false }]
+        return [{ ...run, game: next, stuck: false, stall: 0 }]
       } catch (error) {
         const text = error instanceof Error ? error.message : 'That play could not resolve.'
         return [{ ...run, game: log(run.game, text) }]
@@ -250,14 +319,16 @@ export default function App() {
         return [advanceTracked(run)]
       } catch (error) {
         const text = error instanceof Error ? error.message : 'The Grove could not finish a play.'
-        return [{ ...run, game: log(run.game, text), stuck: true }]
+        return [{ ...run, game: log(run.game, text), stuck: true, stall: run.stall + 1 }]
       }
     })
   }
 
   function leave() {
     queueToken.current += 1
+    watchAdvanceRef.current += 1
     watchRef.current = false
+    archivedWatchRef.current = null
     window.history.replaceState({}, '', window.location.pathname)
     setRuns([])
     setReports([])
@@ -274,6 +345,8 @@ export default function App() {
 
   function resetDebug() {
     queueToken.current += 1
+    watchAdvanceRef.current += 1
+    archivedWatchRef.current = null
     setRunningFast(false)
     setReports([])
     setQueueLeft(0)
@@ -289,16 +362,22 @@ export default function App() {
   /** Run N matches in the background at full speed (one finished report at a time). */
   async function runFastQueue(fromSeed: number, count: number, seats: SeatCount, strats: AiStrat[]) {
     const token = ++queueToken.current
+    watchAdvanceRef.current += 1
     const total = Math.max(1, Math.min(256, count))
     setRunningFast(true)
     setDebugView('stats')
     watchRef.current = false
     setRuns([])
     setQueueLeft(total)
+    const chunk: MatchReport[] = []
+    const flushEvery = 1
     for (let index = 0; index < total; index += 1) {
       if (queueToken.current !== token) return
       if (watchRef.current) {
-        // User switched to Watch — hand off remaining queue to live playback.
+        if (chunk.length > 0) {
+          const batch = chunk.splice(0, chunk.length)
+          setReports((current) => [...current, ...batch])
+        }
         const nextSeed = fromSeed + index
         setSeed(nextSeed)
         setQueueLeft(total - index)
@@ -307,11 +386,25 @@ export default function App() {
         setRunningFast(false)
         return
       }
-      const report = runMatchFast(fromSeed + index, seats, strats)
-      setSeed(fromSeed + index)
-      setReports((current) => [...current, report])
+      try {
+        chunk.push(runMatchFast(fromSeed + index, seats, strats))
+      } catch (error) {
+        // runMatchFast soft-finishes internally; this is a last-resort stub so the queue never stalls.
+        const reason = error instanceof Error ? error.message : 'sim error'
+        const stub = makeRun(fromSeed + index, seats, strats)
+        const finished = softFinishLive(stub.game, `Match halted (${reason}).`)
+        chunk.push(stub.tracker.finish(finished))
+      }
       setQueueLeft(total - index - 1)
-      await new Promise((resolve) => window.setTimeout(resolve, 0))
+      if (chunk.length >= flushEvery || index === total - 1) {
+        const batch = chunk.splice(0, chunk.length)
+        setSeed(fromSeed + index)
+        setReports((current) => [...current, ...batch])
+      }
+      // Yield so React can paint and cancel tokens stay responsive.
+      await new Promise<void>((resolve) => {
+        window.setTimeout(resolve, 0)
+      })
     }
     if (queueToken.current !== token) return
     setQueueLeft(0)
@@ -365,6 +458,11 @@ export default function App() {
   function onDebugView(view: DebugView) {
     if (view === 'watch') {
       watchRef.current = true
+      // Mid-batch: let runFastQueue hand off the remaining queue — don't spawn a parallel live run.
+      if (runningFast) {
+        setDebugView('watch')
+        return
+      }
       if (runs.length === 0) {
         startWatchFromStats()
         return
@@ -372,6 +470,8 @@ export default function App() {
       setDebugView('watch')
       return
     }
+    // Leaving Watch cancels the archive→next-seed timer without aborting a fast queue.
+    watchAdvanceRef.current += 1
     watchRef.current = false
     setDebugView('stats')
   }
@@ -421,7 +521,7 @@ export default function App() {
           setDebug(false)
           const tracker = new BalanceTracker(nextSeed)
           tracker.start(next)
-          setRuns([{ seed: nextSeed, game: next, tracker, stuck: false }])
+          setRuns([{ seed: nextSeed, game: next, tracker, stuck: false, stall: 0 }])
           setFocus(0)
         }}
       />

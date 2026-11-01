@@ -879,82 +879,173 @@ export function aiRoster(count: number, strats?: AiStrat[], offset = 0): SeatSpe
   })
 }
 
-export function runMatchFast(seed: number, seats: number, strats?: AiStrat[], guard = 4000): MatchReport {
+export function runMatchFast(seed: number, seats: number, strats?: AiStrat[], guard = 2500): MatchReport {
   let game = createGame({ seed, seats: aiRoster(seats, strats, seed) })
   const tracker = new BalanceTracker(seed)
   tracker.start(game)
   let steps = 0
-  let repeats = 0
-  let last = ''
-  let deckStall = 0
+  let noProgress = 0
+  let endsWithoutDeckDrop = 0
   let lastDeck = game.deck.length
+  let lastMark = matchMark(game)
   while (!game.over && steps < guard) {
     steps += 1
-    if (game.veil) {
-      const before = game
-      game = apply(game, { type: 'ready' })
-      tracker.observe(before, { type: 'ready' }, game)
-      continue
-    }
-    if (game.pending) {
-      const ids = chooseAiPending(game)
-      const before = game
-      game = apply(game, { type: 'choose', ids })
-      tracker.observe(before, { type: 'choose', ids }, game)
-      if (game.pending === before.pending) {
-        game = { ...game, pending: null, log: [...game.log, 'Forced past a stuck choice.'] }
+    const beforeMark = matchMark(game)
+
+    try {
+      if (game.veil) {
+        const before = game
+        game = apply(game, { type: 'ready' })
+        tracker.observe(before, { type: 'ready' }, game)
+      } else if (game.pending) {
+        const before = game
+        const ids = chooseAiPending(game)
+        game = apply(game, { type: 'choose', ids })
+        tracker.observe(before, { type: 'choose', ids }, game)
+        if (game.pending && pendingKey(game.pending) === pendingKey(before.pending)) {
+          game = { ...game, pending: null, log: [...game.log, 'Forced past a stuck choice.'] }
+        }
+      } else {
+        const action = chooseAiAction(game)
+        const before = game
+        game = apply(game, action)
+        tracker.observe(before, action, game)
+        if (action.type === 'end') {
+          if (game.deck.length >= lastDeck) endsWithoutDeckDrop += 1
+          else {
+            lastDeck = game.deck.length
+            endsWithoutDeckDrop = 0
+          }
+        } else if (game.deck.length < lastDeck) {
+          lastDeck = game.deck.length
+          endsWithoutDeckDrop = 0
+        }
       }
-      continue
-    }
-    const action = chooseAiAction(game)
-    const before = game
-    game = apply(game, action)
-    tracker.observe(before, action, game)
-    if (game.deck.length < lastDeck) {
-      lastDeck = game.deck.length
-      deckStall = 0
-    } else if (action.type === 'end') {
-      deckStall += 1
-    }
-    // Recycle loops (Weaver et al.) can keep the deck from emptying — cut them short.
-    if (deckStall >= 20 || steps >= 700) {
+
+      if (game.veil) {
+        const before = game
+        game = apply(game, { type: 'ready' })
+        tracker.observe(before, { type: 'ready' }, game)
+      }
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : 'sim error'
+      game = softFinish(game, `Match halted (${reason}).`)
       break
     }
-    const marker = `${game.turn}:${game.active}:${game.deck.length}:${game.players.map((p) => p.hand.length).join(',')}`
-    if (marker === last) {
-      repeats += 1
-      if (repeats > 4) {
-        if (game.pending) {
-          const ids = chooseAiPending(game)
-          game = apply(game, { type: 'choose', ids })
-          if (game.pending) game = { ...game, pending: null, log: [...game.log, 'Forced past a stuck choice.'] }
-          repeats = 0
-          continue
+
+    const afterMark = matchMark(game)
+    if (afterMark === beforeMark) {
+      noProgress += 1
+      try {
+        game = nudgeStuck(game, tracker, noProgress)
+      } catch {
+        game = softFinish(game, 'Match halted (soft-lock).')
+        break
+      }
+    } else if (afterMark === lastMark) {
+      noProgress += 1
+      if (noProgress >= 6) {
+        try {
+          game = nudgeStuck(game, tracker, noProgress)
+        } catch {
+          game = softFinish(game, 'Match halted (soft-lock).')
+          break
         }
-        game = apply(game, { type: 'end' })
-        if (game.veil) game = apply(game, { type: 'ready' })
-        repeats = 0
-        last = ''
-        continue
       }
     } else {
-      repeats = 0
-      last = marker
+      noProgress = 0
+      lastMark = afterMark
     }
+
+    // Recycle loops / endless final-round thrash — cut them short.
+    if (endsWithoutDeckDrop >= 16 || noProgress >= 14 || steps >= 700) break
   }
-  if (!game.over) {
-    // Safety net for rare recycle loops that never empty the deck.
-    const parts = game.players.map((player) => scoreState(game, player.id))
-    const scores = parts.map((part) => part.total)
-    game = {
-      ...game,
-      pending: null,
-      veil: false,
-      over: { reason: 'Match halted (soft-lock).', scores, parts },
-      log: [...game.log, 'Match halted (soft-lock).'],
-    }
-  }
+  if (!game.over) game = softFinish(game, 'Match halted (soft-lock).')
   return tracker.finish(game)
+}
+
+function pendingKey(pending: Game['pending']): string {
+  if (!pending) return ''
+  return `${pending.actor}|${pending.resume.kind}|${pending.prompt}|${pending.choices.length}|${pending.min}|${pending.max}`
+}
+
+function matchMark(game: Game): string {
+  return [
+    game.turn,
+    game.active,
+    game.deck.length,
+    game.grave.length,
+    game.exile.length,
+    game.veil ? 1 : 0,
+    game.ancient?.endsLeft ?? '-',
+    pendingKey(game.pending),
+    game.players.map((player) => `${player.actions}:${player.hand.length}:${player.teams.length}`).join('|'),
+  ].join('/')
+}
+
+function nudgeStuck(game: Game, tracker: BalanceTracker, depth: number): Game {
+  if (game.over) return game
+  if (game.veil) {
+    const before = game
+    const next = apply(game, { type: 'ready' })
+    tracker.observe(before, { type: 'ready' }, next)
+    return next
+  }
+  if (game.pending) {
+    const before = game
+    const ids = chooseAiPending(game)
+    let next = apply(game, { type: 'choose', ids })
+    tracker.observe(before, { type: 'choose', ids }, next)
+    if (next.pending && pendingKey(next.pending) === pendingKey(before.pending)) {
+      next = { ...next, pending: null, log: [...next.log, 'Forced past a stuck choice.'] }
+    }
+    return next
+  }
+  // Escalating escapes: discard → end → hard clear.
+  if (depth >= 3) {
+    const hand = game.players[game.active]?.hand ?? []
+    const terrain = hand.find((card) => card.kind === 'terrain')
+    const any = terrain ?? hand[0]
+    if (any && game.players[game.active]!.actions > 0) {
+      const before = game
+      const next = apply(game, { type: 'discard', uid: any.uid })
+      if (matchMark(next) !== matchMark(before)) {
+        tracker.observe(before, { type: 'discard', uid: any.uid }, next)
+        return next
+      }
+    }
+  }
+  if (depth >= 5) {
+    const before = game
+    let next = apply(game, { type: 'end' })
+    tracker.observe(before, { type: 'end' }, next)
+    if (next.veil) {
+      const veiled = next
+      next = apply(next, { type: 'ready' })
+      tracker.observe(veiled, { type: 'ready' }, next)
+    }
+    if (matchMark(next) !== matchMark(before)) return next
+  }
+  if (depth >= 10) {
+    return softFinish(game, 'Match halted (soft-lock).')
+  }
+  return game
+}
+
+function softFinish(game: Game, reason: string): Game {
+  const parts = game.players.map((player) => scoreState(game, player.id))
+  const scores = parts.map((part) => part.total)
+  return {
+    ...game,
+    pending: null,
+    veil: false,
+    queue: [],
+    echoes: [],
+    after: null,
+    pendingDraws: [],
+    over: { reason, scores, parts },
+    log: [...game.log, reason],
+  }
 }
 
 function relBucket(kind: PlayKind, defId: string): RelBucket {

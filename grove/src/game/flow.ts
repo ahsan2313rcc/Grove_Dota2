@@ -1412,9 +1412,17 @@ export function isTrapHero(defId: string): boolean {
   return TRAP_IDS.has(defId)
 }
 
-/** True when trap text says to sacrifice the hero on reveal (otherwise it joins the team). */
+/**
+ * True when trap text specifies the trap hero is destroyed on reveal (Sacrifice / Destroy this card).
+ * Otherwise the revealed hero joins that team as a normal body.
+ */
 export function trapSacrifices(defId: string): boolean {
-  return /Sacrifice /i.test(HERO_BY_ID[defId]?.text ?? '')
+  const text = HERO_BY_ID[defId]?.text ?? ''
+  const name = HERO_BY_ID[defId]?.name ?? ''
+  if (/Sacrifice /i.test(text)) return true
+  if (name && new RegExp(`Destroy ${name}\\b`, 'i').test(text)) return true
+  if (/\b(this card|this hero) is destroyed\b/i.test(text)) return true
+  return false
 }
 
 export function plantTrap(state: Game, actor: PlayerId, card: CardInst, teamId: string): Game {
@@ -1583,7 +1591,7 @@ export function fireTeamTrap(
             label: display(loc.hero.defId).name,
             defId: loc.hero.defId,
           })),
-          resume: { kind: 'shaman-trap', trap, card },
+          resume: { kind: 'shaman-trap', teamId, trap, card },
         }),
         stopped: false,
       }
@@ -1616,7 +1624,19 @@ export function finishTrapChoose(state: Game, ids: string[]): Game | null {
     const cardUid = ids[0]?.startsWith('card:') ? ids[0].slice(5) : ''
     const hand = state.players[trap.owner]!.hand.find((entry) => entry.uid === cardUid)
     let next: Game = { ...state, pending: null }
-    next = toGrave(next, card, { type: 'deck' })
+    // Kez text sacrifices on reveal — settle first, then bring in the hand hero.
+    next = settleRevealedTrap(next, teamId, trap, card)
+    if (!trapSacrifices(trap.defId)) {
+      // If text no longer destroys Kez, swap: remove the joined body so the hand hero can enter.
+      const seated = teamById(next, teamId)?.team.heroes.some((hero) => hero.uid === card.uid)
+      if (seated) {
+        next = updateTeam(next, teamId, (team) => ({
+          ...team,
+          heroes: team.heroes.filter((hero) => hero.uid !== card.uid),
+        }))
+        next = toGrave(next, card, { type: 'deck' })
+      }
+    }
     if (!hand) return log(next, 'Switch Discipline fizzles.')
     next = removeHand(next, trap.owner, hand.uid)
     const found = teamById(next, teamId)
@@ -1646,10 +1666,10 @@ export function finishTrapChoose(state: Game, ids: string[]): Game | null {
     return next
   }
   if (pending.resume.kind === 'shaman-trap') {
-    const { trap, card } = pending.resume
+    const { teamId, trap, card } = pending.resume
     const uid = ids[0]?.startsWith('hero:') ? ids[0].slice(5) : ''
     let next: Game = { ...state, pending: null }
-    next = toGrave(next, card, { type: 'deck' })
+    next = settleRevealedTrap(next, teamId, trap, card)
     if (uid) next = enqueue(next, uid, 'Shackles', false, true, trap.owner)
     return log(next, 'Shackles.')
   }

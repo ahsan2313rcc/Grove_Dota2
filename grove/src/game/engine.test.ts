@@ -371,6 +371,24 @@ describe('heroes', () => {
     game = passInstants(game)
     expect(game.grave.some((card) => card.defId === 'techies')).toBe(true)
     expect(game.players[0].teams.some((entry) => entry.heroes.some((hero) => hero.defId === 'techies'))).toBe(false)
+
+    // Ogre Magi has no destroy/sacrifice clause — joins after Multicast.
+    game = ready()
+    game = only(game, 0, ['ogre_magi', 'sven', 'axe'])
+    game = apply(game, { type: 'play', uid: uid(game, 0, 'sven'), team: 'new' })
+    game = passInstants(game)
+    const ogreTeam = game.players[0].teams[0]?.id ?? ''
+    game = apply(game, { type: 'play', uid: uid(game, 0, 'ogre_magi'), team: ogreTeam })
+    expect(game.players[0].teams[0]?.trap?.defId).toBe('ogre_magi')
+    game = {
+      ...game,
+      players: [{ ...game.players[0], actions: 1 }, game.players[1]] as Game['players'],
+    }
+    game = apply(game, { type: 'play', uid: uid(game, 0, 'axe'), team: ogreTeam })
+    game = passInstants(game)
+    expect(game.players[0].teams[0]?.trap).toBeNull()
+    expect(game.players[0].teams[0]?.heroes.some((hero) => hero.defId === 'ogre_magi')).toBe(true)
+    expect(game.grave.some((card) => card.defId === 'ogre_magi')).toBe(false)
   })
 
   it('lets Night Stalker steal two cards', () => {

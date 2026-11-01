@@ -143,7 +143,7 @@ export type Resume =
   | { kind: 'tinker'; actor: PlayerId; cardUid: string }
   | { kind: 'alive'; uid: string; cast: CastResume }
   | { kind: 'kez-trap'; teamId: string; trap: TeamTrap; card: CardInst }
-  | { kind: 'shaman-trap'; trap: TeamTrap; card: CardInst }
+  | { kind: 'shaman-trap'; teamId: string; trap: TeamTrap; card: CardInst }
   | { kind: 'undying-save'; uid: string; cause: string; force: boolean; by: PlayerId | null }
 
 export interface Pending {
