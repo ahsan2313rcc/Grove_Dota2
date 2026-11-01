@@ -1,5 +1,5 @@
 import { chooseAiPending } from './ai.ts'
-import { HEROES, ITEMS, REWARDS, TERRAINS, display, firesAbility } from './catalog.ts'
+import { ANCIENT_ID, HEROES, ITEMS, REWARDS, TERRAINS, TURN_DRAW, display, firesAbility } from './catalog.ts'
 import { cast, finishIo, finishKunkka } from './casts.ts'
 import { getScoreRules } from './scoring.ts'
 import {
@@ -96,7 +96,14 @@ export function createGame(opts: {
   state = fillPile(state, 'runes')
   state = fillPile(state, 'neutrals')
   state = fillPile(state, 'towers')
+  // Opening deal without The Ancient so the final round cannot fire before turn 1.
   for (let id = 0; id < seats.length; id += 1) state = takeDraw(state, id, 3)
+  {
+    const made = makeCard(state, ANCIENT_ID, 'ancient')
+    state = made[0]
+    const mixed = shuffle(state, [...state.deck, made[1]])
+    state = { ...mixed[0], deck: mixed[1] }
+  }
   const names = seats.map((seat) => seat.name)
   const listed = names.length === 2 ? `${names[0]} and ${names[1]}` : names.join(', ')
   state = {
@@ -106,7 +113,7 @@ export function createGame(opts: {
     veil: false,
     log: [`${listed} draw 3.`],
   }
-  // Seat 0 starts turn 1 with the usual draw 3 + 2 actions.
+  // Seat 0 starts turn 1 with the usual turn draw + 2 actions.
   return startTurn(state, 0)
 }
 
@@ -204,6 +211,7 @@ function blank(seed: number, mode: 'hotseat' | 'ai' | 'online', seats: SeatSpec[
     lastPlayedHero: null,
     medusaHold: [],
     infests: [],
+    ancient: null,
   }
 }
 
@@ -351,6 +359,11 @@ function endTurn(state: Game): Game {
     stolenCast: false,
     freePlay: [],
   })
+  if (state.ancient) {
+    const endsLeft = state.ancient.endsLeft - 1
+    state = { ...state, ancient: { ...state.ancient, endsLeft } }
+    if (endsLeft <= 0) return finish(state, 'The Ancient ends the match.')
+  }
   if (extra === actor) return startTurn(log(state, 'Refresher Orb grants another turn.'), actor)
   return startTurn(state, nextSeat(state, actor))
 }
@@ -376,9 +389,12 @@ function startTurn(state: Game, id: PlayerId): Game {
       state = setPlayer(state, active, (current) => ({ ...current, noHeroNext: false, noHeroNow: true }))
     }
     state = setPlayer(state, active, (current) => ({ ...current, actions: 2 }))
-    state = beginDraw(state, active, 3, false)
+    state = beginDraw(state, active, TURN_DRAW, false)
     const veil = state.mode === 'hotseat' && !state.autoAll && !state.players[active].ai
-    return log({ ...state, veil }, `${state.players[active].name}'s turn. Draws 3. 2 actions.`)
+    return log(
+      { ...state, veil },
+      `${state.players[active].name}'s turn. Draws ${TURN_DRAW}. 2 actions.`,
+    )
   }
   return state
 }
@@ -1095,12 +1111,28 @@ function finish(state: Game, reason: string): Game {
   }
 }
 
+/** Top grave card playable via Death Prophet's Exorcism (controller's turn, not Muerta-locked). */
+export function playableFromGrave(state: Game, actor: PlayerId): CardInst | null {
+  if (actor !== state.active) return null
+  if (graveLocked(state, actor)) return null
+  if (!allLocs(state).some((loc) => loc.hero.defId === 'death_prophet' && loc.hero.controller === actor)) return null
+  return state.grave[state.grave.length - 1] ?? null
+}
+
+function heldForPlay(state: Game, uid: string): { player: { id: PlayerId }; card: CardInst } | null {
+  const hand = findHand(state, uid)
+  if (hand) return hand
+  const top = playableFromGrave(state, state.active)
+  if (top && top.uid === uid) return { player: state.players[state.active]!, card: top }
+  return null
+}
+
 export function teamsFor(
   state: Game,
   uid: string,
   extras: string[] = [],
 ): { id: string; label: string; ok: boolean; reason?: string }[] {
-  const held = findHand(state, uid)
+  const held = heldForPlay(state, uid)
   if (!held) return []
   const actor = held.player.id
   // Traps plant face-down on any existing team (ally or enemy).

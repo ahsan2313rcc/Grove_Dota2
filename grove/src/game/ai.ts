@@ -1,5 +1,5 @@
 import { display, HERO_BY_ID } from './catalog.ts'
-import { apply, comboPlans, emberMoves, morphCasts, needsTeam, teamsFor } from './engine.ts'
+import { apply, comboPlans, emberMoves, morphCasts, needsTeam, playableFromGrave, teamsFor } from './engine.ts'
 import {
   allLocs,
   drawsLocked,
@@ -110,6 +110,25 @@ export function chooseAiAction(state: Game): Action {
   const heroUids = hand.filter((card) => card.kind === 'hero' && !isTrapHero(card.defId)).map((card) => card.uid)
   const seen = new Set<string>()
 
+  // Death Prophet: play the top of the grave (free Exorcism).
+  const graveTop = playableFromGrave(state, actor)
+  if (graveTop && graveTop.kind !== 'terrain') {
+    const teams = needsTeam(graveTop.defId, graveTop.kind)
+      ? teamsFor(state, graveTop.uid).filter((team) => team.ok)
+      : [{ id: '', ok: true, label: '', reason: undefined }]
+    for (const team of teams) {
+      const action: Action = { type: 'play', uid: graveTop.uid, team: team.id }
+      const next = apply({ ...state, autoAll: true }, action)
+      if (!moved(state, next)) continue
+      let score = evaluate(next, actor, strat)
+      score += playBias(state, next, actor, strat, graveTop, team.id, 0) + 2.4
+      if (score > bestScore) {
+        bestScore = score
+        best = action
+      }
+    }
+  }
+
   for (const card of hand) {
     if (card.kind === 'terrain') continue
     if (seen.has(card.defId)) continue
@@ -123,9 +142,9 @@ export function chooseAiAction(state: Game): Action {
       const packs: (string[] | undefined)[] = [undefined]
       if (card.kind === 'hero' && !isTrapHero(card.defId)) {
         const mates = heroUids.filter((uid) => uid !== card.uid)
-        // Prefer stuffing the board: try 2 companions, then singles.
-        if (mates.length >= 2) packs.push(mates.slice(0, 2), mates.slice(0, 3))
-        for (const mate of mates.slice(0, 5)) packs.push([mate])
+        // Prefer stuffing the board without exploding the search tree.
+        if (mates.length >= 2) packs.push(mates.slice(0, 2))
+        for (const mate of mates.slice(0, 3)) packs.push([mate])
       }
       for (const extras of packs) {
         const action: Action = extras
@@ -214,12 +233,12 @@ export function chooseAiPending(state: Game): string[] {
   const hasYes = pending.choices.some((choice) => choice.id === 'yes')
   const hasNo = pending.choices.some((choice) => choice.id === 'no')
   if (hasYes && hasNo) {
-    if (/fire that ability|destroy shadow shaman|play it|for free|take the/i.test(pending.prompt)) return ['yes']
+    if (/fire that ability|destroy shadow shaman|play it|for free|take the|reactivate|cast /i.test(pending.prompt)) return ['yes']
     if (/discard 1|Nether Ward/i.test(pending.prompt)) {
-      // Prefer discarding to keep a big cast when ahead of empty hand.
       return state.players[actor].hand.length > 1 ? ['discard'] : ['fizzle']
     }
-    return strat === 'spite' ? ['yes'] : ['no']
+    if (/Infest leaves|leave the stolen|Shackles passes|quiet/i.test(pending.prompt)) return ['no']
+    return strat === 'architect' ? ['no'] : ['yes']
   }
   if (pending.choices.some((choice) => choice.id === 'discard') && pending.choices.some((choice) => choice.id === 'fizzle')) {
     return state.players[actor].hand.length > 1 ? ['discard'] : ['fizzle']
@@ -285,11 +304,24 @@ function pendingChoiceWeight(
   strat: AiStrat,
 ): number {
   if (choiceId === 'pass') return -20
+  const prompt = state.pending?.prompt ?? ''
+  const friendly = isFriendlyPrompt(prompt)
   const owner = choiceOwner(state, choiceId)
+
   if (owner === actor) {
-    // Own targets only when the prompt is clearly a buff / move / save.
-    return -8
+    if (!friendly) return -8
+    let weight = 55
+    if (choiceId.startsWith('hero:')) {
+      const loc = findHero(state, choiceId.slice(5))
+      if (loc) weight += scoreTeam(state, loc.team).points * 0.4
+    }
+    if (choiceId.startsWith('team:')) {
+      const found = teamById(state, choiceId.slice(5))
+      if (found) weight += scoreTeam(state, found.team).points * 0.55
+    }
+    return weight
   }
+
   let weight = 0
   if (owner === focus) weight += 120 + (scores[owner] ?? 0)
   else if (owner !== null) weight += 40 + (scores[owner] ?? 0)
@@ -298,16 +330,18 @@ function pendingChoiceWeight(
     const loc = findHero(state, choiceId.slice(5))
     if (loc) {
       const pts = scoreTeam(state, loc.team).points
-      weight += pts * 0.35
-      if (['enigma', 'tidehunter', 'medusa', 'axe', 'troll_warlord', 'doom'].includes(loc.hero.defId)) weight += 8
+      weight += pts * 0.45
+      if (['enigma', 'tidehunter', 'medusa', 'axe', 'troll_warlord', 'doom', 'razor', 'morphling', 'puck'].includes(loc.hero.defId)) {
+        weight += 10
+      }
+      if (firesAbilityTarget(loc.hero.defId)) weight += 4
     }
   }
   if (choiceId.startsWith('team:')) {
     const found = teamById(state, choiceId.slice(5))
-    if (found) weight += scoreTeam(state, found.team).points * 0.5
+    if (found) weight += scoreTeam(state, found.team).points * 0.55
   }
   if (choiceId.startsWith('attr:')) {
-    // Prefer the attribute the foe has most of.
     const attr = choiceId.slice(5)
     let count = 0
     for (const loc of allLocs(state)) {
@@ -315,8 +349,22 @@ function pendingChoiceWeight(
     }
     weight += count * 6
   }
+  if (choiceId.startsWith('mode:immune') || choiceId === 'yes') {
+    if (friendly || /immune|fire that ability|play it|for free/i.test(prompt)) weight += 80
+  }
   if (strat === 'spite') weight *= 1.15
+  if (strat === 'architect' && friendly) weight *= 1.1
+  if (strat === 'tempo' && /lose their|discard|destroy|exile/i.test(prompt)) weight *= 1.08
   return weight
+}
+
+function isFriendlyPrompt(prompt: string): boolean {
+  return /allied|your hero|you own|immune|Snowball|Shallow Grave|False Promise|Glyph|Black King Bar|Shield|move an allied|target hero you|Oracle|Tusk|Dazzle|Dawnbreaker|Ringmaster|BKB/i.test(prompt)
+}
+
+function firesAbilityTarget(defId: string): boolean {
+  const timing = HERO_BY_ID[defId]?.timing
+  return timing === 'cast' || timing === 'instant'
 }
 
 function choiceOwner(state: Game, choiceId: string): PlayerId | null {
@@ -418,8 +466,15 @@ function playBias(
   const instant = display(card.defId).instant
   const denial = INTERRUPT_VALUE[card.defId] ?? 0
 
-  let bonus = ptsGain * (strat === 'spite' ? 0.25 : 0.6)
+  let bonus = ptsGain * (strat === 'spite' ? 0.35 : 0.75)
   bonus += extras * (strat === 'tempo' ? 0.55 : 0.4)
+
+  const timing = HERO_BY_ID[card.defId]?.timing
+  if ((timing === 'cast' || timing === 'instant') && !trap) {
+    // Prefer resolving on-play abilities — autoAll settles prompts so ptsGain already includes impact.
+    bonus += 0.55 + Math.max(0, ptsGain) * 0.2
+    if (strat === 'spite') bonus += beforeOppDelta(before, after, actor) * 0.15
+  }
 
   if (trap && trapOnEnemy) {
     bonus += strat === 'spite' ? 2.2 : strat === 'tempo' ? 1.4 : 1.6
@@ -566,6 +621,10 @@ function evaluate(state: Game, actor: PlayerId, strat: AiStrat): number {
 
 function rivalPts(state: Game, actor: PlayerId): number {
   return scoreState(state, preferredFoe(state, actor)).total
+}
+
+function beforeOppDelta(before: Game, after: Game, actor: PlayerId): number {
+  return rivalPts(before, actor) - rivalPts(after, actor)
 }
 
 function moved(before: Game, after: Game): boolean {

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { display } from '../game/catalog.ts'
-import { comboPlans, morphCasts, needsTeam, teamsFor } from '../game/engine.ts'
+import { comboPlans, morphCasts, needsTeam, playableFromGrave, teamsFor } from '../game/engine.ts'
 import { findHero, isTrapHero, scoreState, scoreTeam } from '../game/flow.ts'
 import { teamShape } from '../game/scoring.ts'
 import type { Action, CardInst, Game, PlayerId } from '../game/types.ts'
@@ -270,7 +270,8 @@ export function Table({
   const handIds = new Set(you.hand.map((card) => card.uid))
   const liveCombo = combo.filter((uid) => handIds.has(uid))
   if (liveCombo.length !== combo.length) setCombo(liveCombo)
-  if (placing && !handIds.has(placing)) {
+  const graveTop = canAct ? playableFromGrave(game, viewer) : null
+  if (placing && !handIds.has(placing) && placing !== graveTop?.uid) {
     setPlacing(null)
     setExtras([])
   }
@@ -366,13 +367,17 @@ export function Table({
 
   function playFocused(uid: string) {
     if (!game) return
-    const card = you.hand.find((entry) => entry.uid === uid)
-    if (!card || !canPlayCards || playBlock(game, viewer, card)) return
-    if (canInstant && !display(card.defId).instant) return
+    const fromGrave = graveTop?.uid === uid ? graveTop : null
+    const card = fromGrave ?? you.hand.find((entry) => entry.uid === uid)
+    if (!card || !canPlayCards) return
+    if (!fromGrave && playBlock(game, viewer, card)) return
+    if (canInstant && !fromGrave && !display(card.defId).instant) return
+    if (card.kind === 'terrain') return
     if (needsTeam(card.defId, card.kind)) {
       setPlacing(uid)
       setExtras((current) => current.filter((extra) => extra !== uid))
       setMoving(null)
+      setFocus(fromGrave ? { kind: 'card', defId: card.defId } : { kind: 'hand', uid })
       return
     }
     onAction({ type: 'play', uid, team: '', extras: extras.length > 0 && card.kind === 'hero' ? extras : undefined })
@@ -550,10 +555,27 @@ export function Table({
               {canAct && morphCasts(game).map((cast) => (
                 <button key={cast.uid} type="button" onClick={() => onAction({ type: 'morph', uid: cast.uid })}>{cast.label}</button>
               ))}
+              {canAct && graveTop ? (
+                <button
+                  type="button"
+                  className="combo"
+                  data-testid="grave-play"
+                  onClick={() => playFocused(graveTop.uid)}
+                  title="Death Prophet — play the top card of the grave"
+                >
+                  Exorcism · {display(graveTop.defId).name}
+                </button>
+              ) : null}
             </div>
             <div className="pile-row">
               <PileButton label="Deck" count={game.deck.length} testId="pile-deck" onClick={() => setPile('deck')} />
-              <PileButton label="Grave" count={game.grave.length} testId="pile-grave" onClick={() => setPile('grave')} />
+              <PileButton
+                label="Grave"
+                count={game.grave.length}
+                testId="pile-grave"
+                onClick={() => setPile('grave')}
+                highlight={!!graveTop}
+              />
               <PileButton label="Exile" count={game.exile.length} testId="pile-exile" onClick={() => setPile('exile')} />
               <PileButton label="Runes" count={game.runes.length} testId="pile-runes" onClick={() => setPile('runes')} />
               <PileButton label="Neutrals" count={game.neutrals.length} testId="pile-neutrals" onClick={() => setPile('neutrals')} />
@@ -629,7 +651,16 @@ export function Table({
       {rules ? <Rules onClose={() => setRules(false)} /> : null}
       {glossary ? <Glossary onClose={() => setGlossary(false)} /> : null}
       {logOpen ? <LogSheet log={game.log} onClose={() => setLogOpen(false)} /> : null}
-      {pile ? <PileDialog game={game} pile={pile} onClose={() => setPile(null)} onRead={(defId) => { setPile(null); setFocus({ kind: 'card', defId }) }} /> : null}
+      {pile ? (
+        <PileDialog
+          game={game}
+          pile={pile}
+          gravePlay={pile === 'grave' ? graveTop : null}
+          onClose={() => setPile(null)}
+          onRead={(defId) => { setPile(null); setFocus({ kind: 'card', defId }) }}
+          onPlayGrave={(uid) => { setPile(null); playFocused(uid) }}
+        />
+      ) : null}
       {handOpen !== null ? (
         <HandSheet
           game={game}
@@ -836,7 +867,9 @@ function Detail({
 }) {
   const canPlayCards = canAct || canInstant
   if (placing) {
-    const card = game.players[viewer].hand.find((entry) => entry.uid === placing)
+    const graveCard = playableFromGrave(game, viewer)
+    const fromGrave = graveCard?.uid === placing ? graveCard : null
+    const card = fromGrave ?? game.players[viewer].hand.find((entry) => entry.uid === placing)
     const options = card ? teamsFor(game, placing, extras) : []
     const mates = extras
       .map((uid) => game.players[viewer].hand.find((entry) => entry.uid === uid))
@@ -845,12 +878,14 @@ function Detail({
     return (
       <div className="detail">
         <p>
-          {trap ? 'Plant' : 'Active'} {card ? display(card.defId).name : 'hero'}
+          {fromGrave ? 'Exorcism' : trap ? 'Plant' : 'Active'} {card ? display(card.defId).name : 'hero'}
           {!trap && mates.length > 0 ? ` + ${mates.map((entry) => display(entry.defId).name).join(', ')} (silent)` : ''}
           {' '}onto
         </p>
         <p className="quiet">
-          {trap
+          {fromGrave
+            ? 'Death Prophet plays the top of the grave for free — pick a team.'
+            : trap
             ? 'Choose any team — yours or an opponent’s. At most one trap per team.'
             : 'Click more heroes in hand to bring them in silently. Only the active ability fires.'}
         </p>
@@ -957,14 +992,16 @@ function PileButton({
   count,
   testId,
   onClick,
+  highlight = false,
 }: {
   label: string
   count: number
   testId: string
   onClick: () => void
+  highlight?: boolean
 }) {
   return (
-    <button type="button" className="pile-chip" data-testid={testId} onClick={onClick}>
+    <button type="button" className={`pile-chip${highlight ? ' on' : ''}`} data-testid={testId} onClick={onClick}>
       <span>{label}</span>
       <strong>{count}</strong>
     </button>
@@ -1031,18 +1068,23 @@ function HandSheet({
 function PileDialog({
   game,
   pile,
+  gravePlay,
   onClose,
   onRead,
+  onPlayGrave,
 }: {
   game: Game
   pile: PileName
+  gravePlay: { uid: string; defId: string } | null
   onClose: () => void
   onRead: (defId: string) => void
+  onPlayGrave: (uid: string) => void
 }) {
   const sealed = pile === 'deck' || pile === 'runes' || pile === 'neutrals' || pile === 'towers'
   const cards = pile === 'grave' ? game.grave : pile === 'exile' ? game.exile : []
   const title = pile === 'deck' ? 'Shared deck' : pile === 'grave' ? 'Grave' : pile === 'exile' ? 'Exile' : pile === 'runes' ? 'Runes' : pile === 'neutrals' ? 'Neutrals' : 'Towers'
   const count = game[pile].length
+  const top = cards[cards.length - 1]
   return (
     <div className="scrim" onClick={onClose}>
       <section className="sheet" role="dialog" aria-modal="true" onClick={(event) => event.stopPropagation()}>
@@ -1050,13 +1092,31 @@ function PileDialog({
         <h2>{title}</h2>
         {pile === 'deck' ? <p>The deck is shared and face down. The match ends when it is empty.</p> : null}
         {pile === 'runes' || pile === 'neutrals' || pile === 'towers' ? <p>This pile is shuffled face down. Three matching terrains take the top card. You can read it once it reaches your hand.</p> : null}
-        {pile === 'grave' ? <p>Discarded cards and destroyed heroes wait here. Anyone can take from the grave when an ability says so.</p> : null}
+        {pile === 'grave' ? (
+          <p>
+            Discarded cards and destroyed heroes wait here.
+            {gravePlay && top ? ' Death Prophet can play the top card (free).' : ' Anyone can take from the grave when an ability says so.'}
+          </p>
+        ) : null}
         {pile === 'exile' ? <p>Exiled cards are out of the game. They do not interact.</p> : null}
+        {gravePlay && top ? (
+          <div className="actions">
+            <button type="button" className="primary" data-testid="grave-play-dialog" onClick={() => onPlayGrave(top.uid)}>
+              Exorcism · play {display(top.defId).name}
+            </button>
+          </div>
+        ) : null}
         {!sealed && cards.length === 0 ? <p className="quiet">Nothing here yet.</p> : null}
         {!sealed ? (
           <div className="hand-row dialog-cards">
-            {cards.map((card) => (
-              <CardFace key={card.uid} defId={card.defId} compact onClick={() => onRead(card.defId)} />
+            {cards.map((card, index) => (
+              <CardFace
+                key={card.uid}
+                defId={card.defId}
+                compact
+                selected={!!gravePlay && index === cards.length - 1}
+                onClick={() => onRead(card.defId)}
+              />
             ))}
           </div>
         ) : null}

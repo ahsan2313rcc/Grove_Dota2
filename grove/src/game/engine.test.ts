@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { chooseAiAction } from './ai.ts'
 import { apply, createGame, morphCasts, teamsFor } from './engine.ts'
-import { attrsOf, blankTeam, scoreTeam } from './flow.ts'
+import { attrsOf, blankTeam, scoreTeam, toExile, toGrave } from './flow.ts'
 import { DEFAULT_SCORE_RULES, resetScoreRules, scoreBodies, setScoreRules } from './scoring.ts'
 import type { CardInst, Game, PlayerId } from './types.ts'
 
@@ -96,22 +96,23 @@ describe('scoring', () => {
 })
 
 describe('turn', () => {
-  it('deals 3 each and draws 3 for seat 0 on turn 1', () => {
+  it('deals 3 each and draws 2 for seat 0 on turn 1', () => {
     const raw = createGame({ seed: 2, mode: 'hotseat', names: ['Radiant', 'Dire'] })
     expect(raw.turn).toBe(1)
     expect(raw.active).toBe(0)
     expect(raw.players[0].actions).toBe(2)
-    expect(raw.players[0].hand.length).toBe(6)
+    expect(raw.players[0].hand.length).toBe(5)
     expect(raw.players[1].hand.length).toBe(3)
     expect(raw.players[1].actions).toBe(0)
+    expect(raw.deck.some((card) => card.defId === 'ancient') || raw.ancient !== null).toBe(true)
   })
 
-  it('draws 3 at the start of a new turn', () => {
+  it('draws 2 at the start of a new turn', () => {
     let game = ready()
     const foeBefore = game.players[1].hand.length
     game = apply(game, { type: 'end' })
     expect(game.active).toBe(1)
-    expect(game.players[1].hand.length).toBe(foeBefore + 3)
+    expect(game.players[1].hand.length).toBe(foeBefore + 2)
     expect(game.players[1].actions).toBe(2)
   })
 
@@ -123,7 +124,7 @@ describe('turn', () => {
     game = apply(game, { type: 'end' })
     game = apply(game, { type: 'ready' })
     expect(game.active).toBe(1)
-    expect(game.players[1].hand.length).toBe(before + 3)
+    expect(game.players[1].hand.length).toBe(before + 2)
     expect(game.pending).toBeNull()
     expect(game.players[1].actions).toBe(2)
     // Ending while over the limit opens the discard prompt.
@@ -131,6 +132,41 @@ describe('turn', () => {
     expect(game.pending?.resume.kind).toBe('limit')
     expect(game.pending?.prompt).toContain('Discard down to 7')
     expect(game.active).toBe(1)
+  })
+
+  it('revealing The Ancient by draw awards +10 and ends after one turn each', () => {
+    let game = ready()
+    const ancient = game.deck.find((card) => card.defId === 'ancient')
+    expect(ancient).toBeTruthy()
+    game = { ...game, deck: [ancient!, ...game.deck.filter((card) => card.uid !== ancient!.uid)] }
+    const before = game.players[0].hand.length
+    game = apply(game, { type: 'draw' })
+    expect(game.ancient).toEqual({ bonusSeat: 0, endsLeft: 2 })
+    expect(game.players[0].hand.length).toBe(before)
+    expect(game.players[0].hand.some((card) => card.defId === 'ancient')).toBe(false)
+    expect(game.over).toBeNull()
+    game = apply(game, { type: 'end' })
+    expect(game.ancient?.endsLeft).toBe(1)
+    expect(game.over).toBeNull()
+    game = apply(game, { type: 'ready' })
+    game = apply(game, { type: 'end' })
+    expect(game.over).not.toBeNull()
+    expect(game.over!.reason).toMatch(/Ancient/)
+    expect(game.over!.scores[0]).toBeGreaterThanOrEqual(10)
+  })
+
+  it('grave/exile Ancient reveal grants no +10', () => {
+    let game = ready()
+    const ancient = game.deck.find((card) => card.defId === 'ancient')!
+    game = { ...game, deck: game.deck.filter((card) => card.uid !== ancient.uid) }
+    game = toGrave(game, ancient, { type: 'deck' })
+    expect(game.ancient).toEqual({ bonusSeat: null, endsLeft: 2 })
+    expect(game.grave.some((card) => card.defId === 'ancient')).toBe(false)
+    game = ready()
+    const again = game.deck.find((card) => card.defId === 'ancient')!
+    game = { ...game, deck: game.deck.filter((card) => card.uid !== again.uid), ancient: null }
+    game = toExile(game, again)
+    expect(game.ancient).toEqual({ bonusSeat: null, endsLeft: 2 })
   })
 
   it('spends an action to draw and nothing to set a combo', () => {
@@ -348,6 +384,8 @@ describe('heroes', () => {
     const foeTeam = game.players[1].teams[0]?.id ?? ''
     game = apply(game, { type: 'end' })
     game = apply(game, { type: 'ready' })
+    // Keep only Enigma so turn-draw saves (e.g. BKB) cannot stall Black Hole.
+    game = only(game, 0, ['enigma'])
     game = apply(game, { type: 'play', uid: uid(game, 0, 'enigma'), team: 'new' })
     game = passInstants(game)
     const ownTeam = game.players[0].teams[0]?.id ?? ''
@@ -563,7 +601,7 @@ describe('heroes', () => {
     game = apply(game, { type: 'ready' })
     expect(game.phased).toEqual([])
     expect(game.players[1].teams.flatMap((team) => team.heroes.map((hero) => hero.defId))).toEqual(['chen'])
-    expect(game.players[1].hand.length).toBe(hand + 3)
+    expect(game.players[1].hand.length).toBe(hand + 2)
     expect(game.neutrals.length).toBe(pile - 1)
   })
 

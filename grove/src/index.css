@@ -558,6 +558,7 @@ p { margin: 0; }
   font-size: 0.72rem;
 }
 .pile-chip strong { font-family: Fraunces, Georgia, serif; color: var(--gold); font-size: 0.9rem; }
+.pile-chip.on { border-color: var(--gold-deep); color: var(--gold); }
 .layout-picks { display: flex; gap: 4px; flex-wrap: wrap; align-items: center; }
 .layout-picks button { padding: 0.35rem 0.65rem; font-size: 0.85rem; min-width: 2.2rem; }
 .layout-picks button.on { background: var(--gold); color: var(--ink); }
@@ -744,6 +745,8 @@ p { margin: 0; }
 .card[data-kind="rune"] { background: #ece4f4; }
 .card[data-kind="neutral"] { background: #ece7df; }
 .card[data-kind="tower"] { background: #e5e7ee; }
+.card[data-kind="ancient"] { background: #e8dfd2; box-shadow: inset 4px 0 0 #6b4f2a, 0 12px 24px rgba(0, 0, 0, 0.28); }
+.glossary-entry[data-kind="ancient"] { border-color: rgba(107, 79, 42, 0.45); }
 .card-kicker, .pills, .card-marks { display: flex; gap: 4px; flex-wrap: wrap; align-items: center; }
 .card-kicker { justify-content: space-between; font-size: 0.68rem; letter-spacing: 0.08em; text-transform: uppercase; color: #5e564c; padding-right: 58px; }
 .card.compact .card-kicker { padding-right: 48px; }

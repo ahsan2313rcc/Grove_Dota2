@@ -37,8 +37,16 @@ describe('balance', () => {
     expect(core5).toBeTruthy()
     expect(core5!.pureCount).toBeGreaterThanOrEqual(0)
     expect(core5!.avgPtsPerCard).toBeGreaterThanOrEqual(0)
-    if (core5!.count > 0 && core5!.avgPoints > 0) {
+    // Avg pts only from mono cores — zero when pureCount is 0 even if stack n > 0.
+    if (core5!.pureCount > 0) {
+      expect(core5!.avgPoints).toBeGreaterThan(0)
       expect(core5!.avgPtsPerCard).toBeGreaterThan(0)
+    } else {
+      expect(core5!.avgPoints).toBe(0)
+    }
+    const coreAll = summary.shapeCompare.find((row) => row.id === 'core_team')
+    if (coreAll && coreAll.count > 0) {
+      expect(coreAll.avgPoints).toBeCloseTo(coreAll.totalPoints / coreAll.count, 5)
     }
   })
 

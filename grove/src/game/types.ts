@@ -2,7 +2,7 @@ export type PlayerId = number
 export type Attr = 'STR' | 'AGI' | 'INT' | 'UNI'
 export type Range = 'Melee' | 'Ranged'
 export type TerrainKind = 'river' | 'jungle' | 'lane'
-export type CardKind = 'hero' | 'item' | 'terrain' | 'rune' | 'neutral' | 'tower'
+export type CardKind = 'hero' | 'item' | 'terrain' | 'rune' | 'neutral' | 'tower' | 'ancient'
 export type Timing = 'cast' | 'aura' | 'instant' | 'trap'
 export type AiStrat = 'balanced' | 'tempo' | 'architect' | 'spite'
 
@@ -260,6 +260,11 @@ export interface Game {
   medusaHold: { medusaUid: string; owner: PlayerId; cards: CardInst[] }[]
   /** Lifestealer Infest: return LS when host is destroyed. */
   infests: { ls: CardInst; hostUid: string; homeTeamId: string; owner: PlayerId }[]
+  /**
+   * Ancient revealed. `bonusSeat` gets +10 only when revealed by draw (not grave/exile).
+   * Each seat then gets one end-turn; when `endsLeft` hits 0 the match finishes.
+   */
+  ancient: { bonusSeat: PlayerId | null; endsLeft: number } | null
 }
 
 export type Action =

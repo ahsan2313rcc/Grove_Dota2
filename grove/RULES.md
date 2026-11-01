@@ -8,7 +8,7 @@ Authoritative rules for agents and implementers. Card text lives in `src/game/ca
 
 Grove is a competitive multiplayer card game (typically **2 seats**; engine supports more). Players build **teams of heroes** and play **terrain combos** for points. One **shared deck**, shared **grave**, and shared **exile**. Separate face-down reward piles: **runes**, **neutrals**, **towers**.
 
-**Win condition:** When the shared deck is empty, the game ends. Highest total score wins (teams + terrain combo points). Ties are possible (no forced tiebreak in engine finish).
+**Win condition:** The match ends when **The Ancient** is revealed and each player has taken one final turn, **or** when the shared deck is empty. Highest total score wins (teams + terrain combo points + Ancient bonus if any). Ties are possible (no forced tiebreak in engine finish).
 
 ---
 
@@ -19,6 +19,7 @@ Grove is a competitive multiplayer card game (typically **2 seats**; engine supp
 | **Hero** | Main deck | Has attribute (STR/AGI/INT/UNI), attack type (Melee/Ranged), ability timing |
 | **Item** | Main deck | Played from hand; often targeted |
 | **Terrain** | Main deck (36 total: river/jungle/lane) | Never played alone — always as a **combo of exactly 3** |
+| **Ancient** | Main deck (1 copy) | Endgame card; cannot be played. Revealed by draw / grave / exile |
 | **Rune** | Rune pile | Reward from 3 Rivers |
 | **Neutral** | Neutral pile | Reward from 3 Jungles; token body on a team (except Tormentor) |
 | **Tower** | Tower pile | Reward from 3 Lanes |
@@ -45,12 +46,13 @@ Engine should track a `stolenCast` (or depth) flag for the duration of that nest
 
 ## 3. Setup
 
-1. Build and shuffle the main deck: all heroes (1 each) + item copies + 36 terrains.
+1. Build and shuffle the main deck: all heroes (1 each) + item copies + 36 terrains (**without** The Ancient).
 2. Fill and shuffle reward piles from `REWARDS` by kind.
-3. Each player draws **5**.
-4. Each seat is dealt **3** cards. Seat 0 then starts turn 1 as usual: **draw 3** + **2 actions**.
+3. Each seat is dealt **3** cards.
+4. Shuffle **The Ancient** into the remaining deck.
+5. Seat 0 starts turn 1 as usual: **draw 2** + **2 actions**.
 
-`handLimit` = **7**. `TEAM_CAP` = **12** teams per player.
+`handLimit` = **7**. `TEAM_CAP` = **12** teams per player. `TURN_DRAW` = **2**.
 
 ---
 
@@ -66,7 +68,7 @@ For the active seat (after previous player ends):
 4. If `skip`: clear skip, pass to next seat.
 5. If `noHeroNext`: convert to `noHeroNow` for this turn (cannot play heroes).
 6. Set **actions = 2**.
-7. **Draw 3** (via pending draws; may trigger Slark or empty-deck finish). Hand may exceed 7 until end of turn.
+7. **Draw 2** (via pending draws; may trigger Slark, Ancient reveal, or empty-deck finish). Hand may exceed 7 until end of turn.
 
 Hotseat: optional veil between seats.
 
@@ -92,7 +94,16 @@ While `pending` is set, only **choose** (answer the prompt) is legal. AI/`autoAl
 2. Return same-turn phased heroes; clear end-of-turn marks (graveThisTurn, enteredThisTurn, multicast, troll, maledict, bonds, soulbind, reveal, dawn flags, noHeroNow, mailTurn).
 3. Next seat starts turn (§4.1).
 
-### 4.4 Empty deck
+### 4.4 The Ancient (endgame)
+
+One copy of **The Ancient** sits in the main deck (inserted after the opening deal). It cannot be played.
+
+- **Revealed by draw** (`takeDraw`): that seat scores **+10**. Start the final round.
+- **Revealed from grave or exile** (milled / exiled into those zones): **no** +10. Same final round.
+- **Final round:** `endsLeft` starts at seat count. Each `end` decrements it; at 0 the match **finish**es (“The Ancient ends the match”).
+- Empty-deck finish still applies if the deck empties before The Ancient is revealed.
+
+### 4.5 Empty deck
 
 Whenever the game is live and the deck is empty after settling effects/draws, **finish**: score all seats; set `over`.
 

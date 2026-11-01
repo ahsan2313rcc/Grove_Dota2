@@ -1,4 +1,14 @@
-import { CAST_IDS, HERO_BY_ID, REWARD_BY_ID, SAVE_IDS, TRAP_IDS, display, firesAbility } from './catalog.ts'
+import {
+  ANCIENT_BONUS,
+  ANCIENT_ID,
+  CAST_IDS,
+  HERO_BY_ID,
+  REWARD_BY_ID,
+  SAVE_IDS,
+  TRAP_IDS,
+  display,
+  firesAbility,
+} from './catalog.ts'
 import { scoreBodies, type ScoreBody } from './scoring.ts'
 import type {
   Attr,
@@ -305,7 +315,8 @@ export function scoreState(state: Game, id: PlayerId): { teams: number; terrains
   const teams = player.teams.reduce((sum, team) => sum + scoreTeam(state, team).points, 0)
   const terrains = player.combos.reduce((sum, combo) => sum + combo.points, 0)
   const meepoBonus = controls(state, id, 'meepo') ? player.combos.length : 0
-  return { teams, terrains, total: teams + terrains + meepoBonus }
+  const ancientBonus = state.ancient?.bonusSeat === id ? ANCIENT_BONUS : 0
+  return { teams, terrains, total: teams + terrains + meepoBonus + ancientBonus }
 }
 
 export function controls(state: Game, id: PlayerId, defId: string): boolean {
@@ -510,6 +521,9 @@ function iceBlastAny(state: Game): boolean {
 }
 
 export function toExile(state: Game, card: CardInst): Game {
+  if (card.defId === ANCIENT_ID || card.kind === 'ancient') {
+    return revealAncient(state, 'exile', null, card)
+  }
   return log(
     { ...state, exile: [...state.exile, card] },
     `${display(card.defId).name} is exiled.`,
@@ -517,6 +531,9 @@ export function toExile(state: Game, card: CardInst): Game {
 }
 
 export function toGrave(state: Game, card: CardInst, origin: GraveMark['origin']): Game {
+  if (card.defId === ANCIENT_ID || card.kind === 'ancient') {
+    return revealAncient(state, 'grave', null, card)
+  }
   if (card.kind === 'rune' || card.kind === 'neutral' || card.kind === 'tower') return toExile(state, card)
   const owner = origin.type === 'board' ? origin.hero.controller : origin.type === 'hand' ? origin.player : null
   // Ancient Apparition: cards that would enter the grave are exiled instead.
@@ -577,8 +594,56 @@ export function discardRandom(state: Game, id: PlayerId, count: number): Game {
 export function takeDraw(state: Game, id: PlayerId, count: number): Game {
   const cards = state.deck.slice(0, count)
   if (cards.length === 0) return log(state, `${pname(state, id)} cannot draw. The deck is empty.`)
-  const next = addHand({ ...state, deck: state.deck.slice(cards.length) }, id, cards)
-  return log(next, `${pname(next, id)} draws ${cards.length}.`)
+  const ancient = cards.find((card) => card.defId === ANCIENT_ID || card.kind === 'ancient')
+  const kept = ancient ? cards.filter((card) => card.uid !== ancient.uid) : cards
+  let next = addHand({ ...state, deck: state.deck.slice(cards.length) }, id, kept)
+  next = log(next, `${pname(next, id)} draws ${cards.length}.`)
+  if (ancient) next = revealAncient(next, 'draw', id, ancient)
+  return next
+}
+
+/** Strip The Ancient from every zone and start the final round. */
+export function revealAncient(
+  state: Game,
+  source: 'draw' | 'grave' | 'exile',
+  actor: PlayerId | null,
+  card?: CardInst,
+): Game {
+  if (state.ancient) return state
+  let next = stripAncientZones(state, card?.uid)
+  const bonusSeat = source === 'draw' ? actor : null
+  next = {
+    ...next,
+    ancient: { bonusSeat, endsLeft: next.players.length },
+  }
+  if (bonusSeat !== null) {
+    next = log(
+      next,
+      `${pname(next, bonusSeat)} reveals The Ancient! +${ANCIENT_BONUS}. Final round — each player gets one more turn.`,
+    )
+  } else {
+    next = log(
+      next,
+      `The Ancient is revealed from the ${source}! No bonus. Final round — each player gets one more turn.`,
+    )
+  }
+  return next
+}
+
+function stripAncientZones(state: Game, uid?: string): Game {
+  const isAncient = (card: CardInst) =>
+    card.defId === ANCIENT_ID || card.kind === 'ancient' || (uid !== undefined && card.uid === uid)
+  return {
+    ...state,
+    deck: state.deck.filter((card) => !isAncient(card)),
+    grave: state.grave.filter((card) => !isAncient(card)),
+    exile: state.exile.filter((card) => !isAncient(card)),
+    limbo: state.limbo.filter((card) => !isAncient(card)),
+    players: state.players.map((player) => ({
+      ...player,
+      hand: player.hand.filter((card) => !isAncient(card)),
+    })),
+  }
 }
 
 export function pullTop(state: Game, count: number): [Game, CardInst[]] {

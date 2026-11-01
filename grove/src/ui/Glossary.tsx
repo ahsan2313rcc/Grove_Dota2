@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { HEROES, ITEMS, REWARDS, TERRAINS } from '../game/catalog.ts'
+import { ANCIENT, HEROES, ITEMS, REWARDS, TERRAINS } from '../game/catalog.ts'
 import type { Attr } from '../game/types.ts'
 
 type Tab = 'heroes' | 'items' | 'terrains' | 'runes' | 'neutrals' | 'towers'
@@ -74,7 +74,14 @@ export function Glossary({ onClose }: { onClose: () => void }) {
       <article className="sheet glossary" role="dialog" aria-modal="true" aria-labelledby="glossary-title" onClick={(event) => event.stopPropagation()}>
         <p className="eyebrow">Card reference</p>
         <h2 id="glossary-title">Glossary</h2>
-        <p className="quiet">Browse every hero, item, terrain, and reward in the shared decks.</p>
+        <p className="quiet">Browse every hero, item, terrain, and reward in the shared decks. The Ancient (+10 on draw reveal, then one final turn each) sits in the main deck after the opening deal.</p>
+        <div className="glossary-entry" data-kind="ancient" style={{ marginBottom: 12 }}>
+          <header>
+            <strong>{ANCIENT.name}</strong>
+            <span className="glossary-marks"><span className="pill muted">1× endgame</span></span>
+          </header>
+          <p>{ANCIENT.text}</p>
+        </div>
 
         <div className="glossary-tabs" role="tablist" aria-label="Card type">
           {TABS.map((entry) => (

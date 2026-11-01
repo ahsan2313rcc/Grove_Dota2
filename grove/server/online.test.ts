@@ -45,11 +45,11 @@ describe('online pipeline', () => {
     expect(view0.players[1]?.hand.every((card) => card.defId === 'hidden')).toBe(true)
     expect(view0.deck[0]?.defId).toBe('hidden')
 
-    expect(room.game.players[0]!.hand.length).toBe(6)
+    expect(room.game.players[0]!.hand.length).toBe(5)
     expect(room.game.players[1]!.hand.length).toBe(3)
     const drawn = pushAction(room, 0, { type: 'draw' })
     expect(drawn.ok).toBe(true)
-    expect(room.game.players[0]!.hand.length).toBe(7)
+    expect(room.game.players[0]!.hand.length).toBe(6)
   })
 
   it('rejects actions out of turn', () => {

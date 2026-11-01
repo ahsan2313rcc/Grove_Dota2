@@ -70,6 +70,15 @@ export function statusLines(game: Game, viewer: PlayerId): string[] {
     lines.push(`Reaper's Scythe: ${game.attrBan.attr} heroes are banned.`)
   }
   if (graveLocked(game, viewer)) lines.push('Muerta: you cannot take cards from the grave.')
+  if (game.ancient) {
+    const bonus =
+      game.ancient.bonusSeat === viewer
+        ? ' (+10 yours)'
+        : game.ancient.bonusSeat !== null
+          ? ` (+10 ${game.players[game.ancient.bonusSeat]?.name ?? 'seat'})`
+          : ' (no bonus)'
+    lines.push(`Ancient revealed${bonus}. Final round: ${game.ancient.endsLeft} turn${game.ancient.endsLeft === 1 ? '' : 's'} left.`)
+  }
   if (game.active !== viewer && !game.over && !instantsLocked(game, viewer)) {
     lines.push('You may play Instant cards to interrupt.')
   }
@@ -94,6 +103,7 @@ export function emberTargets(game: Game, uid: string): { id: string; label: stri
 
 export function playBlock(game: Game, viewer: PlayerId, card: CardInst): string | null {
   if (card.kind === 'terrain') return 'Play three terrains together.'
+  if (card.kind === 'ancient' || card.defId === 'ancient') return 'The Ancient cannot be played.'
   if (game.lockPlay && game.lockPlay.caster !== viewer) return 'Chronosphere stops cards.'
   const instant = display(card.defId).instant
   const offTurn = game.active !== viewer

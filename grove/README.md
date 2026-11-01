@@ -37,7 +37,7 @@ Add `?mode=ai&seed=58` to deal a known game. Seed `d58` opens debug spectate wit
 
 ## Rules
 
-At turn start you draw 3, then you have two actions. Draw one more, or play a hero, item, or reward. Instant cards are free. You may multi-drop several heroes into one team for one action — only the active hero’s ability fires. Three terrains at once are free (a lone terrain cannot be played): three of a kind score 5 and take the top of the matching face-down pile (River a rune, Jungle a neutral, Lane a tower). One River, one Jungle, and one Lane also score 5.
+Everyone is dealt 3, then The Ancient is shuffled into the remaining deck. At turn start you draw 2, then you have two actions. Draw one more, or play a hero, item, or reward. Instant cards are free. You may multi-drop several heroes into one team for one action — only the active hero’s ability fires. Three terrains at once are free (a lone terrain cannot be played): three of a kind score 5 and take the top of the matching face-down pile (River a rune, Jungle a neutral, Lane a tower). One River, one Jungle, and one Lane also score 5. Drawing The Ancient awards +10 and starts a final round (one turn each); revealing it from the grave or exile starts the same final round with no bonus.
 
 Heroes score in teams of up to five. A player can field at most 12 teams.
 

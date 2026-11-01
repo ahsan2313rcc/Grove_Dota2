@@ -35,6 +35,19 @@ export interface TerrainDef {
   text: string
 }
 
+/** Shared endgame card — one copy in the main deck. */
+export const ANCIENT_ID = 'ancient'
+export const ANCIENT_BONUS = 10
+export const ANCIENT = {
+  id: ANCIENT_ID,
+  name: 'The Ancient',
+  text: 'When revealed by drawing: that player scores +10. Each player then takes one final turn, then the match ends. If revealed from the grave or exile: no bonus; same final round.',
+  kind: 'ancient' as const,
+}
+
+/** Cards drawn at the start of each turn (and seat 0's turn-1 draw after the opening deal). */
+export const TURN_DRAW = 2
+
 function hero(
   id: string,
   name: string,
@@ -415,6 +428,9 @@ export function display(defId: string): {
   }
   const terrain = TERRAINS.find((entry) => entry.id === defId)
   if (terrain) return { name: terrain.name, text: terrain.text, kind: 'terrain', instant: false }
+  if (defId === ANCIENT_ID) {
+    return { name: ANCIENT.name, text: ANCIENT.text, kind: 'ancient', instant: false }
+  }
   return { name: defId, text: '', kind: 'hero', instant: false }
 }
 
@@ -425,4 +441,5 @@ export function cardKind(defId: string): CardKind {
 export const MAIN_DECK_COUNT =
   HEROES.length +
   ITEMS.reduce((sum, item) => sum + item.copies, 0) +
-  36
+  36 +
+  1

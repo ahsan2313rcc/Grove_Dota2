@@ -1,7 +1,7 @@
 import { chooseAiAction, chooseAiPending, cycleStrat, DEFAULT_STRAT } from './ai.ts'
 import { display, HERO_BY_ID } from './catalog.ts'
 import { apply, createGame, type SeatSpec } from './engine.ts'
-import { attrsOf, findHand, heroWeight, scoreState, scoreTeam, standingOf } from './flow.ts'
+import { attrsOf, findHand, heroWeight, isTrapHero, scoreState, scoreTeam, standingOf } from './flow.ts'
 import { teamShape } from './scoring.ts'
 import type { Action, AiStrat, Attr, CardInst, CardKind, Game, Team } from './types.ts'
 
@@ -59,8 +59,8 @@ export interface EventCounts {
   playRune: number
   playNeutral: number
   playTower: number
-  playMorph: number
-  playMove: number
+  playTrap: number
+  immune: number
   drawAction: number
 }
 
@@ -229,8 +229,8 @@ const EMPTY_EVENTS = (): EventCounts => ({
   playRune: 0,
   playNeutral: 0,
   playTower: 0,
-  playMorph: 0,
-  playMove: 0,
+  playTrap: 0,
+  immune: 0,
   drawAction: 0,
 })
 
@@ -330,7 +330,7 @@ export class BalanceTracker {
         if (spent) {
           this.sealImpact(before)
           this.openImpact(before, before.pending.actor, spent.defId, spent.kind as PlayKind)
-          this.tallyPlay(before.pending.actor, spent.kind, display(spent.defId).instant)
+          this.tallyPlay(before.pending.actor, spent.kind, display(spent.defId).instant, spent.defId)
         }
       }
     }
@@ -342,7 +342,7 @@ export class BalanceTracker {
         if (held.player.id === before.active) this.turnCards += 1
         this.sealImpact(before)
         this.openImpact(before, held.player.id, held.card.defId, held.card.kind)
-        this.tallyPlay(held.player.id, held.card.kind, display(held.card.defId).instant)
+        this.tallyPlay(held.player.id, held.card.kind, display(held.card.defId).instant, held.card.defId)
       }
     } else if (action.type === 'combo') {
       this.turnCards += 1
@@ -358,7 +358,6 @@ export class BalanceTracker {
       const loc = before.players.flatMap((player) => player.teams.flatMap((team) => team.heroes)).find((hero) => hero.uid === action.uid)
       this.sealImpact(before)
       this.openImpact(before, before.active, loc?.defId ?? 'morphling', 'morph')
-      this.bumpEvent(before.active, 'playMorph')
     } else if (action.type === 'draw') {
       this.turnCards += 1
       this.sealImpact(before)
@@ -367,7 +366,6 @@ export class BalanceTracker {
     } else if (action.type === 'move') {
       this.sealImpact(before)
       this.openImpact(before, before.active, 'ember_spirit', 'move')
-      this.bumpEvent(before.active, 'playMove')
     }
 
     if (!resolving(after)) this.sealImpact(after)
@@ -392,8 +390,9 @@ export class BalanceTracker {
     seat[key] += amount
   }
 
-  private tallyPlay(actor: number, kind: CardKind, instant: boolean) {
-    if (kind === 'hero') this.bumpEvent(actor, 'playHero')
+  private tallyPlay(actor: number, kind: CardKind, instant: boolean, defId?: string) {
+    if (defId && isTrapHero(defId)) this.bumpEvent(actor, 'playTrap')
+    else if (kind === 'hero') this.bumpEvent(actor, 'playHero')
     if (kind === 'item') this.bumpEvent(actor, 'playItem')
     if (kind === 'rune') this.bumpEvent(actor, 'playRune')
     if (kind === 'neutral') this.bumpEvent(actor, 'playNeutral')
@@ -434,6 +433,9 @@ export class BalanceTracker {
       if (beforeExile.has(uid)) continue
       if (beforeGrave.has(uid) && !afterGrave.has(uid)) this.bumpEvent(actor, 'exile')
     }
+
+    const gainedImmune = countImmune(after) - countImmune(before)
+    if (gainedImmune > 0) this.bumpEvent(actor, 'immune', gainedImmune)
   }
 
   private report(game: Game, includeOpenRound: boolean): MatchReport {
@@ -763,9 +765,10 @@ export function summarizeReports(reports: MatchReport[], filter: StratFilter = A
       .sort((a, b) => b.wins - a.wins || a.avgStanding - b.avgStanding || b.avgScore - a.avgScore),
     shapeCompare: [
       shapeRow('core_team', 'Core team', shapeTotals.coreTeams, shapeTotals.coreTeamPoints, shapeTotals.coreTeamHeroes, shapeTotals.pureCore3 + shapeTotals.pureCore4 + shapeTotals.pureCore5, matchCount),
-      shapeRow('core_team_3', 'Core ×3 same attr', shapeTotals.coreTeams3, shapeTotals.coreTeamPoints3, shapeTotals.coreTeamHeroes3, shapeTotals.pureCore3, matchCount),
-      shapeRow('core_team_4', 'Core ×4 same attr', shapeTotals.coreTeams4, shapeTotals.coreTeamPoints4, shapeTotals.coreTeamHeroes4, shapeTotals.pureCore4, matchCount),
-      shapeRow('core_team_5', 'Core ×5 same attr', shapeTotals.coreTeams5, shapeTotals.coreTeamPoints5, shapeTotals.coreTeamHeroes5, shapeTotals.pureCore5, matchCount),
+      // n = teams with a same-attr stack of that size (incl. mixed boards); avg pts from mono cores only.
+      shapeRow('core_team_3', 'Core ×3 same attr', shapeTotals.coreTeams3, shapeTotals.coreTeamPoints3, shapeTotals.coreTeamHeroes3, shapeTotals.pureCore3, matchCount, shapeTotals.pureCore3),
+      shapeRow('core_team_4', 'Core ×4 same attr', shapeTotals.coreTeams4, shapeTotals.coreTeamPoints4, shapeTotals.coreTeamHeroes4, shapeTotals.pureCore4, matchCount, shapeTotals.pureCore4),
+      shapeRow('core_team_5', 'Core ×5 same attr', shapeTotals.coreTeams5, shapeTotals.coreTeamPoints5, shapeTotals.coreTeamHeroes5, shapeTotals.pureCore5, matchCount, shapeTotals.pureCore5),
       shapeRow('mix_team', 'Mixed team', shapeTotals.mixTeams, shapeTotals.mixTeamPoints, shapeTotals.mixTeamHeroes, shapeTotals.pureMix3 + shapeTotals.pureMix4, matchCount),
       shapeRow('mix_team_3', 'Mixed · 3 attrs', shapeTotals.mixTeams3, shapeTotals.mixTeamPoints3, shapeTotals.mixTeamHeroes3, shapeTotals.pureMix3, matchCount),
       shapeRow('mix_team_4', 'Mixed · 4 attrs', shapeTotals.mixTeams4, shapeTotals.mixTeamPoints4, shapeTotals.mixTeamHeroes4, shapeTotals.pureMix4, matchCount),
@@ -786,8 +789,8 @@ export function summarizeReports(reports: MatchReport[], filter: StratFilter = A
       eventRow('playRune', 'Rune plays', eventTotals.playRune, matchCount),
       eventRow('playNeutral', 'Neutral plays', eventTotals.playNeutral, matchCount),
       eventRow('playTower', 'Tower plays', eventTotals.playTower, matchCount),
-      eventRow('playMorph', 'Morph casts', eventTotals.playMorph, matchCount),
-      eventRow('playMove', 'Ember moves', eventTotals.playMove, matchCount),
+      eventRow('playTrap', 'Trap plants', eventTotals.playTrap, matchCount),
+      eventRow('immune', 'Immunity grants', eventTotals.immune, matchCount),
     ],
     byAttr: [...attrMap.entries()]
       .map(([attr, row]) => ({
@@ -820,14 +823,17 @@ function shapeRow(
   cards: number,
   pureCount: number,
   matches: number,
+  /** Denominator for avg pts (defaults to `count`). Use pure mono-core count for Core ×N rows. */
+  pointsDenom: number = count,
 ): ShapeCompareRow {
+  const denom = pointsDenom > 0 ? pointsDenom : 0
   return {
     id,
     label,
     count,
     avgCount: count / matches,
     totalPoints: points,
-    avgPoints: count ? points / count : 0,
+    avgPoints: denom ? points / denom : 0,
     pureCount,
     avgPtsPerCard: cards ? points / cards : 0,
   }
@@ -880,6 +886,8 @@ export function runMatchFast(seed: number, seats: number, strats?: AiStrat[], gu
   let steps = 0
   let repeats = 0
   let last = ''
+  let deckStall = 0
+  let lastDeck = game.deck.length
   while (!game.over && steps < guard) {
     steps += 1
     if (game.veil) {
@@ -902,7 +910,17 @@ export function runMatchFast(seed: number, seats: number, strats?: AiStrat[], gu
     const before = game
     game = apply(game, action)
     tracker.observe(before, action, game)
-    const marker = `${game.turn}:${game.active}:${game.log.at(-1)}:${game.deck.length}`
+    if (game.deck.length < lastDeck) {
+      lastDeck = game.deck.length
+      deckStall = 0
+    } else if (action.type === 'end') {
+      deckStall += 1
+    }
+    // Recycle loops (Weaver et al.) can keep the deck from emptying — cut them short.
+    if (deckStall >= 20 || steps >= 700) {
+      break
+    }
+    const marker = `${game.turn}:${game.active}:${game.deck.length}:${game.players.map((p) => p.hand.length).join(',')}`
     if (marker === last) {
       repeats += 1
       if (repeats > 4) {
@@ -913,11 +931,27 @@ export function runMatchFast(seed: number, seats: number, strats?: AiStrat[], gu
           repeats = 0
           continue
         }
-        break
+        game = apply(game, { type: 'end' })
+        if (game.veil) game = apply(game, { type: 'ready' })
+        repeats = 0
+        last = ''
+        continue
       }
     } else {
       repeats = 0
       last = marker
+    }
+  }
+  if (!game.over) {
+    // Safety net for rare recycle loops that never empty the deck.
+    const parts = game.players.map((player) => scoreState(game, player.id))
+    const scores = parts.map((part) => part.total)
+    game = {
+      ...game,
+      pending: null,
+      veil: false,
+      over: { reason: 'Match halted (soft-lock).', scores, parts },
+      log: [...game.log, 'Match halted (soft-lock).'],
     }
   }
   return tracker.finish(game)
@@ -966,28 +1000,29 @@ function shapeCountsFor(game: Game, playerId: number): ShapeCounts {
     const mixAttrs = mixAttrCount(scored.why)
     const sameAttr = maxSameAttrStackFor(game, team)
 
-    // Inclusive same-attr stacks — a 5-hero mixed board with 4 STR still counts as Core ×4.
-    if (sameAttr === 3) {
-      shapes.coreTeams3 += 1
-      shapes.coreTeamPoints3 += scored.points
-      shapes.coreTeamHeroes3 += size
-    } else if (sameAttr === 4) {
-      shapes.coreTeams4 += 1
-      shapes.coreTeamPoints4 += scored.points
-      shapes.coreTeamHeroes4 += size
-    } else if (sameAttr >= 5) {
-      shapes.coreTeams5 += 1
-      shapes.coreTeamPoints5 += scored.points
-      shapes.coreTeamHeroes5 += size
-    }
+    // Inclusive stack frequency — a ×5 mono (or mixed board with a ×4 stack) still counts toward ×3/×4.
+    if (sameAttr >= 3) shapes.coreTeams3 += 1
+    if (sameAttr >= 4) shapes.coreTeams4 += 1
+    if (sameAttr >= 5) shapes.coreTeams5 += 1
 
     if (shape === 'core') {
       shapes.coreTeams += 1
       shapes.coreTeamPoints += scored.points
       shapes.coreTeamHeroes += size
-      if (size === 3) shapes.pureCore3 += 1
-      else if (size === 4) shapes.pureCore4 += 1
-      else if (size >= 5) shapes.pureCore5 += 1
+      // Avg pts / pts-per-card for Core ×N use mono-core scores only (not mixed-board totals).
+      if (size === 3) {
+        shapes.pureCore3 += 1
+        shapes.coreTeamPoints3 += scored.points
+        shapes.coreTeamHeroes3 += size
+      } else if (size === 4) {
+        shapes.pureCore4 += 1
+        shapes.coreTeamPoints4 += scored.points
+        shapes.coreTeamHeroes4 += size
+      } else if (size >= 5) {
+        shapes.pureCore5 += 1
+        shapes.coreTeamPoints5 += scored.points
+        shapes.coreTeamHeroes5 += size
+      }
     } else if (shape === 'mix') {
       shapes.mixTeams += 1
       shapes.mixTeamPoints += scored.points
@@ -1031,6 +1066,23 @@ function boardMap(game: Game): Map<string, string> {
     }
   }
   return map
+}
+
+/** Count active immunity stamps / auras for event deltas. */
+function countImmune(game: Game): number {
+  let n = 0
+  for (const player of game.players) {
+    if (player.bkb) n += 1
+    for (const team of player.teams) {
+      if (team.glyph) n += Math.max(1, team.heroes.length)
+      const hasOmni = team.heroes.some((hero) => hero.defId === 'omniknight')
+      for (const hero of team.heroes) {
+        if (hero.bkb || hero.omni) n += 1
+        else if (hasOmni) n += 1
+      }
+    }
+  }
+  return n
 }
 
 function addEvents(target: EventCounts, source: EventCounts) {

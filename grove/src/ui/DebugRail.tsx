@@ -221,7 +221,7 @@ export function DebugRail({
 
       <div className="debug-block">
         <h3>Shape compare</h3>
-        <p className="quiet debug-legend">Core ×3/×4/×5 = largest same-attr stack (counts mixed boards too). Pure = exact-size mono core, or mix with hero count matching attr count. Pts/card = avg points ÷ heroes (terrains ÷ 3).</p>
+        <p className="quiet debug-legend">n for Core ×N = teams with a same-attr stack of at least N (mixed boards count). Avg pts / pts/card use mono-core teams of that size only. Pure = exact-size mono core, or mix with hero count matching attr count.</p>
         <table className="debug-table">
           <thead>
             <tr><th>Shape</th><th>n</th><th>Pure</th><th>/match</th><th>Avg pts</th><th>Pts/card</th></tr>

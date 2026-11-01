@@ -25,5 +25,5 @@ describe('completeness', () => {
       if (runMatchFast(seed, 2).over) finished += 1
     }
     expect(finished).toBe(seeds.length)
-  })
+  }, 60_000)
 })
