@@ -1,4 +1,4 @@
-import { chooseAiAction, cycleStrat, DEFAULT_STRAT } from './ai.ts'
+import { chooseAiAction, chooseAiPending, cycleStrat, DEFAULT_STRAT } from './ai.ts'
 import { display, HERO_BY_ID } from './catalog.ts'
 import { apply, createGame, type SeatSpec } from './engine.ts'
 import { attrsOf, heroWeight, scoreState, scoreTeam, standingOf } from './flow.ts'
@@ -769,8 +769,13 @@ export function runMatchFast(seed: number, seats: number, strats?: AiStrat[], gu
       continue
     }
     if (game.pending) {
-      // AI seats should auto-resolve in settle; leftover pending is a soft-lock — clear it.
-      game = { ...game, pending: null, log: [...game.log, 'Forced past a stuck choice.'] }
+      const ids = chooseAiPending(game)
+      const before = game
+      game = apply(game, { type: 'choose', ids })
+      tracker.observe(before, { type: 'choose', ids }, game)
+      if (game.pending === before.pending) {
+        game = { ...game, pending: null, log: [...game.log, 'Forced past a stuck choice.'] }
+      }
       continue
     }
     const action = chooseAiAction(game)
@@ -782,7 +787,9 @@ export function runMatchFast(seed: number, seats: number, strats?: AiStrat[], gu
       repeats += 1
       if (repeats > 4) {
         if (game.pending) {
-          game = { ...game, pending: null, log: [...game.log, 'Forced past a stuck choice.'] }
+          const ids = chooseAiPending(game)
+          game = apply(game, { type: 'choose', ids })
+          if (game.pending) game = { ...game, pending: null, log: [...game.log, 'Forced past a stuck choice.'] }
           repeats = 0
           continue
         }
@@ -804,10 +811,10 @@ function relBucket(kind: PlayKind, defId: string): RelBucket {
 }
 
 function mixAttrCount(why: string): number {
-  if (why.startsWith('Four attributes')) return 4
-  if (why.startsWith('Three attributes')) return 3
-  if (why.startsWith('Two attributes')) return 2
-  return 0
+  const match = why.match(/^attributes ×(\d+)/)
+  if (!match) return 0
+  const n = Number(match[1])
+  return n >= 2 && n <= 4 ? n : 0
 }
 
 /** Largest mono-attribute stack on the team (Meepo counts as 2). Multi-attr heroes do not pad a stack. */

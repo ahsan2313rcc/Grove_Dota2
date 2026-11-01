@@ -79,7 +79,7 @@ describe('scoring', () => {
       mixCombo: 4,
     })
     expect(scoreBodies([{ attrs: ['STR'], range: 'Melee', count: 3 }]).points).toBe(4)
-    expect(scoreBodies([{ attrs: ['STR'], range: 'Melee', count: 3 }]).why).toContain('Melee')
+    expect(scoreBodies([{ attrs: ['STR'], range: 'Melee', count: 3 }]).why).toContain('(M1)')
     expect(scoreBodies([
       { attrs: ['STR'], range: 'Melee', count: 1 },
       { attrs: ['AGI'], range: 'Melee', count: 1 },
@@ -96,6 +96,16 @@ describe('scoring', () => {
 })
 
 describe('turn', () => {
+  it('deals 3 each and draws 3 for seat 0 on turn 1', () => {
+    const raw = createGame({ seed: 2, mode: 'hotseat', names: ['Radiant', 'Dire'] })
+    expect(raw.turn).toBe(1)
+    expect(raw.active).toBe(0)
+    expect(raw.players[0].actions).toBe(2)
+    expect(raw.players[0].hand.length).toBe(6)
+    expect(raw.players[1].hand.length).toBe(3)
+    expect(raw.players[1].actions).toBe(0)
+  })
+
   it('draws 3 at the start of a new turn', () => {
     let game = ready()
     const foeBefore = game.players[1].hand.length

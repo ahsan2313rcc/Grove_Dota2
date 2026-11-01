@@ -48,7 +48,7 @@ Engine should track a `stolenCast` (or depth) flag for the duration of that nest
 1. Build and shuffle the main deck: all heroes (1 each) + item copies + 36 terrains.
 2. Fill and shuffle reward piles from `REWARDS` by kind.
 3. Each player draws **5**.
-4. Seat 0 is active, starts with **2 actions** (no turn-start draw on the very first partial turn — opening hand is the 5). Subsequent turns: draw 3 + 2 actions.
+4. Each seat is dealt **3** cards. Seat 0 then starts turn 1 as usual: **draw 3** + **2 actions**.
 
 `handLimit` = **7**. `TEAM_CAP` = **12** teams per player.
 
@@ -102,7 +102,6 @@ Whenever the game is live and the deck is empty after settling effects/draws, **
 
 - Terrains **cannot** be played as a single card.
 - Play **exactly three** terrain cards from hand as one free combo.
-- Can be countered by **Nyx Assassin** (like other plays).
 
 **Three of a kind** (3 River / 3 Jungle / 3 Lane):
 
@@ -132,12 +131,9 @@ Combos remain as scored terrain piles; some effects destroy/protect them (Hoodwi
 - **Troll Warlord (Battle Trance):** Opponents cannot play Instant cards (logged when it blocks an interrupt).
 - **Shadow Demon ban:** Listed UIDs cannot be played while that SD is controlled by the banner.
 
-### 6.2 Nyx counter window
+### 6.2 Nyx (Instant)
 
-Before a play (or combo) resolves, an opponent holding **Nyx Assassin** may discard it:
-
-- Countered **card** → grave (companions in a multi-drop still enter silently).
-- Countered **combo** → all three terrains → grave; no score/reward.
+**Nyx Assassin** is an Instant. Play it in the Instant interrupt window before an ability fires to counter that ability and destroy the firing hero. There is no separate discard-Nyx prompt.
 
 ### 6.3 Heroes — multi-drop
 
@@ -156,10 +152,9 @@ Before a play (or combo) resolves, an opponent holding **Nyx Assassin** may disc
 **On-play fire** (active hero only, timing ≠ aura, not Nyx/Spirit Breaker hand-counter, not global silence):
 
 1. If mined, queue cast for if-still-alive.
-2. Else **Instant interrupt window**: each opponent may play one Instant (or pass). Battle Trance skips a seat and logs if they held Instant cards.
+2. Else **Instant interrupt window**: each opponent may play one Instant (or pass). Battle Trance skips a seat and logs if they held Instant cards. Nyx played here counters the ability and destroys the hero.
 3. Else if enemy **Pugna**: choose discard 1 or fizzle fire.
-4. Else **Nyx ability counter** window (discard Nyx to destroy the firing hero).
-5. Else `cast(...)` the ability.
+4. Else `cast(...)` the ability.
 
 ### 6.4 Neutrals (tokens)
 

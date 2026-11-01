@@ -120,10 +120,7 @@ export function scoreBodies(bodies: ScoreBody[], rules: ScoreRules = current): {
 }
 
 function mixBonus(colors: number, rules: ScoreRules): { points: number; why: string } {
-  if (colors >= 4) return { points: rules.mixBonus[3] ?? 0, why: 'Four attributes' }
-  if (colors === 3) return { points: rules.mixBonus[2] ?? 0, why: 'Three attributes' }
-  if (colors === 2) return { points: rules.mixBonus[1] ?? 0, why: 'Two attributes' }
-  if (colors === 1) return { points: rules.mixBonus[0] ?? 0, why: 'One attribute' }
+  if (colors >= 1) return { points: rules.mixBonus[Math.min(colors, 4) - 1] ?? 0, why: `attributes ×${colors}` }
   return { points: 0, why: 'No attribute' }
 }
 
@@ -134,12 +131,13 @@ function attackBonus(bodies: ScoreBody[], rules: ScoreRules): { points: number; 
   const points = rules.attackBonus[count - 1] ?? 0
   if (points <= 0 && count < 3) return { points: 0, why: '' }
   if (points <= 0) return { points: 0, why: '' }
-  return { points, why: ranges[0] === 'Melee' ? ' + Melee' : ' + Ranged' }
+  const tag = ranges[0] === 'Melee' ? 'M' : 'R'
+  return { points, why: ` (${tag}${points})` }
 }
 
 export function teamShape(why: string): 'core' | 'mix' | 'open' {
   if (/^(Strength|Agility|Intelligence|Universal) /.test(why)) return 'core'
-  if (why.includes('attributes') || why.startsWith('One attribute')) return 'mix'
+  if (why.includes('attributes')) return 'mix'
   return 'open'
 }
 

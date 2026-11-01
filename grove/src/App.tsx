@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { AI_STRATS, chooseAiAction, cycleStrat, DEFAULT_STRAT, isAiStrat, stratLabel } from './game/ai.ts'
+import { AI_STRATS, chooseAiAction, chooseAiPending, cycleStrat, DEFAULT_STRAT, isAiStrat, stratLabel } from './game/ai.ts'
 import {
   ALL_STRAT_FILTER,
   aiRoster,
@@ -68,17 +68,16 @@ function advanceTracked(run: LiveRun): LiveRun {
   }
   if (game.pending) {
     if (game.players[game.pending.actor]?.ai || game.autoAll) {
-      const next = { ...game, pending: null, log: [...game.log, 'Forced past a stuck choice.'] }
+      const ids = chooseAiPending(game)
+      const next = apply(game, { type: 'choose', ids })
+      run.tracker.observe(game, { type: 'choose', ids }, next)
       return { ...run, game: next, stuck: false }
     }
     return run
   }
   if (!game.players[game.active]?.ai) return run
   const action = chooseAiAction(game)
-  let next = apply(game, action)
-  if (next.pending && (next.players[next.pending.actor]?.ai || next.autoAll)) {
-    next = { ...next, pending: null, log: [...next.log, 'Forced past a stuck choice.'] }
-  }
+  const next = apply(game, action)
   run.tracker.observe(game, action, next)
   const same = next === game
     || (next.active === game.active
@@ -171,8 +170,10 @@ export default function App() {
 
   useEffect(() => {
     if (debug) return
-    if (!game || game.over || game.veil || game.pending || stuck) return
-    if (!game.players[game.active]?.ai) return
+    if (!game || game.over || stuck) return
+    const pendingAi = !!game.pending && (!!game.players[game.pending.actor]?.ai || game.autoAll)
+    const activeAi = !game.pending && (game.veil || !!game.players[game.active]?.ai)
+    if (!pendingAi && !activeAi) return
     const timer = window.setTimeout(() => {
       setRuns((current) => {
         const run = current[0]

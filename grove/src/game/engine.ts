@@ -1,3 +1,4 @@
+import { chooseAiPending } from './ai.ts'
 import { HEROES, ITEMS, REWARDS, TERRAINS, display, firesAbility } from './catalog.ts'
 import { cast, finishIo, finishKunkka } from './casts.ts'
 import { getScoreRules } from './scoring.ts'
@@ -32,7 +33,6 @@ import {
   makeHero,
   mint,
   plantTrap,
-  preferredFoe,
   seatTeam,
   performDestroy,
   pname,
@@ -96,17 +96,18 @@ export function createGame(opts: {
   state = fillPile(state, 'runes')
   state = fillPile(state, 'neutrals')
   state = fillPile(state, 'towers')
-  for (let id = 0; id < seats.length; id += 1) state = takeDraw(state, id, 5)
+  for (let id = 0; id < seats.length; id += 1) state = takeDraw(state, id, 3)
   const names = seats.map((seat) => seat.name)
   const listed = names.length === 2 ? `${names[0]} and ${names[1]}` : names.join(', ')
   state = {
     ...state,
     live: true,
-    veil: mode === 'hotseat' && !seats[0]!.ai,
-    log: [`${listed} draw 5. ${names[0]} acts first.`],
+    turn: 0,
+    veil: false,
+    log: [`${listed} draw 3.`],
   }
-  state = setPlayer(state, 0, (player) => ({ ...player, actions: 2 }))
-  return state
+  // Seat 0 starts turn 1 with the usual draw 3 + 2 actions.
+  return startTurn(state, 0)
 }
 
 function legacySeats(mode: 'hotseat' | 'ai' | 'online', names?: [string, string]): SeatSpec[] {
@@ -161,7 +162,7 @@ function blank(seed: number, mode: 'hotseat' | 'ai' | 'online', seats: SeatSpec[
     towers: [],
     players: seats.map((seat, id) => player(id, seat.name, seat.ai, seat.strat ?? DEFAULT_STRAT)),
     active: 0,
-    turn: 1,
+    turn: 0,
     log: [],
     pending: null,
     after: null,
@@ -235,7 +236,7 @@ export function settle(state: Game): Game {
     if (state.pending) {
       if (state.autoAll || state.players[state.pending.actor].ai) {
         const stuck = state.pending
-        const ids = autoIds(state)
+        const ids = chooseAiPending(state)
         state = satisfy(state, ids)
         // If auto-pick couldn't meet min/max (empty choices, bad assign), skip the prompt.
         if (state.pending === stuck) {
@@ -382,30 +383,12 @@ function startTurn(state: Game, id: PlayerId): Game {
   return state
 }
 
-function combo(state: Game, uids: string[], forced = false): Game {
+function combo(state: Game, uids: string[]): Game {
   const actor = state.active
   if (cardsLocked(state, actor)) return log(state, 'Chronosphere stops you from playing cards.')
   if (uids.length !== 3) return state
   const cards = uids.map((uid) => state.players[actor].hand.find((card) => card.uid === uid))
   if (cards.some((card) => !card || card.kind !== 'terrain')) return state
-  if (!forced) {
-    const holder = holderWith(state, actor, 'nyx_assassin')
-    if (holder !== null) {
-      const nyx = state.players[holder]!.hand.filter((card) => card.defId === 'nyx_assassin')
-      return ask(state, {
-        actor: holder,
-        prompt: `${pname(state, holder)} may discard Nyx Assassin to counter the terrain combo, or pass.`,
-        mode: 'pick',
-        min: 1,
-        max: 1,
-        choices: [
-          { id: 'pass', label: 'Pass' },
-          ...nyx.map((card) => ({ id: `nyx:${card.uid}`, label: 'Spiked Carapace', defId: card.defId })),
-        ],
-        resume: { kind: 'counter-combo', uids, actor },
-      })
-    }
-  }
   const picked = cards as CardInst[]
   const same = picked.every((card) => card.defId === picked[0]?.defId)
   const rules = getScoreRules()
@@ -717,7 +700,7 @@ function offerInstantWindow(
   })
 }
 
-/** Pugna tax → Nyx ability counter → cast. */
+/** Pugna tax → cast. Nyx counters only via the Instant interrupt window. */
 function gateAbility(state: Game, heroUid: string, resume: CastResumeLike): Game {
   const loc = findHero(state, heroUid)
   if (!loc) return log(state, 'The hero is gone — the ability fizzles.')
@@ -736,26 +719,7 @@ function gateAbility(state: Game, heroUid: string, resume: CastResumeLike): Game
       resume: { kind: 'pugna', cast: resume },
     })
   }
-  return offerNyxAbility(state, heroUid, resume)
-}
-
-function offerNyxAbility(state: Game, heroUid: string, resume: CastResumeLike): Game {
-  const enemy = holderWith(state, resume.actor, 'nyx_assassin')
-  if (enemy === null) return cast(state, resume)
-  const cards = state.players[enemy]!.hand.filter((card) => card.defId === 'nyx_assassin')
-  if (cards.length === 0) return cast(state, resume)
-  return ask(state, {
-    actor: enemy,
-    prompt: `${pname(state, enemy)} may discard Nyx to counter ${display(resume.defId).name}'s ability (destroy that hero), or pass.`,
-    mode: 'pick',
-    min: 1,
-    max: 1,
-    choices: [
-      { id: 'pass', label: 'Pass' },
-      ...cards.map((card) => ({ id: `nyx:${card.uid}`, label: 'Spiked Carapace', defId: card.defId })),
-    ],
-    resume: { kind: 'nyx-ability', cast: resume, heroUid },
-  })
+  return cast(state, resume)
 }
 
 type CastResumeLike = Extract<Resume, { kind: 'cast' }>
@@ -891,7 +855,7 @@ function satisfy(state: Game, ids: string[]): Game {
   if (ids.length < pending.min || ids.length > pending.max) return state
   const trapDone = finishTrapChoose(state, ids)
   if (trapDone) return trapDone
-  const next: Game = { ...state, pending: null }
+  let next: Game = { ...state, pending: null }
   const resume = pending.resume
   if (resume.kind === 'cast') {
     return cast(next, { ...resume, steps: (resume.steps ?? 0) + 1, picked: [...resume.picked, ...ids] })
@@ -909,18 +873,13 @@ function satisfy(state: Game, ids: string[]): Game {
     dumped = landCompanions(dumped, resume.actor, extras, resume.team)
     return log(dumped, `Illusion Rune counters ${card ? display(card.defId).name : 'the card'}.`)
   }
-  if (resume.kind === 'counter-combo') {
-    const choice = ids[0]
-    if (!choice || choice === 'pass') return combo(next, resume.uids, true)
-    return combo(next, resume.uids, true)
-  }
   if (resume.kind === 'pugna') {
     if (ids[0] === 'discard') {
       const hand = next.players[resume.cast.actor].hand
       const card = hand[0]
       let dumped = next
       if (card) dumped = discardUid(dumped, resume.cast.actor, card.uid)
-      return offerNyxAbility(dumped, resume.cast.sourceUid, resume.cast)
+      return cast(dumped, resume.cast)
     }
     return log(next, 'The hero does not fire.')
   }
@@ -933,14 +892,6 @@ function satisfy(state: Game, ids: string[]): Game {
       return cast(dumped, resume.cast)
     }
     return log(next, 'Poison Nova nullifies the item.')
-  }
-  if (resume.kind === 'nyx-ability') {
-    const choice = ids[0]
-    if (!choice || choice === 'pass') return cast(next, resume.cast)
-    const nyxUid = choice.slice(4)
-    let dumped = discardUid(next, pending.actor, nyxUid)
-    dumped = enqueue(dumped, resume.heroUid, 'Spiked Carapace', false, true, pending.actor)
-    return log(dumped, 'Spiked Carapace counters the ability.')
   }
   if (resume.kind === 'instant-window') {
     const choice = ids[0]
@@ -1220,87 +1171,6 @@ export function morphCasts(state: Game): { uid: string; label: string }[] {
     .filter((loc) => loc.hero.held?.mode === 'morph' && loc.hero.held.takenTurn === state.turn)
     .filter((loc) => firesAbility(loc.hero.held?.card.defId ?? ''))
     .map((loc) => ({ uid: loc.hero.uid, label: `Cast ${display(loc.hero.held?.card.defId ?? '').name}` }))
-}
-
-function autoIds(state: Game): string[] {
-  const pending = state.pending
-  if (!pending) return []
-  if (pending.mode === 'split') {
-    return pending.choices.map((choice, index) => `${index % 2 === 0 ? 'a' : 'b'}:${choice.id}`)
-  }
-  if (pending.mode === 'assign') {
-    const seats = Math.max(2, state.players.length)
-    return pending.choices.map((choice, index) => `${index % seats}:${choice.id}`)
-  }
-  if (pending.mode === 'groups') {
-    return pending.choices.map((choice, index) => `${index % 3}:${choice.id}`)
-  }
-  const nyx = pending.choices.find((choice) => choice.id.startsWith('nyx:'))
-  if (nyx) return [nyx.id]
-  const torment = pending.choices.find((choice) => choice.id.startsWith('torment:'))
-  if (torment) return [torment.id]
-  const save = pending.choices.find((choice) => choice.id.startsWith('play:'))
-  if (save && pending.prompt.includes('destroyed')) return [save.id]
-  if (pending.choices.some((choice) => choice.id === 'pass')) return ['pass']
-  const hasYes = pending.choices.some((choice) => choice.id === 'yes')
-  const hasNo = pending.choices.some((choice) => choice.id === 'no')
-  if (hasYes && hasNo) {
-    // Opt into sabotage / stolen casts that improve standing; otherwise soft-pass.
-    if (/fire that ability|destroy shadow shaman/i.test(pending.prompt)) return ['yes']
-    return ['no']
-  }
-  if (pending.choices.some((choice) => choice.id === 'exile:yes')) return ['exile:no']
-  if (pending.choices.some((choice) => choice.id.startsWith('illu:'))) return ['pass']
-  // Interrupt window: AI passes by default (humans decide).
-  if (pending.resume.kind === 'instant-window') return ['pass']
-  if (pending.choices.some((choice) => choice.id.startsWith('player:'))) {
-    return [pending.choices.find((choice) => choice.id.startsWith('player:'))!.id]
-  }
-  if (pending.min === 0) return []
-  const focus = preferredFoe(state, pending.actor)
-  const scores = state.players.map((player) => scoreState(state, player.id).total)
-  const ranked = pending.choices
-    .map((choice, index) => ({
-      id: choice.id,
-      weight: autoChoiceWeight(state, choice.id, pending.actor, focus, scores) - index * 0.001,
-    }))
-    .sort((a, b) => b.weight - a.weight)
-  return ranked.slice(0, pending.max).map((entry) => entry.id)
-}
-
-function autoChoiceWeight(
-  state: Game,
-  choiceId: string,
-  actor: PlayerId,
-  focus: PlayerId,
-  scores: number[],
-): number {
-  const owner = choiceOwner(state, choiceId)
-  if (owner === null) return 0
-  if (owner === actor) return -5
-  if (owner === focus) return 100 + (scores[owner] ?? 0)
-  return (scores[owner] ?? 0)
-}
-
-function choiceOwner(state: Game, choiceId: string): PlayerId | null {
-  if (choiceId.startsWith('player:')) return Number(choiceId.slice(7))
-  if (choiceId.startsWith('hero:')) {
-    return findHero(state, choiceId.slice(5))?.hero.controller ?? null
-  }
-  if (choiceId.startsWith('team:')) {
-    return teamById(state, choiceId.slice(5))?.player.id ?? null
-  }
-  if (choiceId.startsWith('new:')) {
-    const seat = Number(choiceId.slice(4))
-    return Number.isFinite(seat) ? seat : null
-  }
-  if (choiceId.startsWith('card:')) {
-    const uid = choiceId.slice(5)
-    for (const player of state.players) {
-      if (player.hand.some((card) => card.uid === uid)) return player.id
-    }
-  }
-  return null
 }
 
 export function needsTeam(defId: string, kind: CardKind): boolean {

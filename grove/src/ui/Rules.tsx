@@ -6,7 +6,7 @@ export function Rules({ onClose }: { onClose: () => void }) {
         <h2 id="rules-title">Rules</h2>
         <section>
           <h3>The turn</h3>
-          <p>At the start of your turn you draw 3, then you have two actions. Draw one more card for an action, or play a hero, item, or reward for an action. Instant cards are free. A terrain combo is free and does not spend an action. If your hand is above 7, discard down to 7 when you end your turn. The match ends when the shared deck is empty.</p>
+          <p>Everyone is dealt 3 cards. At the start of your turn you draw 3, then you have two actions — including the first seat on turn 1. Draw one more card for an action, or play a hero, item, or reward for an action. Instant cards are free. A terrain combo is free and does not spend an action. If your hand is above 7, discard down to 7 when you end your turn. The match ends when the shared deck is empty.</p>
           <p>You may play several heroes into one team for a single action. Click the active hero, click companions to add them silently, then pick a team — only the active ability fires. If the play is countered, only the active hero is countered.</p>
         </section>
         <section>
@@ -24,7 +24,7 @@ export function Rules({ onClose }: { onClose: () => void }) {
         </section>
         <section>
           <h3>Answers</h3>
-          <p>The hand limit is 7. Instant cards are free and can be played on an opponent’s turn to interrupt — including before a hero ability fires. Nyx Assassin can counter a card play or an ability. Trap heroes plant face down on any team, including an enemy’s. Tormentor destroys a hero that just entered; saves stop a destroy. Troll Warlord’s Battle Trance stops opponents from playing Instant cards.</p>
+          <p>The hand limit is 7. Instant cards are free and can be played on an opponent’s turn to interrupt — including before a hero ability fires. Nyx Assassin is an Instant that counters the ability and destroys that hero. Trap heroes plant face down on any team, including an enemy’s. Tormentor destroys a hero that just entered; saves stop a destroy. Troll Warlord’s Battle Trance stops opponents from playing Instant cards.</p>
         </section>
         <section>
           <h3>A few seats</h3>

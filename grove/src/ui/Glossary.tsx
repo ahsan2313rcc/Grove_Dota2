@@ -124,7 +124,7 @@ export function Glossary({ onClose }: { onClose: () => void }) {
                   <span className="glossary-marks">
                     <span className={`pill attr-${hero.attr}`}>{ATTR_LABEL[hero.attr]}</span>
                     <span className="pill range">{hero.range}</span>
-                    <span className="pill muted">{TIMING_LABEL[hero.timing]}</span>
+                    <span className={`type-pill inline timing-${hero.timing}`}>{TIMING_LABEL[hero.timing]}</span>
                   </span>
                 </header>
                 <p className="spell">{hero.spell}</p>
@@ -142,7 +142,7 @@ export function Glossary({ onClose }: { onClose: () => void }) {
                   <strong>{item.name}</strong>
                   <span className="glossary-marks">
                     <span className="pill muted">{item.copies}× in deck</span>
-                    {item.instant ? <span className="free-pill">Free</span> : null}
+                    {item.instant ? <span className="type-pill inline timing-instant">Instant</span> : null}
                   </span>
                 </header>
                 <p>{item.text}</p>
@@ -174,7 +174,7 @@ export function Glossary({ onClose }: { onClose: () => void }) {
                   <span className="glossary-marks">
                     {reward.attr ? <span className={`pill attr-${reward.attr}`}>{ATTR_LABEL[reward.attr]}</span> : null}
                     <span className="pill muted">{reward.copies}× in pile</span>
-                    {reward.instant ? <span className="free-pill">Free</span> : null}
+                    {reward.instant ? <span className="type-pill inline timing-instant">Instant</span> : null}
                     {reward.token ? <span className="pill muted">Neutral body</span> : null}
                   </span>
                 </header>

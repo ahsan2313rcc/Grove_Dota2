@@ -1,5 +1,19 @@
 import { display } from '../game/catalog.ts'
-import type { Attr, Range } from '../game/types.ts'
+import type { Attr, Range, Timing } from '../game/types.ts'
+
+const TIMING_BADGE: Record<Timing, string> = {
+  cast: 'On play',
+  aura: 'Aura',
+  instant: 'Instant',
+  trap: 'Trap',
+}
+
+const TIMING_PEEK: Record<Timing, string> = {
+  cast: 'P',
+  aura: 'A',
+  instant: 'I',
+  trap: 'T',
+}
 
 export function CardFace({
   defId,
@@ -42,8 +56,14 @@ export function CardFace({
   const info = display(defId)
   const shownAttrs = attrs ?? (info.attr ? [info.attr] : [])
   const shownRange = range === undefined ? info.range : range
+  const timing = info.timing
   const kindLabel = info.kind === 'hero' ? 'Hero' : info.kind === 'item' ? 'Item' : info.kind === 'terrain' ? 'Terrain' : info.kind === 'rune' ? 'Rune' : info.kind === 'neutral' ? 'Neutral' : 'Tower'
   const className = `card${selected ? ' selected' : ''}${compact ? ' compact' : ''}${peek ? ' peek' : ''}`
+  const timingBadge = timing ? (
+    <span className={`type-pill timing-${timing}`} title={TIMING_BADGE[timing]}>
+      {peek ? TIMING_PEEK[timing] : TIMING_BADGE[timing]}
+    </span>
+  ) : null
   const body = peek ? (
     <>
       <span className="peek-marks">
@@ -54,12 +74,13 @@ export function CardFace({
         {shownRange === 'Ranged' ? <span className="sigil bow" title="Ranged" aria-label="Ranged" /> : null}
       </span>
       <span className="card-name">{info.name}</span>
+      {timingBadge}
     </>
   ) : (
     <>
+      {timingBadge}
       <span className="card-kicker">
         <span>{kindLabel}</span>
-        {info.instant ? <span className="free-pill">Free</span> : null}
       </span>
       {shownAttrs.length > 0 ? (
         <span className="pills">
@@ -79,10 +100,13 @@ export function CardFace({
       {compact && marks.length > 0 ? <span className="card-marks">{marks.slice(0, 2).join(' · ')}</span> : null}
     </>
   )
-  const title = `${info.name}. ${info.text}`
+  const title = timing
+    ? `${info.name} (${TIMING_BADGE[timing]}). ${info.text}`
+    : `${info.name}. ${info.text}`
   const data = {
     'data-kind': info.kind === 'terrain' ? defId : info.kind,
     'data-attr': shownAttrs[0] ?? info.attr ?? '',
+    'data-timing': timing ?? '',
   }
   if (!onClick) {
     return (

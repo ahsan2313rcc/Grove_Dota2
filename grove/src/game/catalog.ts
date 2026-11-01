@@ -379,7 +379,16 @@ export const SAVE_IDS = new Set([
   'tusk',
 ])
 
-export function display(defId: string): { name: string; text: string; spell?: string; attr?: Attr; range?: Range; kind: CardKind; instant: boolean } {
+export function display(defId: string): {
+  name: string
+  text: string
+  spell?: string
+  attr?: Attr
+  range?: Range
+  kind: CardKind
+  instant: boolean
+  timing?: Timing
+} {
   const heroDef = HERO_BY_ID[defId]
   if (heroDef) {
     return {
@@ -390,10 +399,11 @@ export function display(defId: string): { name: string; text: string; spell?: st
       range: heroDef.range,
       kind: 'hero',
       instant: heroDef.timing === 'instant',
+      timing: heroDef.timing,
     }
   }
   const item = ITEM_BY_ID[defId]
-  if (item) return { name: item.name, text: item.text, kind: 'item', instant: item.instant }
+  if (item) return { name: item.name, text: item.text, kind: 'item', instant: item.instant, timing: item.instant ? 'instant' : undefined }
   const reward = REWARD_BY_ID[defId]
   if (reward) {
     return {
@@ -402,6 +412,7 @@ export function display(defId: string): { name: string; text: string; spell?: st
       attr: reward.attr,
       kind: reward.kind,
       instant: reward.instant,
+      timing: reward.instant ? 'instant' : undefined,
     }
   }
   const terrain = TERRAINS.find((entry) => entry.id === defId)

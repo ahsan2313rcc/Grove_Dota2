@@ -321,18 +321,20 @@ export function Table({
 
   function clickHand(card: CardInst) {
     if (debug) {
-      setFocus({ kind: 'hand', uid: card.uid })
+      setFocus((current) => (current?.kind === 'hand' && current.uid === card.uid ? null : { kind: 'hand', uid: card.uid }))
       return
     }
     setMoving(null)
     if (card.kind === 'terrain') {
       setPlacing(null)
       setExtras([])
-      setCombo((current) => {
-        if (current.includes(card.uid)) return current.filter((uid) => uid !== card.uid)
-        if (current.length >= 3) return current
-        return [...current, card.uid]
-      })
+      if (liveCombo.includes(card.uid)) {
+        setCombo((current) => current.filter((uid) => uid !== card.uid))
+        if (focus?.kind === 'hand' && focus.uid === card.uid) setFocus(null)
+        return
+      }
+      if (liveCombo.length >= 3) return
+      setCombo((current) => [...current, card.uid])
       setFocus({ kind: 'hand', uid: card.uid })
       return
     }
@@ -346,6 +348,14 @@ export function Table({
       setExtras((current) => (current.includes(card.uid) ? current.filter((uid) => uid !== card.uid) : [...current, card.uid]))
       if (!placing) setFocus({ kind: 'hand', uid: primary })
       else setFocus({ kind: 'hand', uid: card.uid })
+      return
+    }
+    // Clicking the already-selected card again clears the selection.
+    if (placing === card.uid || (focus?.kind === 'hand' && focus.uid === card.uid)) {
+      setCombo([])
+      setExtras([])
+      setPlacing(null)
+      setFocus(null)
       return
     }
     setCombo([])
@@ -434,8 +444,20 @@ export function Table({
                     teams={player.teams}
                     combos={player.combos}
                     game={game}
-                    onInspect={(next) => { setFocus(next); setPlacing(null); setMoving(null) }}
-                    onEmber={chair.mine && canAct ? (uid) => { setMoving(uid); setPlacing(null); setFocus({ kind: 'hero', uid }) } : undefined}
+                    onInspect={(next) => {
+                      setFocus((current) => {
+                        if (current?.kind === 'hero' && next.kind === 'hero' && current.uid === next.uid) return null
+                        if (current?.kind === 'card' && next.kind === 'card' && current.defId === next.defId) return null
+                        return next
+                      })
+                      setPlacing(null)
+                      setMoving(null)
+                    }}
+                    onEmber={chair.mine && canAct ? (uid) => {
+                      setMoving((current) => (current === uid ? null : uid))
+                      setPlacing(null)
+                      setFocus((current) => (current?.kind === 'hero' && current.uid === uid ? null : { kind: 'hero', uid }))
+                    } : undefined}
                   />
                 )
               })}
@@ -700,8 +722,11 @@ function Lane({
                       range={shownRange(hero)}
                       marks={heroMarks(hero, team)}
                       onClick={() => {
+                        if (onEmber && hero.defId === 'ember_spirit') {
+                          onEmber(hero.uid)
+                          return
+                        }
                         onInspect({ kind: 'hero', uid: hero.uid })
-                        if (onEmber && hero.defId === 'ember_spirit') onEmber(hero.uid)
                       }}
                     />
                   ))}
@@ -721,17 +746,22 @@ function Lane({
         {combos.length > 0 ? (
           <div className="combos">
             {combos.map((entry) => (
-              <article key={entry.id} className="combo-chip">
+              <article key={entry.id} className="combo-chip" title={entry.kind === 'mixed' ? 'Mixed path' : `Three ${entry.kind}s`}>
                 <strong>{entry.points}</strong>
-                <span>{entry.kind === 'mixed' ? 'Mixed path' : `Three ${entry.kind}s`}</span>
-                {entry.protectedBy ? <em>Protected</em> : null}
                 <div className="combo-minis">
                   {entry.cards.map((card) => (
-                    <button key={card.uid} type="button" className={`mini kind-${card.defId}`} onClick={() => onInspect({ kind: 'card', defId: card.defId })}>
-                      {display(card.defId).name}
+                    <button
+                      key={card.uid}
+                      type="button"
+                      className={`mini kind-${card.defId}`}
+                      title={display(card.defId).name}
+                      onClick={() => onInspect({ kind: 'card', defId: card.defId })}
+                    >
+                      {card.defId === 'river' ? 'R' : card.defId === 'jungle' ? 'J' : 'L'}
                     </button>
                   ))}
                 </div>
+                {entry.protectedBy ? <em>P</em> : null}
               </article>
             ))}
           </div>

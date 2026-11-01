@@ -121,10 +121,8 @@ export type Resume =
   | CastResume
   | { kind: 'save'; uid: string; cause: string; force: boolean }
   | { kind: 'counter'; uid: string; team: string; actor: PlayerId; extras?: string[] }
-  | { kind: 'counter-combo'; uids: string[]; actor: PlayerId }
   | { kind: 'pugna'; cast: CastResume }
   | { kind: 'venomancer'; cast: CastResume }
-  | { kind: 'nyx-ability'; cast: CastResume; heroUid: string }
   /** Opponents may play an Instant before a hero ability fires. */
   | { kind: 'instant-window'; cast: CastResume; heroUid: string; seats: PlayerId[]; index: number }
   | { kind: 'free-play-offer'; uid: string; actor: PlayerId }
