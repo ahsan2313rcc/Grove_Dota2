@@ -265,6 +265,8 @@ export interface Game {
    * Each seat then gets one end-turn; when `endsLeft` hits 0 the match finishes.
    */
   ancient: { bonusSeat: PlayerId | null; endsLeft: number } | null
+  /** When false, The Ancient is not in the deck and cannot end the match. */
+  ancientEnabled: boolean
 }
 
 export type Action =

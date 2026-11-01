@@ -26,6 +26,8 @@ export interface ScoreRules {
   coreCombo: number
   /** Mixed River/Jungle/Lane combo points. */
   mixCombo: number
+  /** When true, The Ancient is shuffled into the deck after the opening deal. */
+  ancientEndgame: boolean
 }
 
 export const DEFAULT_SCORE_RULES: ScoreRules = {
@@ -37,6 +39,7 @@ export const DEFAULT_SCORE_RULES: ScoreRules = {
   attackOnMix: true,
   coreCombo: 5,
   mixCombo: 5,
+  ancientEndgame: true,
 }
 
 let current: ScoreRules = cloneRules(DEFAULT_SCORE_RULES)
@@ -67,6 +70,7 @@ export function cloneRules(rules: ScoreRules): ScoreRules {
     attackOnMix: rules.attackOnMix,
     coreCombo: rules.coreCombo,
     mixCombo: rules.mixCombo,
+    ancientEndgame: rules.ancientEndgame !== false,
   }
 }
 
@@ -84,6 +88,7 @@ export function normalizeRules(rules: ScoreRules): ScoreRules {
     attackOnMix: !!rules.attackOnMix,
     coreCombo: clamp(rules.coreCombo),
     mixCombo: clamp(rules.mixCombo),
+    ancientEndgame: rules.ancientEndgame !== false,
   }
 }
 

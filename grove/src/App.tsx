@@ -4,14 +4,20 @@ import {
   ALL_STRAT_FILTER,
   aiRoster,
   BalanceTracker,
-  runMatchFast,
   summarizeReports,
   type MatchReport,
   type StratFilter,
 } from './game/balance.ts'
 import { apply, createGame, type SeatSpec } from './game/engine.ts'
 import { log } from './game/flow.ts'
-import { cloneRules, DEFAULT_SCORE_RULES, getScoreRules, resetScoreRules, setScoreRules, type ScoreRules } from './game/scoring.ts'
+import {
+  cloneRules,
+  DEFAULT_SCORE_RULES,
+  getScoreRules,
+  resetScoreRules,
+  setScoreRules,
+  type ScoreRules,
+} from './game/scoring.ts'
 import type { Action, AiStrat, Game } from './game/types.ts'
 import { Glossary } from './ui/Glossary.tsx'
 import { type DebugSpeed, type DebugView } from './ui/DebugRail.tsx'
@@ -52,7 +58,11 @@ function parseSeedInput(raw: string): { seed: number; debug: boolean } | null {
 }
 
 function makeRun(seed: number, seats: number, strats?: AiStrat[]): LiveRun {
-  const game = createGame({ seed, seats: aiRoster(seats, strats, seed) })
+  const game = createGame({
+    seed,
+    seats: aiRoster(seats, strats, seed),
+    ancientEndgame: getScoreRules().ancientEndgame,
+  })
   const tracker = new BalanceTracker(seed)
   tracker.start(game)
   return { seed, game, tracker, stuck: false }
@@ -112,8 +122,8 @@ function readStart(): { debug: boolean; seed: number; seats: SeatCount; runs: Li
     tracker.start(game)
     return { debug: false, seed, seats: count, runs: [{ seed, game, tracker, stuck: false }], view: 'watch' }
   }
-  const batch = Math.max(1, Math.min(8, Number(params.get('batch')) || 1))
-  const runs = Array.from({ length: batch }, (_, index) => makeRun(seed + index, count))
+  // Debug always watches one live match; queue more via the rail.
+  const runs = [makeRun(seed, count)]
   return { debug: true, seed, seats: count, runs, view }
 }
 
@@ -126,47 +136,75 @@ export default function App() {
   const [focus, setFocus] = useState(0)
   const [debugSpeed, setDebugSpeed] = useState<DebugSpeed>(1)
   const [debugView, setDebugView] = useState<DebugView>(boot?.view ?? 'watch')
-  const [batchSize, setBatchSize] = useState(4)
+  const [queueSize, setQueueSize] = useState(1)
   const [reports, setReports] = useState<MatchReport[]>([])
-  const [runningBatch, setRunningBatch] = useState(false)
   const [match, setMatch] = useState(boot ? 1 : 0)
-  const [batchDone, setBatchDone] = useState(0)
+  const [queueLeft, setQueueLeft] = useState(0)
+  const [advancing, setAdvancing] = useState(false)
   const [stratFilter, setStratFilter] = useState<StratFilter>(ALL_STRAT_FILTER)
   const [debugStrats, setDebugStrats] = useState<AiStrat[]>(() => Array.from({ length: boot?.seats ?? 2 }, (_, index) => cycleStrat(index)))
-  const batchToken = useRef(0)
+  const queueToken = useRef(0)
 
-  const live = runs[Math.min(focus, Math.max(0, runs.length - 1))] ?? null
+  const live = runs[0] ?? null
   const game = live?.game ?? null
   const stuck = live?.stuck ?? false
 
   const summary = useMemo(() => {
-    const liveReports = runs.map((run) => run.tracker.snapshot(run.game))
+    const archived = new Set(reports.map((report) => report.seed))
+    const liveReports = runs
+      .filter((run) => !archived.has(run.seed))
+      .map((run) => run.tracker.snapshot(run.game))
     return summarizeReports([...reports, ...liveReports], stratFilter)
   }, [reports, runs, stratFilter])
 
-  const finishedCount = reports.filter((report) => report.over).length + runs.filter((run) => run.game.over).length
-  const runCount = runningBatch ? batchSize : Math.max(runs.length, 1)
+  const finishedCount = reports.filter((report) => report.over).length
+  const runCount = (live && !live.game.over ? 1 : 0) + queueLeft
 
   useEffect(() => {
-    if (!debug || debugView === 'stats' || runningBatch) return
+    if (!debug || debugView === 'stats') return
     if (runs.length === 0) return
     if (debugSpeed === 0) return
-    const open = runs.some((run) => !run.game.over && !run.stuck)
-    if (!open) return
+    const run = runs[0]
+    if (!run || run.game.over || run.stuck) return
     const delay = Math.round(BASE_TICK_MS / debugSpeed)
     const timer = window.setTimeout(() => {
-      setRuns((current) => current.map((run) => {
-        if (run.game.over || run.stuck) return run
+      setRuns((current) => {
+        const liveRun = current[0]
+        if (!liveRun || liveRun.game.over || liveRun.stuck) return current
         try {
-          return advanceTracked(run)
+          return [advanceTracked(liveRun)]
         } catch (error) {
           const text = error instanceof Error ? error.message : 'The Grove could not finish a play.'
-          return { ...run, game: log(run.game, text), stuck: true }
+          return [{ ...liveRun, game: log(liveRun.game, text), stuck: true }]
         }
-      }))
+      })
     }, delay)
     return () => window.clearTimeout(timer)
-  }, [debug, debugView, debugSpeed, runs, runningBatch])
+  }, [debug, debugView, debugSpeed, runs])
+
+  // Archive a finished watch match once, then auto-start the next queued seed (one at a time).
+  useEffect(() => {
+    if (!debug || !live?.game.over) return
+    const finished = live
+    setReports((current) => {
+      if (current.some((report) => report.seed === finished.seed)) return current
+      return [...current, finished.tracker.snapshot(finished.game)]
+    })
+    if (queueLeft <= 0 || advancing) return
+    const token = ++queueToken.current
+    setAdvancing(true)
+    const nextSeed = finished.seed + 1
+    const timer = window.setTimeout(() => {
+      if (queueToken.current !== token) return
+      setSeed(nextSeed)
+      setQueueLeft((left) => Math.max(0, left - 1))
+      setMatch((value) => value + 1)
+      setRuns([makeRun(nextSeed, seatCount, debugStrats)])
+      setDebugView('watch')
+      setAdvancing(false)
+    }, 280)
+    return () => window.clearTimeout(timer)
+  }, [debug, live, queueLeft, advancing, seatCount, debugStrats])
 
   useEffect(() => {
     if (debug) return
@@ -206,20 +244,20 @@ export default function App() {
   }
 
   function stepDebug() {
-    setRuns((current) => current.map((run, index) => {
-      if (index !== focus) return run
-      if (run.game.over) return run
+    setRuns((current) => {
+      const run = current[0]
+      if (!run || run.game.over) return current
       try {
-        return advanceTracked(run)
+        return [advanceTracked(run)]
       } catch (error) {
         const text = error instanceof Error ? error.message : 'The Grove could not finish a play.'
-        return { ...run, game: log(run.game, text), stuck: true }
+        return [{ ...run, game: log(run.game, text), stuck: true }]
       }
-    }))
+    })
   }
 
   function leave() {
-    batchToken.current += 1
+    queueToken.current += 1
     window.history.replaceState({}, '', window.location.pathname)
     setRuns([])
     setReports([])
@@ -227,60 +265,58 @@ export default function App() {
     setDebugSpeed(1)
     setDebugView('watch')
     setFocus(0)
-    setRunningBatch(false)
-    setBatchDone(0)
+    setQueueLeft(0)
+    setAdvancing(false)
     setStratFilter(ALL_STRAT_FILTER)
     setDebugStrats(Array.from({ length: 2 }, (_, index) => cycleStrat(index)))
     resetScoreRules()
   }
 
   function resetDebug() {
-    if (runningBatch) return
-    batchToken.current += 1
+    queueToken.current += 1
+    setAdvancing(false)
     setReports([])
-    setBatchDone(0)
+    setQueueLeft(0)
     setFocus(0)
-    setRunningBatch(false)
     setMatch((value) => value + 1)
     if (debugView === 'stats') {
       setRuns([])
       return
     }
-    const count = Math.max(1, Math.min(8, runs.length || 1))
-    setRuns(Array.from({ length: count }, (_, index) => makeRun(seed + index, seatCount, debugStrats)))
+    setRuns([makeRun(seed, seatCount, debugStrats)])
   }
 
-  async function runBatch() {
-    if (runningBatch) return
-    const token = ++batchToken.current
-    setRunningBatch(true)
-    setDebugView('stats')
-    setBatchDone(0)
-    const baseSeed = seed
-    const seats = seatCount
-    const strats = debugStrats
-    const total = Math.max(1, Math.min(1024, batchSize))
-    const chunk: MatchReport[] = []
-    const yieldEvery = total >= 256 ? 32 : total >= 64 ? 16 : 4
-    for (let index = 0; index < total; index += 1) {
-      if (batchToken.current !== token) return
-      const report = runMatchFast(baseSeed + index, seats, strats)
-      chunk.push(report)
-      if (chunk.length >= yieldEvery || index === total - 1) {
-        const batch = chunk.splice(0, chunk.length)
-        setBatchDone(index + 1)
-        setReports((current) => [...current, ...batch])
-        await new Promise((resolve) => window.setTimeout(resolve, 0))
-      }
+  /** Queue more sequential matches after the current one (still one live game at a time). */
+  function queueMore() {
+    const extra = Math.max(1, Math.min(256, queueSize))
+    if (!live || live.game.over) {
+      const jump = live?.game.over ? live.seed + 1 : seed
+      setSeed(jump)
+      setMatch((value) => value + 1)
+      setRuns([makeRun(jump, seatCount, debugStrats)])
+      setQueueLeft((left) => Math.min(256, left + Math.max(0, extra - 1)))
+    } else {
+      setQueueLeft((left) => Math.min(256, left + extra))
     }
-    if (batchToken.current !== token) return
-    setRuns([])
-    setFocus(0)
-    setRunningBatch(false)
+    setDebugView('watch')
+    if (debugSpeed === 0) setDebugSpeed(1)
+  }
+
+  function playNext() {
+    queueToken.current += 1
+    setAdvancing(false)
+    if (live && !live.game.over) {
+      setReports((current) => [...current, live.tracker.snapshot(live.game)])
+    }
+    const jump = (live?.seed ?? seed) + 1
+    setSeed(jump)
+    setMatch((value) => value + 1)
+    setRuns([makeRun(jump, seatCount, debugStrats)])
+    setDebugView('watch')
+    if (debugSpeed === 0) setDebugSpeed(1)
   }
 
   function startWatchFromStats() {
-    if (runningBatch) return
     const created = [makeRun(seed, seatCount, debugStrats)]
     setRuns(created)
     setFocus(0)
@@ -290,14 +326,15 @@ export default function App() {
   }
 
   function onDebugView(view: DebugView) {
-    if (view === 'watch' && runs.length === 0 && !runningBatch) {
+    if (view === 'watch' && runs.length === 0) {
       startWatchFromStats()
       return
     }
     setDebugView(view)
   }
 
-  function startDebugSession(nextSeed: number, seats: SeatCount, parallel: number, background: boolean, strats: AiStrat[], rules: ScoreRules) {
+  function startDebugSession(nextSeed: number, seats: SeatCount, queue: number, strats: AiStrat[], rules: ScoreRules) {
+    queueToken.current += 1
     setScoreRules(rules)
     setMatch((value) => value + 1)
     setSeed(nextSeed)
@@ -306,41 +343,14 @@ export default function App() {
     setDebugSpeed(1)
     setFocus(0)
     setReports([])
-    setBatchDone(0)
+    setAdvancing(false)
     setDebugStrats(strats)
     setStratFilter(ALL_STRAT_FILTER)
-    if (background) {
-      const total = Math.max(1, Math.min(1024, parallel))
-      setRuns([])
-      setDebugView('stats')
-      setBatchSize(total)
-      window.setTimeout(() => {
-        void (async () => {
-          const token = ++batchToken.current
-          setRunningBatch(true)
-          const chunk: MatchReport[] = []
-          const yieldEvery = total >= 256 ? 32 : total >= 64 ? 16 : 4
-          for (let index = 0; index < total; index += 1) {
-            if (batchToken.current !== token) return
-            chunk.push(runMatchFast(nextSeed + index, seats, strats))
-            if (chunk.length >= yieldEvery || index === total - 1) {
-              const batch = chunk.splice(0, chunk.length)
-              setBatchDone(index + 1)
-              setReports((current) => [...current, ...batch])
-              await new Promise((resolve) => window.setTimeout(resolve, 0))
-            }
-          }
-          if (batchToken.current !== token) return
-          setRunningBatch(false)
-        })()
-      }, 0)
-      return
-    }
-    const count = Math.max(1, Math.min(8, parallel))
-    setBatchSize(Math.max(count, 4))
-    const created = Array.from({ length: count }, (_, index) => makeRun(nextSeed + index, seats, strats))
+    const total = Math.max(1, Math.min(256, queue))
+    setQueueSize(total)
+    setQueueLeft(Math.max(0, total - 1))
     setDebugView('watch')
-    setRuns(created)
+    setRuns([makeRun(nextSeed, seats, strats)])
   }
 
   const [online, setOnline] = useState(false)
@@ -353,9 +363,9 @@ export default function App() {
     return (
       <Lobby
         onOnline={() => setOnline(true)}
-        onStart={(next, nextSeed, nextDebug, seats, parallel, background, strats, rules) => {
+        onStart={(next, nextSeed, nextDebug, seats, queue, strats, rules) => {
           if (nextDebug) {
-            startDebugSession(nextSeed, seats, parallel, background, strats, rules)
+            startDebugSession(nextSeed, seats, queue, strats, rules)
             return
           }
           setScoreRules(rules)
@@ -382,20 +392,22 @@ export default function App() {
         debug
         debugSpeed={debugSpeed}
         debugView={debugView}
-        debugBatchSize={batchSize}
-        debugFocus={focus}
+        debugBatchSize={queueSize}
+        debugFocus={0}
         debugRunCount={runCount}
-        debugFinished={runningBatch ? batchDone : finishedCount}
-        debugRunningBatch={runningBatch}
+        debugFinished={finishedCount}
+        debugRunningBatch={advancing || queueLeft > 0}
+        debugQueueLeft={queueLeft}
         debugSummary={summary}
         debugReports={reports}
         debugStratFilter={stratFilter}
         onDebugSpeed={setDebugSpeed}
         onDebugStep={stepDebug}
         onDebugView={onDebugView}
-        onDebugBatchSize={setBatchSize}
+        onDebugBatchSize={setQueueSize}
         onDebugFocus={setFocus}
-        onDebugRunBatch={runBatch}
+        onDebugRunBatch={queueMore}
+        onDebugPlayNext={playNext}
         onDebugStratFilter={setStratFilter}
         onDebugReset={resetDebug}
         onAction={send}
@@ -426,8 +438,7 @@ function Lobby({
     seed: number,
     debug: boolean,
     seats: SeatCount,
-    parallel: number,
-    background: boolean,
+    queue: number,
     strats: AiStrat[],
     rules: ScoreRules,
   ) => void
@@ -435,8 +446,7 @@ function Lobby({
   const [seedText, setSeedText] = useState('')
   const [count, setCount] = useState<SeatCount>(2)
   const [seats, setSeats] = useState<LobbySeat[]>(() => defaultSeats(2))
-  const [parallel, setParallel] = useState(1)
-  const [background, setBackground] = useState(false)
+  const [queue, setQueue] = useState(1)
   const [fault, setFault] = useState('')
   const [glossary, setGlossary] = useState(false)
   const [scoreOpen, setScoreOpen] = useState(false)
@@ -471,8 +481,18 @@ function Lobby({
       }
     })
     try {
-      const rules = debug ? lobbyRules : DEFAULT_SCORE_RULES
-      onStart(createGame({ seed, seats: roster }), seed, debug, count, debug ? parallel : 1, debug && background, strats, rules)
+      const rules = debug
+        ? lobbyRules
+        : { ...DEFAULT_SCORE_RULES, ancientEndgame: lobbyRules.ancientEndgame }
+      onStart(
+        createGame({ seed, seats: roster, ancientEndgame: rules.ancientEndgame }),
+        seed,
+        debug,
+        count,
+        debug ? queue : 1,
+        strats,
+        rules,
+      )
     } catch (error) {
       setFault(error instanceof Error ? error.message : 'The deck could not be dealt.')
     }
@@ -490,7 +510,7 @@ function Lobby({
         <dl>
           <div><dt>Deck</dt><dd>127 heroes, 36 items, 36 terrains</dd></div>
           <div><dt>Hand</dt><dd>Five to open. Seven is the limit.</dd></div>
-          <div><dt>End</dt><dd>The match ends when the deck is empty.</dd></div>
+          <div><dt>End</dt><dd>Ancient final round, or when the deck is empty.</dd></div>
         </dl>
       </div>
       <form className="lobby-card" onSubmit={(event) => event.preventDefault()}>
@@ -560,50 +580,50 @@ function Lobby({
             )
           })}
         </ul>
-        {debugPreview ? (
-          <fieldset className="debug-lobby">
-            <legend>Debug runs</legend>
-            <label>
-              {background ? 'Background games' : 'Live parallel games'}
-              <input
-                data-testid="lobby-parallel"
-                type="number"
-                min={1}
-                max={background ? 1024 : 8}
-                value={parallel}
-                onChange={(event) => setParallel(Math.max(1, Math.min(background ? 1024 : 8, Number(event.target.value) || 1)))}
-              />
-            </label>
-            <label className="check-row">
-              <input
-                data-testid="lobby-background"
-                type="checkbox"
-                checked={background}
-                onChange={(event) => {
-                  const next = event.target.checked
-                  setBackground(next)
-                  if (!next && parallel > 8) setParallel(8)
-                }}
-              />
-              Run in background (stats only)
-            </label>
-            <p className="quiet">
-              {background
-                ? `Simulates up to ${parallel} AI matches (max 1024) using the seat strats above.`
-                : parallel > 1
-                  ? `Watches game 1 of ${parallel} (max 8 live). Switch focus in the debug rail.`
-                  : 'AI seats auto-play with the strats chosen above.'}
-            </p>
-            <button type="button" data-testid="lobby-scoring" onClick={() => setScoreOpen(true)}>
-              Scoring…
-            </button>
-            <p className="quiet">
-              Core combo {lobbyRules.coreCombo} · mix combo {lobbyRules.mixCombo}
-              {lobbyRules.attackOnCore ? ' · atk on core' : ''}
-              {lobbyRules.attackOnMix ? ' · atk on mix' : ''}
-            </p>
-          </fieldset>
-        ) : null}
+        <fieldset className="debug-lobby">
+          <legend>Match options</legend>
+          <label className="check-row">
+            <input
+              data-testid="lobby-ancient-endgame"
+              type="checkbox"
+              checked={lobbyRules.ancientEndgame}
+              onChange={(event) => setLobbyRules((current) => ({ ...current, ancientEndgame: event.target.checked }))}
+            />
+            Ancient endgame
+          </label>
+          <p className="quiet">
+            {lobbyRules.ancientEndgame
+              ? 'The Ancient is in the deck: draw reveal awards +10, then each seat gets one final turn.'
+              : 'No Ancient — the match ends when the shared deck empties.'}
+          </p>
+          {debugPreview ? (
+            <>
+              <label>
+                Sequential games
+                <input
+                  data-testid="lobby-parallel"
+                  type="number"
+                  min={1}
+                  max={256}
+                  value={queue}
+                  onChange={(event) => setQueue(Math.max(1, Math.min(256, Number(event.target.value) || 1)))}
+                />
+              </label>
+              <p className="quiet">
+                Plays one live match at a time. When a match ends, the next seed starts automatically until the queue is empty (max 256).
+              </p>
+              <button type="button" data-testid="lobby-scoring" onClick={() => setScoreOpen(true)}>
+                Scoring…
+              </button>
+              <p className="quiet">
+                Core combo {lobbyRules.coreCombo} · mix combo {lobbyRules.mixCombo}
+                {lobbyRules.attackOnCore ? ' · atk on core' : ''}
+                {lobbyRules.attackOnMix ? ' · atk on mix' : ''}
+                {lobbyRules.ancientEndgame ? ' · Ancient on' : ' · Ancient off'}
+              </p>
+            </>
+          ) : null}
+        </fieldset>
         <p className="quiet">
           {debugPreview
             ? 'Debug seed detected. Seat strats apply to every simulated match.'

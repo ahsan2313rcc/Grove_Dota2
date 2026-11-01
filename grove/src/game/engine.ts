@@ -64,13 +64,16 @@ export function createGame(opts: {
   mode?: 'hotseat' | 'ai' | 'online'
   names?: [string, string]
   seats?: SeatSpec[]
+  /** Override The Ancient endgame; defaults to current score rules. */
+  ancientEndgame?: boolean
 }): Game {
   const seats = opts.seats ?? legacySeats(opts.mode ?? 'hotseat', opts.names)
   if (seats.length < 2 || seats.length > 8) throw new Error('Grove seats 2 to 8 players.')
   const humans = seats.filter((seat) => !seat.ai).length
   const mode: 'hotseat' | 'ai' | 'online' =
     opts.mode === 'online' ? 'online' : humans >= 2 ? 'hotseat' : 'ai'
-  let state = blank(opts.seed ?? (Date.now() % 100000), mode, seats)
+  const ancientEnabled = opts.ancientEndgame ?? getScoreRules().ancientEndgame
+  let state = blank(opts.seed ?? (Date.now() % 100000), mode, seats, ancientEnabled)
   const cards: CardInst[] = []
   for (const hero of HEROES) {
     const made = makeCard(state, hero.id, 'hero')
@@ -98,7 +101,7 @@ export function createGame(opts: {
   state = fillPile(state, 'towers')
   // Opening deal without The Ancient so the final round cannot fire before turn 1.
   for (let id = 0; id < seats.length; id += 1) state = takeDraw(state, id, 3)
-  {
+  if (ancientEnabled) {
     const made = makeCard(state, ANCIENT_ID, 'ancient')
     state = made[0]
     const mixed = shuffle(state, [...state.deck, made[1]])
@@ -138,7 +141,7 @@ function fillPile(state: Game, pile: 'runes' | 'neutrals' | 'towers'): Game {
   return { ...shuffled[0], [pile]: shuffled[1] }
 }
 
-function blank(seed: number, mode: 'hotseat' | 'ai' | 'online', seats: SeatSpec[]): Game {
+function blank(seed: number, mode: 'hotseat' | 'ai' | 'online', seats: SeatSpec[], ancientEnabled = true): Game {
   const player = (id: PlayerId, name: string, ai: boolean, strat: AiStrat): Player => ({
     id,
     name,
@@ -212,6 +215,7 @@ function blank(seed: number, mode: 'hotseat' | 'ai' | 'online', seats: SeatSpec[
     medusaHold: [],
     infests: [],
     ancient: null,
+    ancientEnabled,
   }
 }
 

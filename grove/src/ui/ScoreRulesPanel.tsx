@@ -91,6 +91,15 @@ export function ScoreRulesPanel({
         />
         Attack bonus on mixed teams
       </label>
+      <label className="debug-check">
+        <input
+          data-testid="score-ancient-endgame"
+          type="checkbox"
+          checked={draft.ancientEndgame}
+          onChange={(event) => commit({ ...draft, ancientEndgame: event.target.checked })}
+        />
+        Ancient endgame (+10 on draw reveal, then one final turn each)
+      </label>
       <div className="debug-speeds">
         <button type="button" data-testid="score-defaults" onClick={() => commit(DEFAULT_SCORE_RULES)}>
           Defaults

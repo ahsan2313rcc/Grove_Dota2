@@ -33,7 +33,7 @@ Lobby → **Play online (ranked)** → register → Find match. Starting MMR is 
 - **Play the Grove** — you go first against the Grove.
 - **Pass and play** — two people, one screen. The seat is covered between turns.
 
-Add `?mode=ai&seed=58` to deal a known game. Seed `d58` opens debug spectate with balance stats (card point swings, contested cards, avg points/cards per turn). AI seats pick a personality — Balanced, Tempo, Architect, or Spite — and debug stats can filter by strat or mixture. Use parallel games or background batch (up to 1024) from the lobby / debug rail. `?mode=debug&seed=58&batch=4` starts four live AI matches. `npm test` runs the rules engine.
+Add `?mode=ai&seed=58` to deal a known game. Seed `d58` opens debug spectate with balance stats (card point swings, contested cards, avg points/cards per turn). AI seats pick a personality — Balanced, Tempo, Architect, or Spite — and debug stats can filter by strat or mixture. Debug plays **one live match at a time**; queue more games to auto-advance to the next seed when a match ends. `?mode=debug&seed=58` starts a single watched AI match. `npm test` runs the rules engine.
 
 ## Rules
 

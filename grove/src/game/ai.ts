@@ -14,10 +14,10 @@ import {
 import type { Action, AiStrat, CardInst, Game, PlayerId } from './types.ts'
 
 export const AI_STRATS: { id: AiStrat; label: string; blurb: string }[] = [
-  { id: 'balanced', label: 'Balanced', blurb: 'Combos, multi-drops, traps, and Instant interrupts — presses every free edge.' },
-  { id: 'tempo', label: 'Tempo', blurb: 'Floods the board fast, banks terrains, and cuts enemy turns with Instants.' },
-  { id: 'architect', label: 'Architect', blurb: 'Builds fat teams and terrain paths, then cashes out with denial tools.' },
-  { id: 'spite', label: 'Spite', blurb: 'Hunts the seat ahead with traps, counters, and removal.' },
+  { id: 'balanced', label: 'Balanced', blurb: 'Scores first: core combos, multi-drops, traps, and Instant interrupts.' },
+  { id: 'tempo', label: 'Tempo', blurb: 'Floods heroes fast, spends every action, and cuts turns with Chronosphere / Silence.' },
+  { id: 'architect', label: 'Architect', blurb: 'Fills teams and terrain paths before cashing denial — patient but still spends actions.' },
+  { id: 'spite', label: 'Spite', blurb: 'Scores while hunting the seat ahead with traps, counters, and removal.' },
 ]
 
 export const DEFAULT_STRAT: AiStrat = 'balanced'
@@ -72,9 +72,9 @@ export function chooseAiAction(state: Game): Action {
   const core = plans.find((plan) => plan.detail.startsWith('core'))
   const mixed = plans.find((plan) => plan.detail.startsWith('mixed'))
 
-  // Free terrain combos first. Never play a lone terrain.
-  if (mixed) return { type: 'combo', uids: mixed.uids }
+  // Free terrain combos first. Prefer core (reward + same points). Never play a lone terrain.
   if (core) return { type: 'combo', uids: core.uids }
+  if (mixed) return { type: 'combo', uids: mixed.uids }
 
   let best: Action = { type: 'end' }
   let bestScore = evaluate(state, actor, strat) + endBias(state, actor, strat)
@@ -141,7 +141,7 @@ export function chooseAiAction(state: Game): Action {
     for (const team of teams) {
       const packs: (string[] | undefined)[] = [undefined]
       if (card.kind === 'hero' && !isTrapHero(card.defId)) {
-        const mates = heroUids.filter((uid) => uid !== card.uid)
+        const mates = rankMates(state, actor, card.uid, team.id, heroUids)
         // Prefer stuffing the board without exploding the search tree.
         if (mates.length >= 2) packs.push(mates.slice(0, 2))
         for (const mate of mates.slice(0, 3)) packs.push([mate])
@@ -154,6 +154,7 @@ export function chooseAiAction(state: Game): Action {
         if (!moved(state, next)) continue
         let score = evaluate(next, actor, strat)
         score += playBias(state, next, actor, strat, card, team.id, extras?.length ?? 0)
+        if (extras && extras.length > 0) score += 0.35 * extras.length
         if (score > bestScore) {
           bestScore = score
           best = action
@@ -276,19 +277,21 @@ function bestInterrupt(
   strat: AiStrat,
 ): string | null {
   let best: string | null = null
-  let bestValue = strat === 'architect' ? 5.5 : 4.5
+  let bestValue = strat === 'architect' ? 4.2 : 4.0
+  const focus = preferredFoe(state, actor)
+  const scores = state.players.map((player) => scoreState(state, player.id).total)
+  const behind = (scores[actor] ?? 0) + 2 < (scores[focus] ?? 0)
   for (const id of choiceIds) {
     if (id === 'pass') continue
     const uid = id.startsWith('instant:') ? id.slice(8) : id
     const card = state.players[actor]?.hand.find((entry) => entry.uid === uid)
     if (!card) continue
     let value = INTERRUPT_VALUE[card.defId] ?? (display(card.defId).instant ? 3 : 0)
-    if (strat === 'spite') value += 1.5
-    if (strat === 'tempo' && (card.defId === 'faceless_void' || card.defId === 'silencer')) value += 2
+    if (strat === 'spite') value += 1.6
+    if (strat === 'tempo' && (card.defId === 'faceless_void' || card.defId === 'silencer')) value += 2.2
+    if (behind) value += 0.8
     if (value > bestValue) {
       bestValue = value
-      best = id.startsWith('instant:') ? id : `instant:${uid}`
-      // Pending choices already use instant:uid form.
       best = id
     }
   }
@@ -352,9 +355,10 @@ function pendingChoiceWeight(
   if (choiceId.startsWith('mode:immune') || choiceId === 'yes') {
     if (friendly || /immune|fire that ability|play it|for free/i.test(prompt)) weight += 80
   }
-  if (strat === 'spite') weight *= 1.15
-  if (strat === 'architect' && friendly) weight *= 1.1
-  if (strat === 'tempo' && /lose their|discard|destroy|exile/i.test(prompt)) weight *= 1.08
+  if (strat === 'spite') weight *= 1.18
+  if (strat === 'architect' && friendly) weight *= 1.12
+  if (strat === 'architect' && !friendly) weight *= 1.06
+  if (strat === 'tempo' && /lose their|discard|destroy|exile/i.test(prompt)) weight *= 1.12
   return weight
 }
 
@@ -418,27 +422,27 @@ function stuckDiscardUid(state: Game, actor: PlayerId): string | null {
 function endBias(state: Game, actor: PlayerId, strat: AiStrat): number {
   const actions = state.players[actor].actions
   if (actions < 1) return 0
-  // Keep spending actions — ending early is how humans win.
-  if (strat === 'tempo') return -2.1
-  if (strat === 'architect') return -0.85
-  if (strat === 'spite') return -1.35
-  return -1.85
+  // Keep spending actions — ending with spare actions is how seats fall behind.
+  if (strat === 'tempo') return -2.15
+  if (strat === 'architect') return -1.9
+  if (strat === 'spite') return -1.95
+  return -2.0
 }
 
 function drawBias(state: Game, actor: PlayerId, strat: AiStrat): number {
   const hand = state.players[actor].hand
   const playable = hand.filter((card) => card.kind !== 'terrain').length
   const terrains = hand.filter((card) => card.kind === 'terrain').length
-  if (strat === 'tempo') {
-    if (playable === 0) return 1.35
-    if (hand.length <= 2) return 0.7
-    if (hand.length >= 6 && playable >= 2) return -0.55
-    if (playable >= 3) return -0.2
-    return 0.25
-  }
-  if (strat === 'architect') return 1.05 + (hand.length < 5 ? 0.35 : 0) + (terrains >= 2 ? 0.2 : 0)
-  if (strat === 'spite') return 0.35 + (playable === 0 ? 0.6 : 0)
-  return 0.85 + (playable <= 1 ? 0.55 : 0) + (terrains >= 2 ? 0.3 : 0) + (hand.length <= 3 ? 0.25 : 0)
+  const base =
+    0.5 +
+    (playable <= 1 ? 0.65 : 0) +
+    (terrains >= 2 ? 0.3 : 0) +
+    (hand.length <= 3 ? 0.28 : 0) +
+    (hand.length >= 6 && playable >= 2 ? -0.45 : 0)
+  if (strat === 'tempo') return playable === 0 ? 1.35 : base - (playable >= 3 ? 0.2 : 0)
+  if (strat === 'architect') return base + (terrains >= 2 ? 0.2 : 0) - (playable >= 3 ? 0.15 : 0)
+  if (strat === 'spite') return playable === 0 ? 1.15 : base
+  return base
 }
 
 function playBias(
@@ -466,71 +470,48 @@ function playBias(
   const instant = display(card.defId).instant
   const denial = INTERRUPT_VALUE[card.defId] ?? 0
 
-  let bonus = ptsGain * (strat === 'spite' ? 0.35 : 0.75)
-  bonus += extras * (strat === 'tempo' ? 0.55 : 0.4)
+  let bonus = ptsGain * 0.78
+  bonus += extras * 0.48
+  bonus += beforeOppDelta(before, after, actor) * 0.24
 
   const timing = HERO_BY_ID[card.defId]?.timing
   if ((timing === 'cast' || timing === 'instant') && !trap) {
-    // Prefer resolving on-play abilities — autoAll settles prompts so ptsGain already includes impact.
-    bonus += 0.55 + Math.max(0, ptsGain) * 0.2
-    if (strat === 'spite') bonus += beforeOppDelta(before, after, actor) * 0.15
+    bonus += 0.55 + Math.max(0, ptsGain) * 0.22
   }
 
   if (trap && trapOnEnemy) {
-    bonus += strat === 'spite' ? 2.2 : strat === 'tempo' ? 1.4 : 1.6
+    bonus += strat === 'spite' ? 1.95 : 1.55
   } else if (trap) {
-    bonus += 0.35
+    bonus += strat === 'spite' ? 0.45 : 0.3
   }
 
   if (instant && denial >= 6) {
-    // Prefer holding top interrupts unless the play itself is the interrupt effect on our turn.
-    if (card.defId === 'faceless_void' || card.defId === 'silencer') bonus += strat === 'tempo' ? 1.8 : 1.1
-    else if (card.defId === 'nyx_assassin') bonus -= 0.8 // keep for counters
-    else bonus += 0.35
+    if (card.defId === 'faceless_void' || card.defId === 'silencer') {
+      bonus += strat === 'tempo' ? 1.4 : 1.15
+    } else if (card.defId === 'nyx_assassin') {
+      bonus -= 0.75 // keep for counters
+    } else {
+      bonus += 0.35
+    }
   }
 
-  if (strat === 'tempo') {
-    if (kind === 'hero' && !trap) {
-      bonus += 1.15
-      if (teamId !== 'new') bonus += 0.75
-      if (afterHeroes > beforeHeroes) bonus += 0.55
-      if (afterFilled > beforeFilled) bonus += 0.9
-    }
-    if (kind === 'item') bonus += 0.45
-    return bonus
+  if (kind === 'hero' && !trap) {
+    bonus += 0.78
+    if (teamId !== 'new') bonus += 0.92
+    else bonus -= 0.12
+    if (afterHeroes > beforeHeroes) bonus += 0.4
+    if (afterFilled > beforeFilled) bonus += 1.12
   }
+  if (kind === 'item') bonus += 0.45
+  if (kind === 'rune' || kind === 'tower' || kind === 'neutral') bonus += 0.5
+
   if (strat === 'architect') {
     const beforeCombos = before.players[actor].combos.length
     const afterCombos = after.players[actor].combos.length
-    if (kind === 'hero' && !trap) {
-      bonus += 0.55
-      if (teamId !== 'new') bonus += 0.7
-      if (afterHeroes > beforeHeroes) bonus += 0.4
-      if (afterFilled > beforeFilled) bonus += 1.1
-    }
-    if (afterCombos > beforeCombos) bonus += 1.3
-    if (kind === 'item') bonus += 0.25
-    return bonus
+    if (afterCombos > beforeCombos) bonus += 0.65
   }
-  if (strat === 'spite') {
-    const beforeOpp = rivalPts(before, actor)
-    const afterOpp = rivalPts(after, actor)
-    bonus += (beforeOpp - afterOpp) * 0.55
-    if (denial >= 5) bonus += 0.8
-    if (kind === 'item') bonus += 0.55
-    return bonus
-  }
-
-  // Balanced
-  if (kind === 'hero' && !trap) {
-    bonus += 0.7
-    if (teamId !== 'new') bonus += 0.95
-    if (afterFilled > beforeFilled) bonus += 1.15
-    if (afterHeroes > beforeHeroes) bonus += 0.4
-    if (teamId === 'new') bonus -= 0.15
-  }
-  if (kind === 'item') bonus += 0.4
-  if (kind === 'rune' || kind === 'tower' || kind === 'neutral') bonus += 0.5
+  if (strat === 'spite' && denial >= 5) bonus += 0.5
+  if (strat === 'tempo' && kind === 'hero' && !trap) bonus += 0.18
   return bonus
 }
 
@@ -538,10 +519,8 @@ function evaluate(state: Game, actor: PlayerId, strat: AiStrat): number {
   if (state.over) {
     const mine = state.over.scores[actor] ?? 0
     const foe = state.over.scores[preferredFoeFromScores(state.over.scores, actor)] ?? 0
-    if (strat === 'spite') return (mine - foe) * 7
-    if (strat === 'architect') return mine * 4.2 + (mine - foe) * 1.8
-    if (strat === 'tempo') return mine * 4.5 + (mine - foe) * 2.6
-    return mine * 4.3 + (mine - foe) * 3
+    const win = mine > foe ? 80 : mine === foe ? 20 : -40
+    return win + mine * 4.2 + (mine - foe) * 3
   }
 
   const mine = scoreState(state, actor).total
@@ -561,62 +540,52 @@ function evaluate(state: Game, actor: PlayerId, strat: AiStrat): number {
     return sum + player.teams.filter((team) => team.trap?.owner === actor).length
   }, 0)
   const actions = state.players[actor].actions
+  const behind = mine + 3 < foe
 
-  if (strat === 'tempo') {
-    return (
-      mine * 1.75 -
-      foe * 0.85 +
-      heroes * 0.65 +
-      boardShape * 0.3 +
-      filled * 0.95 +
-      nearly * 0.4 +
-      comboPts * 0.55 +
-      instants * 0.25 +
-      enemyTraps * 0.7 +
-      actions * 0.15 +
-      hand.length * 0.04
-    )
-  }
-  if (strat === 'architect') {
-    return (
-      mine * 1.05 -
-      foe * 0.55 +
-      boardShape * 0.32 +
-      filled * 1.05 +
-      nearly * 0.45 +
-      comboPts * 0.7 +
-      terrains * 0.5 +
-      heroes * 0.28 +
-      hand.length * 0.16 +
-      enemyTraps * 0.35
-    )
-  }
-  if (strat === 'spite') {
-    return (
-      mine * 0.85 -
-      foe * 1.85 +
-      instants * 0.45 +
-      traps * 0.55 +
-      enemyTraps * 1.2 +
-      hand.length * 0.1 +
-      filled * 0.25
-    )
-  }
-  return (
+  // Shared chassis; tiny personality tilts so flavors stay distinct without runaway win rates.
+  let score =
     mine * 1.55 -
-    foe * 1.05 +
+    foe * 1.08 +
     boardShape * 0.4 +
-    filled * 1.0 +
+    filled * 1.08 +
     nearly * 0.45 +
-    comboPts * 0.65 +
+    comboPts * 0.72 +
     terrains * 0.4 +
-    instants * 0.3 +
+    instants * 0.32 +
     traps * 0.35 +
     enemyTraps * 0.85 +
     hand.length * 0.12 +
-    heroes * 0.32 +
+    heroes * 0.34 +
     actions * 0.2
-  )
+  if (strat === 'tempo') score += heroes * 0.05 + actions * 0.04
+  if (strat === 'architect') score += filled * 0.04 + terrains * 0.03
+  if (strat === 'spite') score += traps * 0.1 + enemyTraps * 0.12 + (behind ? 0.55 : 0) - foe * 0.05
+  return score
+}
+
+/** Rank silent companions by how well they fit the destination team. */
+function rankMates(state: Game, actor: PlayerId, activeUid: string, teamId: string, heroUids: string[]): string[] {
+  const active = state.players[actor]?.hand.find((card) => card.uid === activeUid)
+  const activeAttr = active ? HERO_BY_ID[active.defId]?.attr : undefined
+  const team = teamId !== 'new' && teamId !== '' ? teamById(state, teamId)?.team : null
+  const scored = heroUids
+    .filter((uid) => uid !== activeUid)
+    .map((uid) => {
+      const card = state.players[actor]?.hand.find((entry) => entry.uid === uid)
+      if (!card) return { uid, fit: -1 }
+      const attr = HERO_BY_ID[card.defId]?.attr
+      let fit = 0
+      if (attr && activeAttr && attr === activeAttr) fit += 3
+      if (team && attr) {
+        const same = team.heroes.filter((hero) => HERO_BY_ID[hero.defId]?.attr === attr).length
+        fit += same * 2
+      }
+      if (team && team.heroes.length >= 2 && team.heroes.length < 5) fit += 1.5
+      if (isTrapHero(card.defId)) fit -= 4
+      return { uid, fit }
+    })
+    .sort((a, b) => b.fit - a.fit)
+  return scored.map((entry) => entry.uid)
 }
 
 function rivalPts(state: Game, actor: PlayerId): number {

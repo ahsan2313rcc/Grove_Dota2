@@ -609,6 +609,14 @@ export function revealAncient(
   actor: PlayerId | null,
   card?: CardInst,
 ): Game {
+  if (!state.ancientEnabled) {
+    // Without endgame, treat a stray Ancient as an inert exile trophy.
+    if (!card) return state
+    return log(
+      { ...state, exile: [...state.exile.filter((entry) => entry.uid !== card.uid), card] },
+      `${display(card.defId).name} is set aside (Ancient endgame off).`,
+    )
+  }
   if (state.ancient) return state
   let next = stripAncientZones(state, card?.uid)
   const bonusSeat = source === 'draw' ? actor : null

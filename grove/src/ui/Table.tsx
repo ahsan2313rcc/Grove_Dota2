@@ -33,6 +33,7 @@ export function Table({
   debugRunCount = 1,
   debugFinished = 0,
   debugRunningBatch = false,
+  debugQueueLeft = 0,
   debugSummary,
   debugReports = [],
   debugStratFilter = ALL_STRAT_FILTER,
@@ -42,6 +43,7 @@ export function Table({
   onDebugBatchSize,
   onDebugFocus,
   onDebugRunBatch,
+  onDebugPlayNext,
   onDebugStratFilter,
   onDebugReset,
   onlineSeat = null,
@@ -59,6 +61,7 @@ export function Table({
   debugRunCount?: number
   debugFinished?: number
   debugRunningBatch?: boolean
+  debugQueueLeft?: number
   debugSummary?: BalanceSummary
   debugReports?: MatchReport[]
   debugStratFilter?: StratFilter
@@ -68,6 +71,7 @@ export function Table({
   onDebugBatchSize?: (size: number) => void
   onDebugFocus?: (index: number) => void
   onDebugRunBatch?: () => void
+  onDebugPlayNext?: () => void
   onDebugStratFilter?: (filter: StratFilter) => void
   onDebugReset?: () => void
   /** When set, this seat is the networked player (no hotseat handoff). */
@@ -189,6 +193,7 @@ export function Table({
             runCount={debugRunCount}
             finishedCount={debugFinished}
             runningBatch={debugRunningBatch}
+            queueLeft={debugQueueLeft}
             summary={emptySummary}
             reports={debugReports}
             stratFilter={debugStratFilter}
@@ -198,6 +203,7 @@ export function Table({
             onBatchSize={onDebugBatchSize!}
             onFocus={onDebugFocus!}
             onRunBatch={onDebugRunBatch!}
+            onPlayNext={onDebugPlayNext}
             onStratFilter={onDebugStratFilter!}
             onReset={onDebugReset!}
           />
@@ -501,6 +507,7 @@ export function Table({
             runCount={debugRunCount}
             finishedCount={debugFinished}
             runningBatch={debugRunningBatch}
+            queueLeft={debugQueueLeft}
             summary={emptySummary}
             reports={debugReports}
             stratFilter={debugStratFilter}
@@ -510,6 +517,7 @@ export function Table({
             onBatchSize={onDebugBatchSize!}
             onFocus={onDebugFocus!}
             onRunBatch={onDebugRunBatch!}
+            onPlayNext={onDebugPlayNext}
             onStratFilter={onDebugStratFilter!}
             onReset={onDebugReset!}
           />

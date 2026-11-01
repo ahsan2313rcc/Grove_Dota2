@@ -104,7 +104,15 @@ describe('turn', () => {
     expect(raw.players[0].hand.length).toBe(5)
     expect(raw.players[1].hand.length).toBe(3)
     expect(raw.players[1].actions).toBe(0)
+    expect(raw.ancientEnabled).toBe(true)
     expect(raw.deck.some((card) => card.defId === 'ancient') || raw.ancient !== null).toBe(true)
+  })
+
+  it('can omit The Ancient when endgame is disabled', () => {
+    const raw = createGame({ seed: 2, mode: 'hotseat', names: ['Radiant', 'Dire'], ancientEndgame: false })
+    expect(raw.ancientEnabled).toBe(false)
+    expect(raw.deck.some((card) => card.defId === 'ancient')).toBe(false)
+    expect(raw.ancient).toBeNull()
   })
 
   it('draws 2 at the start of a new turn', () => {

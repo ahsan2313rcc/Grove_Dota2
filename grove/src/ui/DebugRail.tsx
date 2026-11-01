@@ -23,10 +23,11 @@ export function DebugRail({
   speed,
   view,
   batchSize,
-  focus,
+  focus: _focus,
   runCount,
   finishedCount,
   runningBatch,
+  queueLeft = 0,
   summary,
   reports,
   stratFilter,
@@ -34,8 +35,9 @@ export function DebugRail({
   onStep,
   onView,
   onBatchSize,
-  onFocus,
+  onFocus: _onFocus,
   onRunBatch,
+  onPlayNext,
   onStratFilter,
   onReset,
 }: {
@@ -49,6 +51,7 @@ export function DebugRail({
   runCount: number
   finishedCount: number
   runningBatch: boolean
+  queueLeft?: number
   summary: BalanceSummary
   reports: MatchReport[]
   stratFilter: StratFilter
@@ -58,10 +61,13 @@ export function DebugRail({
   onBatchSize: (size: number) => void
   onFocus: (index: number) => void
   onRunBatch: () => void
+  onPlayNext?: () => void
   onStratFilter: (filter: StratFilter) => void
   onReset: () => void
 }) {
   const active = game?.players[game.active]
+  void _focus
+  void _onFocus
 
   return (
     <aside className="debug-rail" data-testid="debug-rail">
@@ -69,8 +75,8 @@ export function DebugRail({
         <p className="eyebrow">Debug balance</p>
         <h2>d{seed}</h2>
         <p className="quiet">
-          {runningBatch
-            ? `Batch running… ${finishedCount}/${runCount}`
+          {queueLeft > 0
+            ? `${queueLeft} queued · ${finishedCount} done`
             : game?.over
               ? 'Match over'
               : stuck
@@ -102,40 +108,38 @@ export function DebugRail({
         <button type="button" data-testid="debug-step" disabled={!game || !!game.over || speed !== 0 || view === 'stats'} onClick={onStep}>
           Step
         </button>
-        <button type="button" data-testid="debug-reset" disabled={runningBatch} onClick={onReset}>
+        <button type="button" data-testid="debug-reset" onClick={onReset}>
           Reset
         </button>
       </div>
 
       <div className="debug-block">
-        <h3>Parallel runs</h3>
+        <h3>Sequential queue</h3>
         <div className="debug-batch">
           <label>
-            Games
+            Add
             <input
               data-testid="debug-batch-size"
               type="number"
               min={1}
-              max={1024}
+              max={256}
               value={batchSize}
-              onChange={(event) => onBatchSize(Math.max(1, Math.min(1024, Number(event.target.value) || 1)))}
+              onChange={(event) => onBatchSize(Math.max(1, Math.min(256, Number(event.target.value) || 1)))}
             />
           </label>
-          <button type="button" className="primary" data-testid="debug-run-batch" disabled={runningBatch} onClick={onRunBatch}>
-            {runningBatch ? 'Running…' : `Run ${batchSize} in background`}
+          <button type="button" className="primary" data-testid="debug-run-batch" onClick={onRunBatch}>
+            Queue {batchSize}
           </button>
+          {onPlayNext ? (
+            <button type="button" data-testid="debug-play-next" onClick={onPlayNext}>
+              Next game
+            </button>
+          ) : null}
         </div>
-        {runCount > 1 && !runningBatch && game ? (
-          <div className="debug-focus">
-            <span className="quiet">Watching</span>
-            <select data-testid="debug-focus" value={focus} onChange={(event) => onFocus(Number(event.target.value))}>
-              {Array.from({ length: Math.min(runCount, 8) }, (_, index) => (
-                <option key={index} value={index}>Game {index + 1} · seed {seed + index}</option>
-              ))}
-            </select>
-          </div>
-        ) : null}
-        <p className="quiet">{finishedCount} finished · {summary.matches} traced · max 1024</p>
+        <p className="quiet">
+          One live match at a time. {queueLeft > 0 ? `${queueLeft} waiting after this one. ` : ''}
+          {finishedCount} finished · {summary.matches} traced · {runCount} in flight{runningBatch ? ' · advancing' : ''}
+        </p>
       </div>
 
       <div className="debug-block">
