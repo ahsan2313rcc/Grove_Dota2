@@ -769,6 +769,7 @@ export function runMatchFast(seed: number, seats: number, strats?: AiStrat[], gu
       continue
     }
     if (game.pending) {
+      // AI seats should auto-resolve in settle; leftover pending is a soft-lock — clear it.
       game = { ...game, pending: null, log: [...game.log, 'Forced past a stuck choice.'] }
       continue
     }
@@ -834,7 +835,7 @@ function shapeCountsFor(game: Game, playerId: number): ShapeCounts {
   for (const team of player.teams) {
     const scored = scoreTeam(game, team)
     const shape = teamShape(scored.why)
-    const size = team.heroes.reduce((sum, hero) => sum + (hero.defId === 'meepo' ? 2 : 1), 0)
+    const size = team.heroes.length
     const mixAttrs = mixAttrCount(scored.why)
     const sameAttr = maxSameAttrStackFor(game, team)
 

@@ -1,6 +1,6 @@
 import { display } from './catalog.ts'
 import { apply, comboPlans, needsTeam, teamsFor } from './engine.ts'
-import { preferredFoe, preferredFoeFromScores, scoreState, scoreTeam } from './flow.ts'
+import { drawsLocked, preferredFoe, preferredFoeFromScores, scoreState, scoreTeam } from './flow.ts'
 import type { Action, AiStrat, Game, PlayerId } from './types.ts'
 
 export const AI_STRATS: { id: AiStrat; label: string; blurb: string }[] = [
@@ -41,7 +41,9 @@ export function chooseAiAction(state: Game): Action {
   let bestScore = evaluate(state, actor, strat) + endBias(state, actor, strat)
   const seen = new Set<string>()
 
-  for (const card of state.players[actor].hand) {
+  const hand = state.players[actor].hand
+  const heroUids = hand.filter((card) => card.kind === 'hero').map((card) => card.uid)
+  for (const card of hand) {
     if (card.kind === 'setting') continue
     if (seen.has(card.defId)) continue
     seen.add(card.defId)
@@ -49,22 +51,35 @@ export function chooseAiAction(state: Game): Action {
     if (!instant && state.players[actor].actions < 1) continue
     const teams = needsTeam(card.defId, card.kind) ? teamsFor(state, card.uid).filter((team) => team.ok) : [{ id: 'new', ok: true }]
     for (const team of teams) {
-      const action: Action = { type: 'play', uid: card.uid, team: team.id }
-      const next = apply({ ...state, autoAll: true }, action)
-      if (!moved(state, next)) continue
-      let score = evaluate(next, actor, strat)
-      score += playBias(state, next, actor, strat, card.kind, team.id)
-      if (score > bestScore) {
-        bestScore = score
-        best = action
+      const packs: (string[] | undefined)[] = [undefined]
+      if (card.kind === 'hero') {
+        const mates = heroUids.filter((uid) => uid !== card.uid)
+        for (const mate of mates.slice(0, 4)) packs.push([mate])
+        if (mates.length >= 2) packs.push(mates.slice(0, 2))
+      }
+      for (const extras of packs) {
+        const action: Action = extras
+          ? { type: 'play', uid: card.uid, team: team.id, extras }
+          : { type: 'play', uid: card.uid, team: team.id }
+        const next = apply({ ...state, autoAll: true }, action)
+        if (!moved(state, next)) continue
+        let score = evaluate(next, actor, strat)
+        score += playBias(state, next, actor, strat, card.kind, team.id)
+        if (extras?.length) score += 0.35 * extras.length
+        if (score > bestScore) {
+          bestScore = score
+          best = action
+        }
       }
     }
   }
 
   if (state.players[actor].actions > 0 && state.deck.length > 0 && state.players[actor].hand.length < state.players[actor].handLimit) {
     const next = apply({ ...state, autoAll: true }, { type: 'draw' })
-    const score = evaluate(next, actor, strat) + drawBias(state, actor, strat)
-    if (score > bestScore) best = { type: 'draw' }
+    if (moved(state, next)) {
+      const score = evaluate(next, actor, strat) + drawBias(state, actor, strat)
+      if (score > bestScore) best = { type: 'draw' }
+    }
   }
 
   // Softlock escape: hand full of lone settings / Poison-Nova-locked items — pitch one and dig.
@@ -88,8 +103,8 @@ function stuckDiscardUid(state: Game, actor: PlayerId): string | null {
     })
   })
   if (playable) return null
-  // Only pitch when the hand is clogged (no room to draw) or the deck is empty.
-  if (hand.length < state.players[actor].handLimit && state.deck.length > 0) return null
+  // Only pitch when the hand is clogged, draws are locked, or the deck is empty.
+  if (hand.length < state.players[actor].handLimit && state.deck.length > 0 && !drawsLocked(state, actor)) return null
 
   // Combo plans already ran — leftover settings cannot be played alone.
   const setting = hand.find((card) => card.kind === 'setting')

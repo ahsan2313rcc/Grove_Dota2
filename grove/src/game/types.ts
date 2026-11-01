@@ -3,7 +3,7 @@ export type Attr = 'STR' | 'AGI' | 'INT' | 'UNI'
 export type Range = 'Melee' | 'Ranged'
 export type SettingKind = 'river' | 'jungle' | 'lane'
 export type CardKind = 'hero' | 'item' | 'setting' | 'rune' | 'neutral' | 'tower'
-export type Timing = 'cast' | 'aura' | 'instant'
+export type Timing = 'cast' | 'aura' | 'instant' | 'trap'
 export type AiStrat = 'balanced' | 'tempo' | 'architect' | 'spite'
 
 export interface CardInst {
@@ -44,6 +44,13 @@ export interface BoardHero {
   castTurn: number
 }
 
+/** Face-down trap hero attached to a team (does not count as a board hero). */
+export interface TeamTrap {
+  uid: string
+  defId: string
+  owner: PlayerId
+}
+
 export interface Team {
   id: string
   heroes: BoardHero[]
@@ -51,7 +58,9 @@ export interface Team {
   noEnter: Timed | null
   noLeave: Timed | null
   glyph: Timed | null
+  /** @deprecated legacy Techies mine; prefer `trap`. */
   mine: CardInst | null
+  trap: TeamTrap | null
 }
 
 export interface Combo {
@@ -111,10 +120,14 @@ export interface CastResume {
 export type Resume =
   | CastResume
   | { kind: 'save'; uid: string; cause: string; force: boolean }
-  | { kind: 'counter'; uid: string; team: string; actor: PlayerId }
+  | { kind: 'counter'; uid: string; team: string; actor: PlayerId; extras?: string[] }
   | { kind: 'counter-combo'; uids: string[]; actor: PlayerId }
   | { kind: 'pugna'; cast: CastResume }
+  | { kind: 'venomancer'; cast: CastResume }
+  | { kind: 'nyx-ability'; cast: CastResume; heroUid: string }
+  | { kind: 'free-play-offer'; uid: string; actor: PlayerId }
   | { kind: 'torment'; heroUid: string; cast: CastResume | null }
+  | { kind: 'slark-trap'; owner: PlayerId; card: CardInst }
   | { kind: 'slark'; player: PlayerId; n: number }
   | { kind: 'limit'; player: PlayerId; then: 'end' | 'none' }
   | { kind: 'sand'; players: PlayerId[]; index: number }
@@ -126,8 +139,12 @@ export type Resume =
   | { kind: 'wyvern'; heroes: string[]; actor: PlayerId }
   | { kind: 'bristle'; actor: PlayerId }
   | { kind: 'mail'; actor: PlayerId }
+  | { kind: 'pa'; rest: PlayerId[] }
   | { kind: 'tinker'; actor: PlayerId; cardUid: string }
   | { kind: 'alive'; uid: string; cast: CastResume }
+  | { kind: 'kez-trap'; teamId: string; trap: TeamTrap; card: CardInst }
+  | { kind: 'shaman-trap'; trap: TeamTrap; card: CardInst }
+  | { kind: 'undying-save'; uid: string; cause: string; force: boolean; by: PlayerId | null }
 
 export interface Pending {
   actor: PlayerId
@@ -145,6 +162,8 @@ export interface StackDestroy {
   force: boolean
   window: boolean
   by: PlayerId | null
+  /** Board hero that caused the destroy (for Tormentor revenge). */
+  sourceUid?: string | null
 }
 
 export interface Phased {
@@ -201,10 +220,12 @@ export interface Game {
   silence: Timed | null
   naga: Timed | null
   lockPlay: Timed | null
+  /** Shiva: opponents of caster cannot fire/reactivate hero abilities. */
+  frost: Timed | null
   troll: { player: PlayerId; turn: number } | null
   viper: { uid: string; owner: PlayerId; fromTurn: number }[]
   maledict: { player: PlayerId; turn: number }[]
-  bonds: { teamId: string; turn: number }[]
+  bonds: { teamId: string; turn: number; caster: PlayerId }[]
   soulbind: { a: string; b: string; turn: number }[]
   sdBan: { uid: string; sdUid: string; caster: PlayerId }[]
   phased: Phased[]
@@ -215,13 +236,38 @@ export interface Game {
   pendingDraws: { player: PlayerId; n: number }[]
   limbo: CardInst[]
   echoes: CastResume[]
+  /** Nested stolen/copied fires cannot chain-steal (anti-loop). */
+  stolenCast: boolean
+  /** Refresher: this seat takes another turn after the current one ends. */
+  extraTurn: PlayerId | null
+  /** Axe: opponents of caster cannot draw from the deck. */
+  noDraw: Timed | null
+  /** Necrophos: opponents cannot play heroes of this attribute. */
+  attrBan: { attr: Attr; caster: PlayerId } | null
+  /** Amplify / free-item grants remaining this turn. */
+  freeItems: number
+  /** Clinkz: item cards that may be played for free from exile this turn. */
+  clinkzExile: CardInst[]
+  /** Dark Seer: until end of turn, destroyed enemies are stolen instead. */
+  darkSeer: { actor: PlayerId; turn: number } | null
+  /** Primal Beast: controller may play items as instants until their next turn. */
+  primalItems: Timed | null
+  /** Card uids that may be played for free this turn (Heart, reward offers, etc.). */
+  freePlay: string[]
+  /** Most recently played hero card (for Spirit Breaker). */
+  lastPlayedHero: { uid: string; defId: string; player: PlayerId; turn: number } | null
+  /** Medusa: full exiled teams held until she leaves. */
+  medusaHold: { medusaUid: string; owner: PlayerId; cards: CardInst[] }[]
+  /** Lifestealer Infest: return LS when host is destroyed. */
+  infests: { ls: CardInst; hostUid: string; homeTeamId: string; owner: PlayerId }[]
 }
 
 export type Action =
   | { type: 'ready' }
   | { type: 'draw' }
   | { type: 'end' }
-  | { type: 'play'; uid: string; team: string }
+  /** `uid` is the active hero (fires). `extras` are silent companions into the same team. */
+  | { type: 'play'; uid: string; team: string; extras?: string[] }
   | { type: 'combo'; uids: string[] }
   | { type: 'move'; uid: string; team: string }
   | { type: 'morph'; uid: string }

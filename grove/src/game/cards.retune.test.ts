@@ -1,124 +1,68 @@
 import { describe, expect, it } from 'vitest'
-import { HERO_BY_ID } from './catalog.ts'
-import { cast } from './casts.ts'
+import { HERO_BY_ID, ITEM_BY_ID, TRAP_IDS } from './catalog.ts'
+import { preferredFoe, scoreState } from './flow.ts'
 import { createGame } from './engine.ts'
-import { allLocs, preferredFoe, rangeOf, scoreState } from './flow.ts'
 
 describe('card retunes', () => {
-  it('updates Medusa, Dragon Knight, Lifestealer, and Shadow Shaman catalog text', () => {
-    expect(HERO_BY_ID.medusa?.text).toMatch(/Exile target enemy team/i)
-    expect(HERO_BY_ID.dragon_knight?.timing).toBe('cast')
-    expect(HERO_BY_ID.dragon_knight?.text).toMatch(/Search the deck for a setting/i)
-    expect(HERO_BY_ID.lifestealer?.text).toMatch(/fire its ability immediately/i)
-    expect(HERO_BY_ID.shadow_shaman?.text).toMatch(/You may destroy Shadow Shaman/i)
+  it('locks sheet picks for Oracle, Puck, Jakiro, Meepo, KotL, Batrider, Zeus, Sniper', () => {
+    expect(HERO_BY_ID.oracle?.timing).toBe('instant')
+    expect(HERO_BY_ID.oracle?.text).toMatch(/Exile target allied hero/i)
+    expect(HERO_BY_ID.puck?.timing).toBe('aura')
+    expect(HERO_BY_ID.puck?.text).toMatch(/cannot enter or leave teams/i)
+    expect(HERO_BY_ID.jakiro?.text).toMatch(/cannot play hero cards/i)
+    expect(HERO_BY_ID.meepo?.text).toMatch(/\+1 point for each setting combo/i)
+    expect(HERO_BY_ID.keeper_of_the_light?.text).toMatch(/Reactivate the ability/i)
+    expect(HERO_BY_ID.batrider?.text).toMatch(/top of the deck/i)
+    expect(HERO_BY_ID.zeus?.text).toMatch(/Remove all trap cards/i)
+    expect(HERO_BY_ID.sniper?.text).toMatch(/Reveal each opponent's hand/i)
   })
 
-  it('no longer forces Dragon Knight to Ranged via aura', () => {
-    const game = createGame({
-      seed: 3,
-      seats: [
-        { name: 'A', ai: false },
-        { name: 'B', ai: false },
-      ],
-    })
-    const hero = {
-      uid: 'x',
-      defId: 'dragon_knight',
-      owner: 0 as const,
-      controller: 0 as const,
-      enteredTurn: 0,
-      enteredSeq: 0,
-      attrMode: 'base' as const,
-      attrSet: [],
-      gained: null,
-      token: false,
-      roshan: false,
-      rupture: false,
-      omni: false,
-      abaddon: false,
-      shield: null,
-      ward: null,
-      hidden: null,
-      bkb: null,
-      muted: false,
-      dawn: null,
-      wk: false,
-      refract: false,
-      held: null,
-      castTurn: -1,
-    }
-    expect(rangeOf(hero)).toBe('Melee')
-    expect(game.players.length).toBe(2)
+  it('keeps Lich primary (adjacent destroys) pending alt decision', () => {
+    expect(HERO_BY_ID.lich?.text).toMatch(/adjacent teams/i)
   })
 
-  it('Medusa Stone Gaze exiles an enemy team', () => {
-    let game = createGame({
-      seed: 21,
-      seats: [
-        { name: 'A', ai: true },
-        { name: 'B', ai: true },
-      ],
-    })
-    const enemyHero = game.players[1]!.hand.find((card) => card.kind === 'hero')
-    expect(enemyHero).toBeTruthy()
-    // Park a solo enemy team.
-    game = {
-      ...game,
-      players: game.players.map((player, id) => {
-        if (id !== 1) return player
-        return {
-          ...player,
-          hand: player.hand.filter((card) => card.uid !== enemyHero!.uid),
-          teams: [{
-            id: 't-enemy',
-            heroes: [{
-              uid: enemyHero!.uid,
-              defId: enemyHero!.defId,
-              owner: 1,
-              controller: 1,
-              enteredTurn: game.turn,
-              enteredSeq: game.seq,
-              attrMode: 'base',
-              attrSet: [],
-              gained: null,
-              token: false,
-              roshan: false,
-              rupture: false,
-              omni: false,
-              abaddon: false,
-              shield: null,
-              ward: null,
-              hidden: null,
-              bkb: null,
-              muted: false,
-              dawn: null,
-              wk: false,
-              refract: false,
-              held: null,
-              castTurn: -1,
-            }],
-            gaze: false,
-            noEnter: null,
-            noLeave: null,
-            glyph: null,
-            mine: null,
-          }],
-        }
-      }),
-    }
-    const medusa = game.players[0]!.hand.find((card) => card.defId === 'medusa')
-      ?? { uid: 'med', defId: 'medusa', kind: 'hero' as const }
-    game = cast(game, {
-      kind: 'cast',
-      actor: 0,
-      sourceUid: medusa.uid,
-      defId: 'medusa',
-      picked: ['team:t-enemy'],
-      steps: 1,
-      armed: true,
-    })
-    expect(allLocs(game).some((loc) => loc.hero.uid === enemyHero!.uid)).toBe(false)
-    expect(game.exile.some((card) => card.uid === enemyHero!.uid)).toBe(true)
+  it('marks trap heroes and auto-trigger wording', () => {
+    expect(TRAP_IDS.has('techies')).toBe(true)
+    expect(TRAP_IDS.has('riki')).toBe(true)
+    expect(TRAP_IDS.has('kez')).toBe(true)
+    expect(TRAP_IDS.has('monkey_king')).toBe(true)
+    expect(TRAP_IDS.has('templar_assassin')).toBe(true)
+    expect(TRAP_IDS.has('ogre_magi')).toBe(true)
+    expect(TRAP_IDS.has('slark')).toBe(true)
+    expect(TRAP_IDS.has('bounty_hunter')).toBe(true)
+    expect(TRAP_IDS.has('shadow_shaman')).toBe(true)
+    expect(HERO_BY_ID.techies?.text).toMatch(/Play face down on any team/i)
+    expect(HERO_BY_ID.techies?.text).toMatch(/enters that team or that team/i)
+  })
+
+  it('adds anti-loop reminder on steal / copy / reactivate cards', () => {
+    expect(HERO_BY_ID.lifestealer?.text).toMatch(/Stolen and copied abilities cannot/i)
+    expect(HERO_BY_ID.vengeful_spirit?.text).toMatch(/Stolen and copied abilities cannot/i)
+    expect(HERO_BY_ID.enchantress?.text).toMatch(/Stolen and copied abilities cannot/i)
+    expect(ITEM_BY_ID.satanic?.text).toMatch(/Stolen and copied abilities cannot/i)
+    expect(ITEM_BY_ID.blink?.text).toMatch(/Stolen and copied abilities cannot/i)
+  })
+
+  it('updates Shadow Blade and Refresher to sheet text', () => {
+    expect(ITEM_BY_ID.shadow_blade?.instant).toBe(true)
+    expect(ITEM_BY_ID.shadow_blade?.text).toMatch(/cannot be targeted this turn/i)
+    expect(ITEM_BY_ID.refresher?.text).toMatch(/extra turn/i)
+  })
+
+  it('retunes key board / hand / item lines from the sheet', () => {
+    expect(HERO_BY_ID.dragon_knight?.text).toMatch(/Reveal the top 5/i)
+    expect(HERO_BY_ID.dark_willow?.text).toMatch(/sacrifices a hero/i)
+    expect(HERO_BY_ID.phantom_assassin?.timing).toBe('aura')
+    expect(HERO_BY_ID.phantom_assassin?.text).toMatch(/exile it instead/i)
+    expect(HERO_BY_ID.luna?.text).toMatch(/play a Jungle combo/i)
+    expect(HERO_BY_ID.juggernaut?.text).toMatch(/immune/i)
+    expect(HERO_BY_ID.storm_spirit?.text).toMatch(/up to 2/i)
+    expect(HERO_BY_ID.visage?.timing).toBe('cast')
+    expect(HERO_BY_ID.visage?.text).toMatch(/discard up to 2/i)
+    expect(HERO_BY_ID.weaver?.text).toMatch(/Shuffle the grave into the deck/i)
+    expect(ITEM_BY_ID.shivas?.instant).toBe(true)
+    expect(ITEM_BY_ID.greaves?.text).toMatch(/draw 5/i)
+    expect(ITEM_BY_ID.assault?.text).toMatch(/\+2 actions/i)
   })
 
   it('preferredFoe tracks the seat above in live scores', () => {

@@ -4,6 +4,8 @@ export interface ScoreBody {
   attrs: Attr[]
   range: Range | null
   count: number
+  /** When false, body still fills attr / size bonuses but grants no flat hero points (neutrals). */
+  scoresFlat?: boolean
 }
 
 /** Tunable scoring used by the table and debug rail. Indices are 1-based sizes (slot 0 unused). */
@@ -98,7 +100,8 @@ export function scoreBodies(bodies: ScoreBody[], rules: ScoreRules = current): {
     }
   }
 
-  const base = expanded.length * rules.heroPoints
+  const flatBodies = expanded.filter((body) => body.scoresFlat !== false)
+  const base = flatBodies.length * rules.heroPoints
   const attack = attackBonus(expanded, rules)
   if (allHaveAttr && union.size === 1) {
     const color = [...union][0] ?? 'STR'
