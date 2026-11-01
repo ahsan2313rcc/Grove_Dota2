@@ -30,6 +30,12 @@ export type SeatCount = 2 | 3 | 4 | 5 | 6 | 7 | 8
 
 const SEAT_OPTIONS: SeatCount[] = [2, 3, 4, 5, 6, 7, 8]
 const BASE_TICK_MS = 420
+/** Max background / sequential sims from lobby or debug rail. */
+const MAX_QUEUE = 1024
+
+function randomSeed(): number {
+  return (Math.floor(Math.random() * 1_000_000_000) || Math.floor(Date.now() % 1_000_000_000) || 1)
+}
 
 type LobbySeat = { name: string; kind: 'human' | 'ai'; strat: AiStrat }
 
@@ -50,13 +56,14 @@ function defaultSeats(count: SeatCount): LobbySeat[] {
   })
 }
 
-function parseSeedInput(raw: string): { seed: number; debug: boolean } | null {
+function parseSeedInput(raw: string): number | null {
   const text = raw.trim()
   if (!text) return null
-  const debug = /^d(\d+)$/i.exec(text)
-  if (debug) return { seed: Math.floor(Number(debug[1])) || 1, debug: true }
+  // Legacy d58 → 58 (debug is now a lobby checkbox).
+  const legacy = /^d(\d+)$/i.exec(text)
+  if (legacy) return Math.floor(Number(legacy[1])) || 1
   const parsed = Number(text)
-  if (Number.isFinite(parsed)) return { seed: Math.floor(parsed) || 1, debug: false }
+  if (Number.isFinite(parsed)) return Math.floor(parsed) || 1
   return null
 }
 
@@ -164,9 +171,8 @@ function readStart(): { debug: boolean; seed: number; seats: SeatCount; runs: Li
   const mode = params.get('mode')
   if (mode !== 'ai' && mode !== 'hotseat' && mode !== 'debug') return null
   const seedParam = params.get('seed') ?? ''
-  const parsed = parseSeedInput(/^d\d+$/i.test(seedParam) ? seedParam : seedParam ? String(Number(seedParam) || 1) : '')
-  const seed = parsed?.seed ?? (Math.floor(Date.now() % 100000) || 1)
-  const debug = mode === 'debug' || !!parsed?.debug
+  const seed = parseSeedInput(seedParam) ?? randomSeed()
+  const debug = mode === 'debug'
   const seatRaw = Number(params.get('seats'))
   const count: SeatCount = SEAT_OPTIONS.includes(seatRaw as SeatCount) ? seatRaw as SeatCount : 2
   const view: DebugView = params.get('view') === 'stats' ? 'stats' : 'watch'
@@ -363,7 +369,7 @@ export default function App() {
   async function runFastQueue(fromSeed: number, count: number, seats: SeatCount, strats: AiStrat[]) {
     const token = ++queueToken.current
     watchAdvanceRef.current += 1
-    const total = Math.max(1, Math.min(256, count))
+    const total = Math.max(1, Math.min(MAX_QUEUE, count))
     setRunningFast(true)
     setDebugView('stats')
     watchRef.current = false
@@ -412,16 +418,16 @@ export default function App() {
   }
 
   function queueMore() {
-    const extra = Math.max(1, Math.min(256, queueSize))
+    const extra = Math.max(1, Math.min(MAX_QUEUE, queueSize))
     if (debugView === 'watch') {
       if (!live || live.game.over) {
         const jump = live?.game.over ? live.seed + 1 : seed
         setSeed(jump)
         setMatch((value) => value + 1)
         setRuns([makeRun(jump, seatCount, debugStrats)])
-        setQueueLeft((left) => Math.min(256, left + Math.max(0, extra - 1)))
+        setQueueLeft((left) => Math.min(MAX_QUEUE, left + Math.max(0, extra - 1)))
       } else {
-        setQueueLeft((left) => Math.min(256, left + extra))
+        setQueueLeft((left) => Math.min(MAX_QUEUE, left + extra))
       }
       if (debugSpeed === 0) setDebugSpeed(1)
       return
@@ -488,7 +494,7 @@ export default function App() {
     setReports([])
     setDebugStrats(strats)
     setStratFilter(ALL_STRAT_FILTER)
-    const total = Math.max(1, Math.min(256, queue))
+    const total = Math.max(1, Math.min(MAX_QUEUE, queue))
     setQueueSize(total)
     setQueueLeft(0)
     setRuns([])
@@ -590,6 +596,7 @@ function Lobby({
   ) => void
 }) {
   const [seedText, setSeedText] = useState('')
+  const [debugMode, setDebugMode] = useState(false)
   const [count, setCount] = useState<SeatCount>(2)
   const [seats, setSeats] = useState<LobbySeat[]>(() => defaultSeats(2))
   const [queue, setQueue] = useState(1)
@@ -611,9 +618,8 @@ function Lobby({
   }
 
   function start() {
-    const parsed = parseSeedInput(seedText)
-    const seed = parsed?.seed ?? (Math.floor(Date.now() % 100000) || 1)
-    const debug = !!parsed?.debug
+    const seed = parseSeedInput(seedText) ?? randomSeed()
+    const debug = debugMode
     const strats = seats.map((seat, index) => (debug || seat.kind === 'ai' ? seat.strat : cycleStrat(index)))
     const roster: SeatSpec[] = seats.map((seat, index) => {
       const ai = debug ? true : seat.kind === 'ai'
@@ -645,7 +651,7 @@ function Lobby({
   }
 
   const humans = seats.filter((seat) => seat.kind === 'human').length
-  const debugPreview = /^d\d+$/i.test(seedText.trim())
+  const debugPreview = debugMode
 
   return (
     <main className="lobby">
@@ -742,6 +748,20 @@ function Lobby({
               ? 'The Ancient is in the deck: draw reveal awards +10, then each seat gets one final turn.'
               : 'No Ancient — the match ends when the shared deck empties.'}
           </p>
+          <label className="check-row">
+            <input
+              data-testid="lobby-debug"
+              type="checkbox"
+              checked={debugMode}
+              onChange={(event) => setDebugMode(event.target.checked)}
+            />
+            Debug balance
+          </label>
+          <p className="quiet">
+            {debugMode
+              ? 'All seats run as AI. Sims run in the background at full speed; open Watch to slow the board.'
+              : 'Tick to run AI balance sims with stats instead of a normal match.'}
+          </p>
           {debugPreview ? (
             <>
               <label>
@@ -750,14 +770,14 @@ function Lobby({
                   data-testid="lobby-parallel"
                   type="number"
                   min={1}
-                  max={256}
+                  max={MAX_QUEUE}
                   value={queue}
-                  onChange={(event) => setQueue(Math.max(1, Math.min(256, Number(event.target.value) || 1)))}
+                  onChange={(event) => setQueue(Math.max(1, Math.min(MAX_QUEUE, Number(event.target.value) || 1)))}
                 />
               </label>
-            <p className="quiet">
-              Sims one game at a time at full speed in Stats. Open Watch to slow the board. Queue up to 256.
-            </p>
+              <p className="quiet">
+                Sims one game at a time at full speed in Stats. Open Watch to slow the board. Queue up to {MAX_QUEUE}.
+              </p>
               <button type="button" data-testid="lobby-scoring" onClick={() => setScoreOpen(true)}>
                 Scoring…
               </button>
@@ -772,21 +792,23 @@ function Lobby({
         </fieldset>
         <p className="quiet">
           {debugPreview
-            ? 'Debug seed detected. Seat strats apply to every simulated match.'
+            ? 'Seat strats apply to every simulated match. Blank seed rolls a random start.'
             : humans >= 2
               ? 'Multiple humans pass the seat automatically.'
               : humans === 1
                 ? 'You go first. AI seats take their turns on their own.'
                 : 'All AI is fine for spectating and debugging.'}
         </p>
-        <button type="button" className="primary block" data-testid="play-solo" onClick={start}>Start match</button>
+        <button type="button" className="primary block" data-testid="play-solo" onClick={start}>
+          {debugPreview ? `Sim ${queue} game${queue === 1 ? '' : 's'}` : 'Start match'}
+        </button>
         <button type="button" className="block" data-testid="play-online" onClick={onOnline}>Play online (ranked)</button>
         <button type="button" className="block" data-testid="glossary-open" onClick={() => setGlossary(true)}>Glossary</button>
         <label>
           Seed
           <input
             data-testid="seed"
-            placeholder="Random or d58"
+            placeholder="Random"
             value={seedText}
             onChange={(event) => setSeedText(event.target.value)}
           />

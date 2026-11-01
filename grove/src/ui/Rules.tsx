@@ -6,7 +6,7 @@ export function Rules({ onClose }: { onClose: () => void }) {
         <h2 id="rules-title">Rules</h2>
         <section>
           <h3>The turn</h3>
-          <p>Everyone is dealt 3 cards. The Ancient is then shuffled into the remaining deck. At the start of your turn you draw 2, then you have two actions — including the first seat on turn 1. Draw one more card for an action, or play a hero, item, or reward for an action. Instant cards are free. A terrain combo is free and does not spend an action. If your hand is above 7, discard down to 7 when you end your turn.</p>
+          <p>Everyone is dealt 3 cards. The Ancient is then placed in the remaining deck by table size — around the middle for 2–4 players, deeper for 5–6, and last for 7–8. At the start of your turn you draw 2, then you have two actions — including the first seat on turn 1. Draw one more card for an action, or play a hero, item, or reward for an action. Instant cards are free. A terrain combo is free and does not spend an action. If your hand is above 7, discard down to 7 when you end your turn.</p>
           <p>When The Ancient is revealed by drawing, that player scores +10 and each seat gets one final turn, then the match ends. If it is revealed from the grave or exile instead, there is no +10 — still one final turn each. The match also ends if the shared deck empties first.</p>
           <p>You may play several heroes into one team for a single action. Click the active hero, click companions to add them silently, then pick a team — only the active ability fires. If the play is countered, only the active hero is countered.</p>
         </section>

@@ -118,6 +118,38 @@ describe('turn', () => {
     expect(raw.ancient).toBeNull()
   })
 
+  it('places The Ancient by seat count (mid / deep / last)', () => {
+    const depth = (seats: number, seed: number) => {
+      const names = Array.from({ length: seats }, (_, index) => `P${index + 1}`)
+      const game = createGame({
+        seed,
+        mode: 'hotseat',
+        seats: names.map((name) => ({ name, ai: false })),
+      })
+      // Turn-1 draw already took 2 from the top after placement.
+      const idx = game.deck.findIndex((card) => card.defId === 'ancient')
+      expect(idx).toBeGreaterThanOrEqual(0)
+      const postInsertLen = game.deck.length + 2
+      const insertIndex = idx + 2
+      const preInsertLen = postInsertLen - 1
+      return { insertIndex, preInsertLen, postInsertLen }
+    }
+
+    for (const seed of [2, 7, 19, 58, 91]) {
+      const d2 = depth(2, seed)
+      expect(d2.insertIndex).toBeGreaterThanOrEqual(Math.floor(0.4 * d2.preInsertLen))
+      expect(d2.insertIndex).toBeLessThanOrEqual(Math.floor(0.6 * d2.preInsertLen))
+
+      const d5 = depth(5, seed)
+      expect(d5.insertIndex).toBeGreaterThanOrEqual(Math.floor(0.7 * d5.preInsertLen))
+      expect(d5.insertIndex).toBeLessThanOrEqual(Math.floor(0.8 * d5.preInsertLen))
+
+      const d8 = depth(8, seed)
+      expect(d8.insertIndex).toBe(d8.preInsertLen)
+      expect(d8.insertIndex).toBe(d8.postInsertLen - 1)
+    }
+  })
+
   it('draws 2 at the start of a new turn', () => {
     let game = ready()
     const foeBefore = game.players[1].hand.length

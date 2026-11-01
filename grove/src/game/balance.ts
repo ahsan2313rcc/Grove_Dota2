@@ -764,8 +764,19 @@ export function summarizeReports(reports: MatchReport[], filter: StratFilter = A
       }))
       .sort((a, b) => b.wins - a.wins || a.avgStanding - b.avgStanding || b.avgScore - a.avgScore),
     shapeCompare: [
-      shapeRow('core_team', 'Core team', shapeTotals.coreTeams, shapeTotals.coreTeamPoints, shapeTotals.coreTeamHeroes, shapeTotals.pureCore3 + shapeTotals.pureCore4 + shapeTotals.pureCore5, matchCount),
-      // n = teams with a same-attr stack of that size (incl. mixed boards); avg pts from mono cores only.
+      // Core team n=/match use the same inclusive ≥3 same-attr stack as Core ×3 (umbrella).
+      // Pure / avg pts / pts-card still come from mono-core teams only.
+      shapeRow(
+        'core_team',
+        'Core team',
+        shapeTotals.coreTeams3,
+        shapeTotals.coreTeamPoints,
+        shapeTotals.coreTeamHeroes,
+        shapeTotals.pureCore3 + shapeTotals.pureCore4 + shapeTotals.pureCore5,
+        matchCount,
+        shapeTotals.coreTeams,
+      ),
+      // n = teams with a same-attr stack of at least N (incl. mixed boards); avg pts from mono cores only.
       shapeRow('core_team_3', 'Core ×3 same attr', shapeTotals.coreTeams3, shapeTotals.coreTeamPoints3, shapeTotals.coreTeamHeroes3, shapeTotals.pureCore3, matchCount, shapeTotals.pureCore3),
       shapeRow('core_team_4', 'Core ×4 same attr', shapeTotals.coreTeams4, shapeTotals.coreTeamPoints4, shapeTotals.coreTeamHeroes4, shapeTotals.pureCore4, matchCount, shapeTotals.pureCore4),
       shapeRow('core_team_5', 'Core ×5 same attr', shapeTotals.coreTeams5, shapeTotals.coreTeamPoints5, shapeTotals.coreTeamHeroes5, shapeTotals.pureCore5, matchCount, shapeTotals.pureCore5),

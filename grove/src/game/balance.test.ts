@@ -45,8 +45,16 @@ describe('balance', () => {
       expect(core5!.avgPoints).toBe(0)
     }
     const coreAll = summary.shapeCompare.find((row) => row.id === 'core_team')
-    if (coreAll && coreAll.count > 0) {
-      expect(coreAll.avgPoints).toBeCloseTo(coreAll.totalPoints / coreAll.count, 5)
+    const core3 = summary.shapeCompare.find((row) => row.id === 'core_team_3')
+    // Core team is the ×3 umbrella: same n /match, Pure = mono cores, avg pts from Pure only.
+    if (coreAll && core3) {
+      expect(coreAll.count).toBe(core3.count)
+      expect(coreAll.avgCount).toBeCloseTo(core3.avgCount, 5)
+      if (coreAll.pureCount > 0) {
+        expect(coreAll.avgPoints).toBeCloseTo(coreAll.totalPoints / coreAll.pureCount, 5)
+      } else {
+        expect(coreAll.avgPoints).toBe(0)
+      }
     }
   })
 

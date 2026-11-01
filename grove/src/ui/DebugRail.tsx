@@ -9,6 +9,8 @@ import type { Game } from '../game/types.ts'
 export type DebugSpeed = 0 | 0.5 | 1 | 2
 export type DebugView = 'watch' | 'stats'
 
+const MAX_QUEUE = 1024
+
 const SPEEDS: { value: DebugSpeed; label: string }[] = [
   { value: 0, label: 'Pause' },
   { value: 0.5, label: '0.5×' },
@@ -124,9 +126,9 @@ export function DebugRail({
               data-testid="debug-batch-size"
               type="number"
               min={1}
-              max={256}
+              max={MAX_QUEUE}
               value={batchSize}
-              onChange={(event) => onBatchSize(Math.max(1, Math.min(256, Number(event.target.value) || 1)))}
+              onChange={(event) => onBatchSize(Math.max(1, Math.min(MAX_QUEUE, Number(event.target.value) || 1)))}
             />
           </label>
           <button type="button" className="primary" data-testid="debug-run-batch" disabled={runningBatch && view === 'stats'} onClick={onRunBatch}>
@@ -227,7 +229,7 @@ export function DebugRail({
 
       <div className="debug-block">
         <h3>Shape compare</h3>
-        <p className="quiet debug-legend">Core / mix rows need 3+ heroes. n for Core ×N = teams with a same-attr stack of at least N (mixed boards count). Avg pts / pts/card use mono-core teams of that size only. Pure = exact-size mono core, or mix with hero count matching attr count.</p>
+        <p className="quiet debug-legend">Core / mix rows need 3+ heroes. Core team and Core ×N share n: teams with a same-attr stack of at least N (mixed boards count; Core team = ×3). /match = n ÷ matches. Pure = mono-core of that size (or mix with hero count = attr count). Avg pts / pts/card use Pure mono-core scores only.</p>
         <table className="debug-table">
           <thead>
             <tr><th>Shape</th><th>n</th><th>Pure</th><th>/match</th><th>Avg pts</th><th>Pts/card</th></tr>

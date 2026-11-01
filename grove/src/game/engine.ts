@@ -38,6 +38,7 @@ import {
   pname,
   putOnTeam,
   queueDraw,
+  randInt,
   removeHand,
   returnLassos,
   returnPhased,
@@ -104,8 +105,8 @@ export function createGame(opts: {
   if (ancientEnabled) {
     const made = makeCard(state, ANCIENT_ID, 'ancient')
     state = made[0]
-    const mixed = shuffle(state, [...state.deck, made[1]])
-    state = { ...mixed[0], deck: mixed[1] }
+    const placed = placeAncient(state, state.deck, made[1], seats.length)
+    state = { ...placed[0], deck: placed[1] }
   }
   const names = seats.map((seat) => seat.name)
   const listed = names.length === 2 ? `${names[0]} and ${names[1]}` : names.join(', ')
@@ -126,6 +127,27 @@ function legacySeats(mode: 'hotseat' | 'ai' | 'online', names?: [string, string]
     { name: labels[0], ai: false },
     { name: labels[1], ai: mode === 'ai' },
   ]
+}
+
+/**
+ * Insert The Ancient into the remaining deck by seat count (deck[0] = next draw):
+ * 2–4p → random depth in 40–60%, 5–6p → 70–80%, 7–8p → last card.
+ */
+export function placeAncient(
+  state: Game,
+  deck: CardInst[],
+  ancient: CardInst,
+  seats: number,
+): [Game, CardInst[]] {
+  const len = deck.length
+  if (len === 0 || seats >= 7) return [state, [...deck, ancient]]
+
+  const [lo, hi] = seats >= 5 ? [0.7, 0.8] : [0.4, 0.6]
+  const minIdx = Math.floor(lo * len)
+  const maxIdx = Math.max(minIdx, Math.min(len, Math.floor(hi * len)))
+  const [rolled, offset] = randInt(state, maxIdx - minIdx + 1)
+  const index = minIdx + offset
+  return [rolled, [...deck.slice(0, index), ancient, ...deck.slice(index)]]
 }
 
 function fillPile(state: Game, pile: 'runes' | 'neutrals' | 'towers'): Game {

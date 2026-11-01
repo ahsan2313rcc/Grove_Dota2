@@ -49,7 +49,10 @@ Engine should track a `stolenCast` (or depth) flag for the duration of that nest
 1. Build and shuffle the main deck: all heroes (1 each) + item copies + 36 terrains (**without** The Ancient).
 2. Fill and shuffle reward piles from `REWARDS` by kind.
 3. Each seat is dealt **3** cards.
-4. Shuffle **The Ancient** into the remaining deck.
+4. Insert **The Ancient** into the remaining deck by seat count (deck top = next draw):
+   - **2–4 players:** random depth in **40–60%**
+   - **5–6 players:** random depth in **70–80%**
+   - **7–8 players:** **last card**
 5. Seat 0 starts turn 1 as usual: **draw 2** + **2 actions**.
 
 `handLimit` = **7**. `TEAM_CAP` = **12** teams per player. `TURN_DRAW` = **2**.
@@ -96,7 +99,7 @@ While `pending` is set, only **choose** (answer the prompt) is legal. AI/`autoAl
 
 ### 4.4 The Ancient (endgame)
 
-One copy of **The Ancient** sits in the main deck (inserted after the opening deal). It cannot be played.
+One copy of **The Ancient** sits in the main deck after the opening deal, placed by player count (mid-deck for 2–4, deep for 5–6, last card for 7–8). It cannot be played.
 
 - **Revealed by draw** (`takeDraw`): that seat scores **+10**. Start the final round.
 - **Revealed from grave or exile** (milled / exiled into those zones): **no** +10. Same final round.

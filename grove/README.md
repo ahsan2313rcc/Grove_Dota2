@@ -33,7 +33,7 @@ Lobby → **Play online (ranked)** → register → Find match. Starting MMR is 
 - **Play the Grove** — you go first against the Grove.
 - **Pass and play** — two people, one screen. The seat is covered between turns.
 
-Add `?mode=ai&seed=58` to deal a known game. Seed `d58` opens debug spectate with balance stats (card point swings, contested cards, avg points/cards per turn). AI seats pick a personality — Balanced, Tempo, Architect, or Spite — and debug stats can filter by strat or mixture. Debug sims **one match at a time at full speed** (Stats); switch to Watch to slow the board. `?mode=debug&seed=58` starts a fast background sim. `npm test` runs the rules engine.
+Add `?mode=ai&seed=58` to deal a known game. Tick **Debug balance** in the lobby (or `?mode=debug&seed=58`) for AI sims with balance stats — blank seed is random, queue up to 1024. AI seats pick a personality — Balanced, Tempo, Architect, or Spite — and debug stats can filter by strat or mixture. Sims run **one match at a time at full speed** (Stats); switch to Watch to slow the board. `npm test` runs the rules engine.
 
 ## Rules
 
