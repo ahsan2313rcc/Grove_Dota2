@@ -214,6 +214,8 @@ function blank(seed: number, mode: 'hotseat' | 'ai' | 'online', seats: SeatSpec[
     viper: [],
     maledict: [],
     bonds: [],
+    rupture: null,
+    taxAction: null,
     soulbind: [],
     sdBan: [],
     phased: [],
@@ -257,6 +259,7 @@ function reduce(state: Game, action: Action): Game {
   if (action.type === 'combo') return combo(state, action.uids)
   if (action.type === 'move') return moveEmber(state, action.uid, action.team)
   if (action.type === 'morph') return morphCast(state, action.uid)
+  if (action.type === 'undying') return reviveUndying(state, action.team, action.discards)
   if (action.type === 'play') return play(state, action.uid, action.team, action.extras ?? [])
   if (action.type === 'discard') return discardStuck(state, action.uid)
   return state
@@ -414,7 +417,11 @@ function startTurn(state: Game, id: PlayerId): Game {
     if (player.noHeroNext) {
       state = setPlayer(state, active, (current) => ({ ...current, noHeroNext: false, noHeroNow: true }))
     }
-    state = setPlayer(state, active, (current) => ({ ...current, actions: 2 }))
+    const tax =
+      state.taxAction && state.taxAction.caster !== active && state.taxAction.fromTurn < state.turn
+        ? 1
+        : 0
+    state = setPlayer(state, active, (current) => ({ ...current, actions: Math.max(0, 2 - tax) }))
     state = beginDraw(state, active, TURN_DRAW, false)
     const veil = state.mode === 'hotseat' && !state.autoAll && !state.players[active].ai
     return log(
@@ -801,6 +808,12 @@ function playItem(state: Game, actor: PlayerId, card: CardInst): Game {
       })) as Game['players'],
     }
   }, next)
+  // Alchemist: draw whenever you play an item.
+  for (const loc of allLocs(next)) {
+    if (loc.hero.defId === 'alchemist' && loc.hero.controller === actor && !aurasSuppressedSafe(next, actor)) {
+      next = queueDraw(next, actor, 1)
+    }
+  }
   next = toGrave(next, card, { type: 'deck' })
   next = log(next, `${pname(next, actor)} plays ${display(card.defId).name}.`)
   const resume = { kind: 'cast' as const, actor, sourceUid: card.uid, defId: card.defId, picked: [], steps: 0 }
@@ -859,6 +872,30 @@ function moveEmber(state: Game, uid: string, team: string): Game {
   next = strip(next)
   next = putOnTeam(next, state.active, teamId, { ...loc.hero, controller: state.active })
   return log(arrived(next, uid).state, 'Fire Remnant.')
+}
+
+function reviveUndying(state: Game, team: string, discards: string[]): Game {
+  const actor = state.active
+  if (state.pending || discards.length < 2) return state
+  const card = state.grave.find((entry) => entry.defId === 'undying')
+  if (!card) return log(state, 'Undying is not in the grave.')
+  const hand = state.players[actor]?.hand ?? []
+  if (!discards.every((uid) => hand.some((entry) => entry.uid === uid))) {
+    return log(state, 'Flesh Golem needs two cards from your hand.')
+  }
+  const resolved = resolveTeam(state, actor, team)
+  if (!resolved) return state
+  const [based, teamId] = resolved
+  const dest = teamById(based, teamId)
+  if (!dest) return state
+  const reason = enterReason(based, dest.team, 1, false)
+  if (reason) return log(based, reason)
+  let next = based
+  for (const uid of discards.slice(0, 2)) next = discardUid(next, actor, uid)
+  next = { ...next, grave: next.grave.filter((entry) => entry.uid !== card.uid) }
+  const hero = makeHero(card, actor, actor, next)
+  next = putOnTeam(next, actor, teamId, hero)
+  return log(arrived(next, hero.uid).state, 'Flesh Golem: Undying returns.')
 }
 
 function morphCast(state: Game, uid: string): Game {
@@ -998,31 +1035,12 @@ function satisfy(state: Game, ids: string[]): Game {
     if (resume.then === 'end') return endTurn(dumped)
     return dumped
   }
-  if (resume.kind === 'undying-save') {
-    const choice = ids[0]
-    if (!choice || choice === 'pass') {
-      return performDestroy(next, {
-        uid: resume.uid,
-        cause: resume.cause,
-        force: resume.force,
-        window: false,
-        by: resume.by,
-      })
-    }
-    const cardUid = choice.startsWith('card:') ? choice.slice(5) : ''
-    next = discardUid(next, pending.actor, cardUid)
-    return log(next, 'Flesh Golem keeps Undying alive.')
+  if (resume.kind === 'jugg-kill') {
+    const uid = ids[0]?.startsWith('hero:') ? ids[0].slice(5) : ids[0]
+    if (uid) next = enqueue(next, uid, 'Blade Fury', false, true, resume.actor)
+    return cast(next, resume.after)
   }
   if (resume.kind === 'bristle' || resume.kind === 'mail') {
-    if (resume.kind === 'bristle' && ids[0]?.startsWith('team:')) {
-      const teamId = ids[0].slice(5)
-      const found = teamById(next, teamId)
-      if (!found) return next
-      return found.team.heroes.reduce(
-        (current, hero) => enqueue(current, hero.uid, 'Bristleback', false, true, resume.actor),
-        next,
-      )
-    }
     const uid = ids[0]?.startsWith('hero:') ? ids[0].slice(5) : ids[0]
     if (!uid) return next
     return enqueue(next, uid, resume.kind === 'mail' ? 'Blade Mail' : 'Bristleback', false, true, resume.actor)
@@ -1222,13 +1240,19 @@ export function emberMoves(state: Game): { uid: string; name: string }[] {
     .map((loc) => ({ uid: loc.hero.uid, name: 'Ember Spirit' }))
 }
 
-export function morphCasts(state: Game): { uid: string; label: string }[] {
-  if (state.silence) return []
-  return allLocs(state)
-    .filter((loc) => loc.hero.controller === state.active && !loc.hero.muted && loc.hero.castTurn !== state.turn)
-    .filter((loc) => loc.hero.held?.mode === 'morph' && loc.hero.held.takenTurn === state.turn)
-    .filter((loc) => firesAbility(loc.hero.held?.card.defId ?? ''))
-    .map((loc) => ({ uid: loc.hero.uid, label: `Cast ${display(loc.hero.held?.card.defId ?? '').name}` }))
+/** Undying in grave + 2 cards in hand → can discard 2 to seat him. */
+export function undyingRevive(state: Game): { ok: boolean; card: CardInst | null } {
+  const actor = state.active
+  if (state.pending) return { ok: false, card: null }
+  const card = state.grave.find((entry) => entry.defId === 'undying') ?? null
+  if (!card) return { ok: false, card: null }
+  if ((state.players[actor]?.hand.length ?? 0) < 2) return { ok: false, card: null }
+  return { ok: true, card }
+}
+
+/** Morphling no longer grants a free held-ability cast — attribute switch only. */
+export function morphCasts(_state: Game): { uid: string; label: string }[] {
+  return []
 }
 
 export function needsTeam(defId: string, kind: CardKind): boolean {

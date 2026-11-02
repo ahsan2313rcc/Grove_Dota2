@@ -476,26 +476,38 @@ describe('heroes', () => {
     expect(game.players[1].teams[0]?.heroes.map((hero) => hero.defId)).toEqual(['earthshaker'])
   })
 
-  it('destroys every Intelligence hero with Mana Void', () => {
+  it('destroys every Intelligence hero on a team with Mana Void', () => {
     let game = ready()
     game = only(game, 0, ['anti_mage'])
-    game = only(game, 1, ['crystal_maiden', 'phantom_assassin'])
+    game = only(game, 1, ['death_prophet', 'ancient_apparition', 'phantom_assassin'])
     game = apply(game, { type: 'end' })
     game = apply(game, { type: 'ready' })
-    game = apply(game, { type: 'play', uid: uid(game, 1, 'crystal_maiden'), team: 'new' })
+    game = apply(game, { type: 'play', uid: uid(game, 1, 'death_prophet'), team: 'new' })
     game = passInstants(game)
+    const team = game.players[1].teams[0]!.id
+    game = apply(game, { type: 'play', uid: uid(game, 1, 'ancient_apparition'), team })
+    game = passInstants(game)
+    game = apply(game, { type: 'end' })
+    game = apply(game, { type: 'ready' })
+    game = apply(game, { type: 'end' })
+    game = apply(game, { type: 'ready' })
     game = apply(game, { type: 'play', uid: uid(game, 1, 'phantom_assassin'), team: 'new' })
     game = passInstants(game)
     game = apply(game, { type: 'end' })
     game = apply(game, { type: 'ready' })
     game = apply(game, { type: 'play', uid: uid(game, 0, 'anti_mage'), team: 'new' })
     game = passInstants(game)
-    if (game.pending?.prompt.toLowerCase().includes('opponent')) {
-      game = apply(game, { type: 'choose', ids: ['player:1'] })
+    expect(game.pending?.prompt.toLowerCase()).toMatch(/enemy team/)
+    game = apply(game, { type: 'choose', ids: [`team:${team}`] })
+    while (game.pending?.prompt.includes('would be destroyed')) {
+      game = apply(game, { type: 'choose', ids: ['pass'] })
     }
-    if (game.pending?.prompt.includes('would be destroyed')) game = apply(game, { type: 'choose', ids: ['pass'] })
-    expect(game.players[1].teams.flatMap((team) => team.heroes.map((hero) => hero.defId))).toEqual(['phantom_assassin'])
-    expect(game.grave.some((card) => card.defId === 'crystal_maiden')).toBe(true)
+    expect(game.players[1].teams.flatMap((entry) => entry.heroes.map((hero) => hero.defId)).sort()).toEqual([
+      'phantom_assassin',
+    ])
+    expect(game.exile.some((card) => card.defId === 'death_prophet') || game.grave.some((card) => card.defId === 'death_prophet')).toBe(
+      true,
+    )
   })
 
   it('gathers a team with Reverse Polarity and leaves the rest', () => {
@@ -580,7 +592,7 @@ describe('heroes', () => {
     expect(game.grave.some((card) => card.defId === 'sven')).toBe(false)
   })
 
-  it('lets Morphling copy an attribute and cast only on that turn', () => {
+  it('lets Morphling switch attribute to match the exiled hero', () => {
     let game = ready()
     game = only(game, 0, ['morphling'])
     game = only(game, 1, ['sven'])
@@ -596,16 +608,15 @@ describe('heroes', () => {
     game = apply(game, { type: 'choose', ids: [`hero:${sven?.uid ?? ''}`] })
     const morph = game.players[0].teams.flatMap((team) => team.heroes).find((hero) => hero.defId === 'morphling')
     expect(morph?.held?.mode).toBe('morph')
-    expect(attrsOf(game, morph!)).toEqual(['AGI', 'STR'])
-    expect(morphCasts(game).map((cast) => cast.label)).toEqual(['Cast Sven'])
+    expect(attrsOf(game, morph!)).toEqual(['STR'])
+    expect(morphCasts(game)).toEqual([])
     game = apply(game, { type: 'end' })
     game = apply(game, { type: 'ready' })
     game = apply(game, { type: 'end' })
     game = apply(game, { type: 'ready' })
     const later = game.players[0].teams.flatMap((team) => team.heroes).find((hero) => hero.defId === 'morphling')
     expect(later?.held?.card.defId).toBe('sven')
-    expect(attrsOf(game, later!)).toEqual(['AGI', 'STR'])
-    expect(morphCasts(game)).toEqual([])
+    expect(attrsOf(game, later!)).toEqual(['STR'])
   })
 
   it('discards Nyx to send the countered card to the grave', () => {
@@ -701,11 +712,21 @@ describe('heroes', () => {
     expect(game.players[0].hand.length).toBe(before)
 
     game = ready()
-    game = only(game, 0, ['greaves', 'river', 'jungle'])
+    game = only(game, 0, ['greaves', 'techies'])
     game = only(game, 1, ['axe'])
+    game = apply(game, { type: 'end' })
+    game = apply(game, { type: 'ready' })
+    game = apply(game, { type: 'play', uid: uid(game, 1, 'axe'), team: 'new' })
+    game = passInstants(game)
+    const foeTeam = game.players[1].teams[0]!.id
+    game = apply(game, { type: 'end' })
+    game = apply(game, { type: 'ready' })
+    game = apply(game, { type: 'play', uid: uid(game, 0, 'techies'), team: foeTeam })
+    expect(game.players[1].teams[0]?.trap?.defId).toBe('techies')
     game = apply(game, { type: 'play', uid: uid(game, 0, 'greaves'), team: '' })
-    expect(game.players[0].hand.length).toBe(5)
-    expect(game.players[1].hand.map((card) => card.defId)).toContain('axe')
+    game = apply(game, { type: 'choose', ids: ['player:1'] })
+    expect(game.players[1].teams[0]?.trap).toBeNull()
+    expect(game.grave.some((card) => card.defId === 'techies')).toBe(true)
 
     game = ready()
     game = only(game, 0, ['satanic'])

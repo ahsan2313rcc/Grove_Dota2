@@ -346,12 +346,13 @@ export function itemsLocked(state: Game, id: PlayerId): boolean {
   })
 }
 
-/** Troll Warlord: opponents cannot play instant cards. */
+/** Troll Warlord: opponents cannot play instant cards during Troll's turn. */
 export function instantsLocked(state: Game, id: PlayerId): boolean {
   return allLocs(state).some((loc) => {
     if (loc.hero.controller === id) return false
     if (aurasSuppressed(state, loc.hero.controller)) return false
-    return loc.hero.defId === 'troll_warlord'
+    if (loc.hero.defId !== 'troll_warlord') return false
+    return state.active === loc.hero.controller
   })
 }
 
@@ -369,7 +370,7 @@ export function teamById(state: Game, teamId: string): { team: Team; player: Pla
 }
 
 export function blankTeam(id: string): Team {
-  return { id, heroes: [], gaze: false, noEnter: null, noLeave: null, glyph: null, mine: null, trap: null }
+  return { id, heroes: [], gaze: false, noEnter: null, noLeave: null, glyph: null, blade: null, mine: null, trap: null }
 }
 
 export function addTeam(state: Game, id: PlayerId, team: Team): Game {
@@ -548,11 +549,6 @@ export function toGrave(state: Game, card: CardInst, origin: GraveMark['origin']
     grave: [...state.grave, card],
     graveThisTurn: state.graveThisTurn + 1,
     lastGrave: { card, turn: state.turn, origin },
-  }
-  for (const loc of allLocs(next)) {
-    if (card.kind === 'item' && loc.hero.defId === 'alchemist') {
-      next = queueDraw(next, loc.hero.controller, 1)
-    }
   }
   if (origin.type === 'hand') {
     next = punishDiscard(next, origin.player)
@@ -760,7 +756,13 @@ export function arrived(state: Game, uid: string): { state: Game; mined: boolean
 export function releaseHeld(state: Game, hero: BoardHero): Game {
   if (!hero.held) return state
   const held = hero.held
-  state = editHero(state, hero.uid, (current) => ({ ...current, held: null, gained: null }))
+  state = editHero(state, hero.uid, (current) => ({
+    ...current,
+    held: null,
+    gained: null,
+    attrMode: current.attrMode === 'set' ? 'base' : current.attrMode,
+    attrSet: [],
+  }))
   // Shadow Demon: return exiled hero to the caster's hand.
   if (hero.defId === 'shadow_demon') {
     const next = addHand(state, held.owner, [held.card])
@@ -829,17 +831,13 @@ export function bounce(state: Game, uid: string, cause: string, ignoreRupture = 
   ) {
     return log(state, `Dream Coil holds ${display(loc.hero.defId).name} in place.`)
   }
-  // Bloodseeker aura: enemy leaving → destroy.
+  // Bloodseeker Instant: enemy leaving → destroy until caster's next turn.
   if (
     !ignoreRupture &&
-    allLocs(state).some(
-      (other) =>
-        other.hero.defId === 'bloodseeker' &&
-        other.hero.controller !== loc.hero.controller &&
-        !aurasSuppressed(state, other.hero.controller),
-    )
+    state.rupture &&
+    state.rupture.caster !== loc.hero.controller
   ) {
-    return enqueue(state, uid, 'Rupture', false, true, null)
+    return enqueue(state, uid, 'Rupture', false, true, state.rupture.caster)
   }
   if (loc.hero.rupture && !ignoreRupture) return enqueue(state, uid, 'Rupture', false, true, null)
   const owner = loc.hero.owner
@@ -929,7 +927,6 @@ function prevented(state: Game, loc: Loc, force: boolean, by: PlayerId | null): 
   ) {
     return `Guardian Angel protects ${name}.`
   }
-  if (loc.hero.defId === 'huskar' && loc.player.hand.length < 4) return "Berserker's Blood holds Huskar."
   return null
 }
 
@@ -990,25 +987,6 @@ export function performDestroy(state: Game, item: StackDestroy): Game {
     if (!removed.hero) return state
     const card: CardInst = { uid: removed.hero.uid, defId: removed.hero.defId, kind: 'hero' }
     return log({ ...removed.state, deck: [card, ...removed.state.deck] }, `Borrowed Time tucks ${name} on top of the deck.`)
-  }
-  // Undying: may discard a card to prevent destroy.
-  if (!forced && loc.hero.defId === 'undying' && loc.player.hand.length > 0) {
-    return ask(state, {
-      actor: loc.hero.controller,
-      prompt: 'Flesh Golem: discard a card to keep Undying, or pass.',
-      mode: 'pick',
-      min: 1,
-      max: 1,
-      choices: [
-        { id: 'pass', label: 'Pass' },
-        ...loc.player.hand.map((card) => ({
-          id: `card:${card.uid}`,
-          label: `Discard ${display(card.defId).name}`,
-          defId: card.defId,
-        })),
-      ],
-      resume: { kind: 'undying-save', uid: loc.hero.uid, cause: item.cause, force: item.force, by: item.by },
-    })
   }
   if (!forced && !loc.hero.roshan) {
     const roshan = loc.team.heroes.find((hero) => hero.roshan && hero.uid !== loc.hero.uid)
@@ -1104,9 +1082,8 @@ function onDestroyed(state: Game, hero: BoardHero, teamId: string, by: PlayerId 
     const other = bond.a === hero.uid ? bond.b : bond.a
     if (findHero(state, other)) state = enqueue(state, other, 'Soulbind', false, true, null)
   }
-  // Warlock: if an enemy hero is destroyed, destroy the bonded team.
+  // Warlock: if an enemy hero is destroyed, destroy another hero on the bonded team.
   for (const bond of [...state.bonds]) {
-    if (bond.turn !== state.turn) continue
     if (hero.controller === bond.caster) continue
     state = stampBonds(state, bond.teamId, hero.uid)
   }
@@ -1133,23 +1110,18 @@ function onDestroyed(state: Game, hero: BoardHero, teamId: string, by: PlayerId 
     }
   }
   if (hero.defId === 'bristleback' && !aurasSuppressed(state, hero.controller)) {
-    const enemyTeams = new Map<string, { label: string }>()
-    for (const loc of allLocs(state)) {
-      if (loc.hero.controller === hero.controller) continue
-      if (!enemyTeams.has(loc.team.id)) {
-        enemyTeams.set(loc.team.id, { label: `${pname(state, loc.hero.controller)} team` })
-      }
-    }
-    if (enemyTeams.size > 0) {
+    const enemies = allLocs(state).filter((loc) => loc.hero.controller !== hero.controller)
+    if (enemies.length > 0) {
       return ask(state, {
         actor: hero.controller,
-        prompt: 'Bristleback: destroy an enemy team.',
+        prompt: 'Bristleback: destroy a target enemy hero.',
         mode: 'pick',
         min: 1,
         max: 1,
-        choices: [...enemyTeams.entries()].map(([id, meta]) => ({
-          id: `team:${id}`,
-          label: meta.label,
+        choices: enemies.map((loc) => ({
+          id: `hero:${loc.hero.uid}`,
+          label: display(loc.hero.defId).name,
+          defId: loc.hero.defId,
         })),
         resume: { kind: 'bristle', actor: hero.controller },
       })
@@ -1159,14 +1131,12 @@ function onDestroyed(state: Game, hero: BoardHero, teamId: string, by: PlayerId 
 }
 
 export function stampBonds(state: Game, teamId: string, deadUid: string): Game {
-  if (!state.bonds.some((bond) => bond.teamId === teamId && bond.turn === state.turn)) return state
+  if (!state.bonds.some((bond) => bond.teamId === teamId)) return state
   const team = teamById(state, teamId)
   if (!team) return state
-  let next = { ...state, bonds: state.bonds.filter((bond) => bond.teamId !== teamId) }
-  for (const hero of team.team.heroes) {
-    if (hero.uid !== deadUid) next = enqueue(next, hero.uid, 'Fatal Bonds', false, true, null)
-  }
-  return next
+  const other = team.team.heroes.find((hero) => hero.uid !== deadUid)
+  if (!other) return state
+  return enqueue(state, other.uid, 'Fatal Bonds', false, true, null)
 }
 
 export function noteTargets(state: Game, actor: PlayerId, uids: string[], teamIds: string[]): Game {
@@ -1273,6 +1243,9 @@ export function expireStart(state: Game): Game {
     frost: drop(next.frost),
     noDraw: drop(next.noDraw),
     primalItems: drop(next.primalItems),
+    rupture: drop(next.rupture),
+    taxAction: drop(next.taxAction),
+    bonds: next.bonds.filter((bond) => !(bond.caster === active && bond.fromTurn < turn)),
   }
   next = {
     ...next,
@@ -1283,6 +1256,7 @@ export function expireStart(state: Game): Game {
         noEnter: drop(team.noEnter),
         noLeave: drop(team.noLeave),
         glyph: drop(team.glyph),
+        blade: drop(team.blade),
         heroes: team.heroes.map((hero) => ({
           ...hero,
           shield: drop(hero.shield),
@@ -1304,7 +1278,6 @@ export function clearEnd(state: Game): Game {
     multicast: null,
     troll: null,
     maledict: [],
-    bonds: [],
     soulbind: [],
     reveal: [],
   }
@@ -1599,6 +1572,25 @@ export function fireTeamTrap(
     case 'templar_assassin': {
       state = settleRevealedTrap(state, teamId, trap, card)
       return { state: log(state, 'Refraction.'), stopped: false }
+    }
+    case 'broodmother': {
+      state = settleRevealedTrap(state, teamId, trap, card)
+      if (opts.enteringUid) {
+        const entering = findHero(state, opts.enteringUid)
+        if (entering) {
+          const removed = removeHero(state, opts.enteringUid)
+          if (removed.hero) {
+            const exileCard: CardInst = {
+              uid: removed.hero.uid,
+              defId: removed.hero.defId,
+              kind: removed.hero.token ? 'neutral' : 'hero',
+            }
+            state = toExile(removed.state, exileCard)
+            return { state: log(state, 'Spin Web exiles the entrant.'), stopped: true }
+          }
+        }
+      }
+      return { state: log(state, 'Spin Web.'), stopped: false }
     }
     default:
       state = settleRevealedTrap(state, teamId, trap, card)

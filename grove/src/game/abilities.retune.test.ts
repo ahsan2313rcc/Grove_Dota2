@@ -57,21 +57,35 @@ describe('retuned abilities', () => {
     expect(game.log.some((line) => /Berserker's Call stops the draw/.test(line))).toBe(true)
   })
 
-  it('Sniper discards from the chosen hand', () => {
+  it('Sniper destroys a hero from a larger enemy team', () => {
     let game = ready()
     game = only(game, 0, ['sniper'])
-    game = only(game, 1, ['sven', 'mars'])
+    game = only(game, 1, ['axe', 'bristleback', 'sven'])
+    game = apply(game, { type: 'end' })
+    game = apply(game, { type: 'ready' })
+    game = apply(game, { type: 'play', uid: uid(game, 1, 'axe'), team: 'new' })
+    game = passInstants(game)
+    const team = game.players[1].teams[0]!.id
+    game = apply(game, { type: 'play', uid: uid(game, 1, 'bristleback'), team })
+    game = passInstants(game)
     game = apply(game, { type: 'end' })
     game = apply(game, { type: 'ready' })
     game = apply(game, { type: 'end' })
     game = apply(game, { type: 'ready' })
-    const before = game.players[1].hand.length
-    const target = game.players[1].hand[0]!
+    game = apply(game, { type: 'play', uid: uid(game, 1, 'sven'), team })
+    game = passInstants(game)
+    const victim = game.players[1].teams[0]!.heroes.find((hero) => hero.defId === 'sven')!.uid
+    game = apply(game, { type: 'end' })
+    game = apply(game, { type: 'ready' })
     game = apply(game, { type: 'play', uid: uid(game, 0, 'sniper'), team: 'new' })
     game = passInstants(game)
-    game = apply(game, { type: 'choose', ids: ['player:1'] })
-    game = apply(game, { type: 'choose', ids: [`card:${target.uid}`] })
-    expect(game.players[1].hand.length).toBe(before - 1)
+    expect(game.pending?.prompt.toLowerCase()).toMatch(/larger enemy team/)
+    game = apply(game, { type: 'choose', ids: [`hero:${victim}`] })
+    while (game.pending?.prompt.includes('would be destroyed')) {
+      game = apply(game, { type: 'choose', ids: ['pass'] })
+    }
+    expect(game.grave.some((card) => card.defId === 'sven')).toBe(true)
+    expect(game.players[1].teams[0]!.heroes.map((hero) => hero.defId).sort()).toEqual(['axe', 'bristleback'])
   })
 
   it('blocks stolen ability chaining', () => {

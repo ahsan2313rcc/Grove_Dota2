@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { display } from '../game/catalog.ts'
-import { comboPlans, morphCasts, needsTeam, playableFromGrave, teamsFor } from '../game/engine.ts'
+import { comboPlans, morphCasts, needsTeam, playableFromGrave, teamsFor, undyingRevive } from '../game/engine.ts'
 import { findHero, isTrapHero, scoreState, scoreTeam } from '../game/flow.ts'
 import { teamShape } from '../game/scoring.ts'
 import type { Action, CardInst, Game, PlayerId } from '../game/types.ts'
@@ -563,6 +563,22 @@ export function Table({
               {canAct && morphCasts(game).map((cast) => (
                 <button key={cast.uid} type="button" onClick={() => onAction({ type: 'morph', uid: cast.uid })}>{cast.label}</button>
               ))}
+              {canAct && undyingRevive(game).ok && chosen.length >= 2 ? (
+                <button
+                  type="button"
+                  className="combo"
+                  onClick={() =>
+                    onAction({
+                      type: 'undying',
+                      team: 'new',
+                      discards: chosen.slice(0, 2).map((card) => card.uid),
+                    })
+                  }
+                  title="Discard 2 selected cards to return Undying"
+                >
+                  Flesh Golem · revive
+                </button>
+              ) : null}
               {canAct && graveTop ? (
                 <button
                   type="button"

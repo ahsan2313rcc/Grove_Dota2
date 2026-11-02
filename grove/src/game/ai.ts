@@ -1,5 +1,5 @@
 import { display, HERO_BY_ID } from './catalog.ts'
-import { apply, comboPlans, emberMoves, morphCasts, needsTeam, playableFromGrave, teamsFor } from './engine.ts'
+import { apply, comboPlans, emberMoves, morphCasts, needsTeam, playableFromGrave, teamsFor, undyingRevive } from './engine.ts'
 import {
   allLocs,
   drawsLocked,
@@ -88,6 +88,23 @@ export function chooseAiAction(state: Game): Action {
     if (score > bestScore) {
       bestScore = score
       best = action
+    }
+  }
+
+  const undying = undyingRevive(state)
+  if (undying.ok) {
+    const hand = state.players[actor].hand
+    const discards = hand.slice(0, 2).map((card) => card.uid)
+    if (discards.length >= 2) {
+      const action: Action = { type: 'undying', team: 'new', discards }
+      const next = apply({ ...state, autoAll: true }, action)
+      if (moved(state, next)) {
+        const score = evaluate(next, actor, strat) + 1.5
+        if (score > bestScore) {
+          bestScore = score
+          best = action
+        }
+      }
     }
   }
 

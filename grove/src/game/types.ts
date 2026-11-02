@@ -58,6 +58,8 @@ export interface Team {
   noEnter: Timed | null
   noLeave: Timed | null
   glyph: Timed | null
+  /** Juggernaut Blade Fury: destroy an enemy when a hero here activates. */
+  blade: Timed | null
   /** @deprecated legacy Techies mine; prefer `trap`. */
   mine: CardInst | null
   trap: TeamTrap | null
@@ -115,6 +117,8 @@ export interface CastResume {
   echo?: boolean
   armed?: boolean
   steps?: number
+  /** Blade Fury tax already collected for this cast. */
+  juggPaid?: boolean
 }
 
 export type Resume =
@@ -144,7 +148,7 @@ export type Resume =
   | { kind: 'alive'; uid: string; cast: CastResume }
   | { kind: 'kez-trap'; teamId: string; trap: TeamTrap; card: CardInst }
   | { kind: 'shaman-trap'; teamId: string; trap: TeamTrap; card: CardInst }
-  | { kind: 'undying-save'; uid: string; cause: string; force: boolean; by: PlayerId | null }
+  | { kind: 'jugg-kill'; actor: PlayerId; after: CastResume }
 
 export interface Pending {
   actor: PlayerId
@@ -225,7 +229,12 @@ export interface Game {
   troll: { player: PlayerId; turn: number } | null
   viper: { uid: string; owner: PlayerId; fromTurn: number }[]
   maledict: { player: PlayerId; turn: number }[]
-  bonds: { teamId: string; turn: number; caster: PlayerId }[]
+  /** Warlock: bonded team — destroy another hero there when an enemy dies (until caster's next turn). */
+  bonds: { teamId: string; fromTurn: number; caster: PlayerId }[]
+  /** Bloodseeker Instant: enemy leavers are destroyed until caster's next turn. */
+  rupture: Timed | null
+  /** Jakiro: opponents start with one fewer action until caster's next turn. */
+  taxAction: Timed | null
   soulbind: { a: string; b: string; turn: number }[]
   sdBan: { uid: string; sdUid: string; caster: PlayerId }[]
   phased: Phased[]
@@ -278,5 +287,6 @@ export type Action =
   | { type: 'combo'; uids: string[] }
   | { type: 'move'; uid: string; team: string }
   | { type: 'morph'; uid: string }
+  | { type: 'undying'; team: string; discards: string[] }
   | { type: 'discard'; uid: string }
   | { type: 'choose'; ids: string[] }
