@@ -1,3 +1,4 @@
+import { useState, type ReactNode } from 'react'
 import { AI_STRATS, stratLabel } from '../game/ai.ts'
 import type { BalanceSummary, CardBalanceRow, MatchReport, StratFilter } from '../game/balance.ts'
 import type { AiStrat } from '../game/types.ts'
@@ -229,95 +230,97 @@ export function DebugRail({
 
       <div className="debug-block">
         <h3>Shape compare</h3>
-        <p className="quiet debug-legend">Core / mix rows need 3+ heroes. Core team and Core ×N share n: teams with a same-attr stack of at least N (mixed boards count; Core team = ×3). /match = n ÷ matches. Pure = mono-core of that size (or mix with hero count = attr count). Avg pts / pts/card use Pure mono-core scores only.</p>
-        <table className="debug-table">
-          <thead>
-            <tr><th>Shape</th><th>n</th><th>Pure</th><th>/match</th><th>Avg pts</th><th>Pts/card</th></tr>
-          </thead>
-          <tbody>
-            {summary.shapeCompare.map((row) => (
-              <tr key={row.id}>
-                <td>{row.label}</td>
-                <td>{row.count}</td>
-                <td>{row.pureCount}</td>
-                <td>{fmt(row.avgCount)}</td>
-                <td>{fmt(row.avgPoints)}</td>
-                <td>{fmt(row.avgPtsPerCard)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        <p className="quiet debug-legend">
+          Core ×3/×4/×5 are exclusive: 3+ heroes and a same-attr stack of exactly 3 / 4 / 5+ (mixed boards count in n).
+          Core team /match = ×3+×4+×5. Mixed · 3 attrs = 3+ heroes with exactly 3 attributes (not 4).
+          Pure / avg pts use mono-core (or matching mix) scores only.
+        </p>
+        <SortableTable
+          empty="No shape samples yet."
+          columns={[
+            { key: 'label', label: 'Shape', get: (row) => row.label, sortValue: (row) => row.label },
+            { key: 'count', label: 'n', get: (row) => String(row.count), sortValue: (row) => row.count },
+            { key: 'pure', label: 'Pure', get: (row) => String(row.pureCount), sortValue: (row) => row.pureCount },
+            { key: 'avg', label: '/match', get: (row) => fmt(row.avgCount), sortValue: (row) => row.avgCount },
+            { key: 'pts', label: 'Avg pts', get: (row) => fmt(row.avgPoints), sortValue: (row) => row.avgPoints },
+            { key: 'ppc', label: 'Pts/card', get: (row) => fmt(row.avgPtsPerCard), sortValue: (row) => row.avgPtsPerCard },
+          ]}
+          rows={summary.shapeCompare}
+          rowKey={(row) => row.id}
+        />
       </div>
 
       <div className="debug-block">
         <h3>Event counts</h3>
-        <table className="debug-table">
-          <thead>
-            <tr><th>Event</th><th>Total</th><th>/match</th></tr>
-          </thead>
-          <tbody>
-            {summary.eventStats.map((row) => (
-              <tr key={row.id}>
-                <td>{row.label}</td>
-                <td>{row.total}</td>
-                <td>{fmt(row.perMatch)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        <SortableTable
+          empty="No events yet."
+          columns={[
+            { key: 'label', label: 'Event', get: (row) => row.label, sortValue: (row) => row.label },
+            { key: 'total', label: 'Total', get: (row) => String(row.total), sortValue: (row) => row.total },
+            { key: 'per', label: '/match', get: (row) => fmt(row.perMatch), sortValue: (row) => row.perMatch },
+          ]}
+          rows={summary.eventStats}
+          rowKey={(row) => row.id}
+        />
       </div>
 
       <div className="debug-block">
         <h3>Heroes by attribute</h3>
-        {summary.byAttr.length === 0 ? (
-          <p className="quiet">No hero plays yet.</p>
-        ) : (
-          <table className="debug-table">
-            <thead>
-              <tr><th>Attr</th><th>n</th><th>Self</th><th>Rel</th></tr>
-            </thead>
-            <tbody>
-              {summary.byAttr.map((row) => (
-                <tr key={row.attr}>
-                  <td>{attrLabel(row.attr)}</td>
-                  <td>{row.plays}</td>
-                  <td>{signed(row.avgActorSwing)}</td>
-                  <td>{signed(row.avgRelativeSwing)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
+        <SortableTable
+          empty="No hero plays yet."
+          columns={[
+            { key: 'attr', label: 'Attr', get: (row) => attrLabel(row.attr), sortValue: (row) => row.attr },
+            { key: 'n', label: 'n', get: (row) => String(row.plays), sortValue: (row) => row.plays },
+            { key: 'self', label: 'Self', get: (row) => signed(row.avgActorSwing), sortValue: (row) => row.avgActorSwing },
+            { key: 'rel', label: 'Rel', get: (row) => signed(row.avgRelativeSwing), sortValue: (row) => row.avgRelativeSwing },
+          ]}
+          rows={summary.byAttr}
+          rowKey={(row) => row.attr}
+          defaultSort={{ key: 'n', dir: 'desc' }}
+        />
       </div>
 
       <div className="debug-block">
         <h3>Swing by kind</h3>
-        <p className="quiet debug-legend">Self = your score change. Rel = Self minus average opponent score change.</p>
-        <table className="debug-table">
-          <thead>
-            <tr><th>Kind</th><th>Plays</th><th>Self</th><th>Rel</th></tr>
-          </thead>
-          <tbody>
-            {summary.kindSwing.map((row) => (
-              <tr key={row.kind}>
-                <td>{row.kind}</td>
-                <td>{row.plays}</td>
-                <td>{signed(row.avgActorSwing)}</td>
-                <td>{signed(row.avgRelativeSwing)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        <p className="quiet debug-legend">Self = your score change. Rel = Self minus average opponent score change. Ability = on-play cast effect after the body is seated.</p>
+        <SortableTable
+          empty="No swings yet."
+          columns={[
+            { key: 'kind', label: 'Kind', get: (row) => row.kind, sortValue: (row) => row.kind },
+            { key: 'plays', label: 'Plays', get: (row) => String(row.plays), sortValue: (row) => row.plays },
+            { key: 'self', label: 'Self', get: (row) => signed(row.avgActorSwing), sortValue: (row) => row.avgActorSwing },
+            { key: 'rel', label: 'Rel', get: (row) => signed(row.avgRelativeSwing), sortValue: (row) => row.avgRelativeSwing },
+          ]}
+          rows={summary.kindSwing}
+          rowKey={(row) => row.kind}
+          defaultSort={{ key: 'rel', dir: 'desc' }}
+        />
       </div>
 
-      <p className="quiet debug-legend">Impact = score swing after the card&apos;s full resolution (targets / Instant windows included). Rel = your Δ minus average opponent Δ. Win% = matches won when that seat resolved the card.</p>
-      <RelPair title="Heroes" high={summary.heroHigh} low={summary.heroLow} />
-      <RelPair title="Terrains" high={summary.terrainHigh} low={summary.terrainLow} />
-      <RelPair title="Items / runes / neutrals / towers" high={summary.lootHigh} low={summary.lootLow} />
+      <p className="quiet debug-legend">
+        Body = score swing from seating the hero (before ability targets resolve). Ability = swing from the cast effect.
+        Rel = your Δ minus average opponent Δ. Click a column header to cycle desc → asc → off. Rank follows the active sort.
+      </p>
+      <div className="debug-block">
+        <h3>Heroes (body)</h3>
+        <CardSortTable rows={summary.heroes} empty="No hero placements yet." />
+      </div>
+      <div className="debug-block">
+        <h3>Abilities (effect)</h3>
+        <CardSortTable rows={summary.abilities} empty="No ability activations yet." />
+      </div>
+      <div className="debug-block">
+        <h3>Terrains</h3>
+        <CardSortTable rows={summary.terrains} empty="No terrain plays yet." />
+      </div>
+      <div className="debug-block">
+        <h3>Items / runes / neutrals / towers</h3>
+        <CardSortTable rows={summary.loot} empty="No loot plays yet." />
+      </div>
 
       <div className="debug-block">
         <h3>Highest impact</h3>
-        <CardTable rows={summary.contested} />
+        <CardSortTable rows={summary.contested} empty="No contested swings yet." defaultSort={{ key: 'abs', dir: 'desc' }} />
       </div>
 
       {game ? (
@@ -383,51 +386,137 @@ export function DebugRail({
   )
 }
 
-function RelPair({ title, high, low }: { title: string; high: CardBalanceRow[]; low: CardBalanceRow[] }) {
+type SortDir = 'asc' | 'desc'
+
+type SortState = { key: string; dir: SortDir } | null
+
+type Column<T> = {
+  key: string
+  label: string
+  get: (row: T) => ReactNode
+  sortValue: (row: T) => string | number
+  className?: string
+}
+
+function cycleSort(current: SortState, key: string): SortState {
+  if (!current || current.key !== key) return { key, dir: 'desc' }
+  if (current.dir === 'desc') return { key, dir: 'asc' }
+  return null
+}
+
+function SortableTable<T>({
+  columns,
+  rows,
+  rowKey,
+  empty = 'Nothing yet.',
+  defaultSort = null,
+  limit,
+}: {
+  columns: Column<T>[]
+  rows: T[]
+  rowKey: (row: T) => string
+  empty?: string
+  defaultSort?: SortState
+  limit?: number
+}) {
+  const [sort, setSort] = useState<SortState>(defaultSort)
+  if (rows.length === 0) return <p className="quiet">{empty}</p>
+  const ordered = [...rows]
+  if (sort) {
+    const col = columns.find((entry) => entry.key === sort.key)
+    if (col) {
+      ordered.sort((a, b) => {
+        const av = col.sortValue(a)
+        const bv = col.sortValue(b)
+        const cmp = typeof av === 'number' && typeof bv === 'number'
+          ? av - bv
+          : String(av).localeCompare(String(bv))
+        return sort.dir === 'asc' ? cmp : -cmp
+      })
+    }
+  }
+  const shown = limit ? ordered.slice(0, limit) : ordered
   return (
-    <div className="debug-block">
-      <h3>{title}</h3>
-      <div className="debug-rel-grid">
-        <div>
-          <h4>Highest Rel</h4>
-          <CardTable rows={high} empty="No plays in this filter." />
-        </div>
-        <div>
-          <h4>Lowest Rel</h4>
-          <CardTable rows={low} empty="No plays in this filter." />
-        </div>
-      </div>
-    </div>
+    <table className="debug-table debug-table-sort">
+      <thead>
+        <tr>
+          <th className="debug-rank-col" title="Rank">#</th>
+          {columns.map((col) => {
+            const active = sort?.key === col.key
+            const mark = !active ? '' : sort.dir === 'desc' ? ' ↓' : ' ↑'
+            return (
+              <th key={col.key} className={col.className}>
+                <button
+                  type="button"
+                  className={`debug-sort${active ? ' on' : ''}`}
+                  aria-pressed={active}
+                  title={`Sort by ${col.label}`}
+                  onClick={() => setSort((current) => cycleSort(current, col.key))}
+                >
+                  {col.label}{mark}
+                </button>
+              </th>
+            )
+          })}
+        </tr>
+      </thead>
+      <tbody>
+        {shown.map((row, index) => (
+          <tr key={rowKey(row)}>
+            <td className="debug-rank-col">{index + 1}</td>
+            {columns.map((col) => (
+              <td key={col.key} className={col.className}>{col.get(row)}</td>
+            ))}
+          </tr>
+        ))}
+      </tbody>
+    </table>
   )
 }
 
-function CardTable({ rows, empty = 'No card plays yet.' }: { rows: CardBalanceRow[]; empty?: string }) {
-  if (rows.length === 0) return <p className="quiet">{empty}</p>
+function CardSortTable({
+  rows,
+  empty = 'No card plays yet.',
+  defaultSort = { key: 'rel', dir: 'desc' as const },
+}: {
+  rows: CardBalanceRow[]
+  empty?: string
+  defaultSort?: SortState
+}) {
   return (
-    <table className="debug-table">
-      <thead>
-        <tr><th>Card</th><th>n</th><th>Rel</th><th>|Rel|</th><th>Self</th><th>Win%</th></tr>
-      </thead>
-      <tbody>
-        {rows.slice(0, 12).map((row) => (
-          <tr key={`${row.kind}-${row.defId}-${row.plays}-${fmt(row.avgRelativeSwing)}`}>
-            <td>
+    <SortableTable
+      empty={empty}
+      defaultSort={defaultSort}
+      rows={rows}
+      rowKey={(row) => `${row.kind}-${row.defId}`}
+      columns={[
+        {
+          key: 'card',
+          label: 'Card',
+          get: (row) => (
+            <>
               <strong>{row.name}</strong>
               <small>
                 {row.kind}
                 {row.attr ? ` · ${attrLabel(row.attr)}` : ''}
                 {row.instant ? ' · instant' : ''}
               </small>
-            </td>
-            <td>{row.plays}</td>
-            <td>{signed(row.avgRelativeSwing)}</td>
-            <td>{fmt(row.avgAbsSwing)}</td>
-            <td>{signed(row.avgActorSwing)}</td>
-            <td>{row.presence > 0 ? `${Math.round(row.winRate * 100)}%` : '—'}</td>
-          </tr>
-        ))}
-      </tbody>
-    </table>
+            </>
+          ),
+          sortValue: (row) => row.name,
+        },
+        { key: 'n', label: 'n', get: (row) => String(row.plays), sortValue: (row) => row.plays },
+        { key: 'rel', label: 'Rel', get: (row) => signed(row.avgRelativeSwing), sortValue: (row) => row.avgRelativeSwing },
+        { key: 'abs', label: '|Rel|', get: (row) => fmt(row.avgAbsSwing), sortValue: (row) => row.avgAbsSwing },
+        { key: 'self', label: 'Self', get: (row) => signed(row.avgActorSwing), sortValue: (row) => row.avgActorSwing },
+        {
+          key: 'win',
+          label: 'Win%',
+          get: (row) => (row.presence > 0 ? `${Math.round(row.winRate * 100)}%` : '—'),
+          sortValue: (row) => row.winRate,
+        },
+      ]}
+    />
   )
 }
 

@@ -1,18 +1,26 @@
 import { useEffect, useRef, useState } from 'react'
 import type { Action, Game } from '../game/types.ts'
+import { loadOnlineAuth, saveOnlineAuth } from '../local/save.ts'
 import { GroveSocket, type OnlinePlayer } from '../online/socket.ts'
 import { Table } from './Table.tsx'
 
-type Phase = 'connect' | 'auth' | 'lobby' | 'queued' | 'match' | 'over'
+type Phase = 'connect' | 'auth' | 'lobby' | 'queued' | 'match' | 'over' | 'reconnect'
 
 export function OnlinePlay({ onBack }: { onBack: () => void }) {
   const socket = useRef<GroveSocket | null>(null)
+  const boardRef = useRef<{ game: Game; seat: number; seed: number; roomId: string } | null>(null)
+  const playerRef = useRef<OnlinePlayer | null>(null)
+  const authRef = useRef(loadOnlineAuth())
+  const reconnectTimer = useRef<number | null>(null)
+  const reconnectAttempt = useRef(0)
+  const intentionalClose = useRef(false)
+
   const [phase, setPhase] = useState<Phase>('connect')
   const [status, setStatus] = useState('Connecting…')
   const [fault, setFault] = useState('')
   const [player, setPlayer] = useState<OnlinePlayer | null>(null)
-  const [name, setName] = useState('')
-  const [password, setPassword] = useState('')
+  const [name, setName] = useState(authRef.current?.name ?? '')
+  const [password, setPassword] = useState(authRef.current?.password ?? '')
   const [party, setParty] = useState<2 | 3 | 4>(2)
   const [waiting, setWaiting] = useState(0)
   const [board, setBoard] = useState<{ game: Game; seat: number; seed: number; roomId: string } | null>(null)
@@ -26,20 +34,45 @@ export function OnlinePlay({ onBack }: { onBack: () => void }) {
   const [leaders, setLeaders] = useState<OnlinePlayer[]>([])
 
   useEffect(() => {
-    const client = new GroveSocket()
-    socket.current = client
+    boardRef.current = board
+  }, [board])
+  useEffect(() => {
+    playerRef.current = player
+  }, [player])
+
+  function clearReconnectTimer() {
+    if (reconnectTimer.current !== null) {
+      window.clearTimeout(reconnectTimer.current)
+      reconnectTimer.current = null
+    }
+  }
+
+  function attach(client: GroveSocket) {
     client.connect({
       onHello: () => {
+        const saved = authRef.current
+        if (saved?.name && saved.password) {
+          setStatus('Reconnected. Signing in…')
+          client.login(saved.name, saved.password)
+          return
+        }
         setPhase('auth')
         setStatus('Connected. Register or log in.')
       },
       onAuth: (next) => {
         setPlayer(next)
-        setPhase('lobby')
-        setStatus(`Signed in as ${next.name}`)
         setFault('')
+        setStatus(`Signed in as ${next.name}`)
+        // Resume sends match/state right after auth — don't clobber that phase.
+        setPhase((current) => (
+          current === 'match' || current === 'over' || current === 'queued' ? current : 'lobby'
+        ))
       },
-      onAuthErr: (message) => setFault(message),
+      onAuthErr: (message) => {
+        setFault(message)
+        setPhase('auth')
+        setStatus('Sign in failed.')
+      },
       onQueued: (seats, count) => {
         setParty(seats as 2 | 3 | 4)
         setWaiting(count)
@@ -53,11 +86,16 @@ export function OnlinePlay({ onBack }: { onBack: () => void }) {
       onMatch: (info) => {
         setPhase('match')
         setOver(null)
-        setStatus(`Matched · seat ${info.seat + 1}`)
+        reconnectAttempt.current = 0
+        setStatus(`Returned to match · seat ${info.seat + 1}`)
       },
       onState: (info) => {
-        setBoard({ game: info.game, seat: info.seat, seed: info.seed, roomId: info.roomId })
+        const next = { game: info.game, seat: info.seat, seed: info.seed, roomId: info.roomId }
+        setBoard(next)
+        boardRef.current = next
         setPhase(info.game.over ? 'over' : 'match')
+        reconnectAttempt.current = 0
+        if (!info.game.over) setStatus(`In match · seat ${info.seat + 1}`)
       },
       onMatchOver: (info) => {
         setOver(info)
@@ -68,31 +106,89 @@ export function OnlinePlay({ onBack }: { onBack: () => void }) {
       onLeaderboard: (rows) => setLeaders(rows),
       onError: (message) => setFault(message),
       onClose: () => {
+        if (intentionalClose.current) return
+        const hadMatch = !!boardRef.current && !boardRef.current.game.over
+        if (hadMatch || playerRef.current) {
+          setPhase('reconnect')
+          setStatus('Disconnected. Reconnecting…')
+          scheduleReconnect()
+          return
+        }
         setPhase('connect')
         setStatus('Disconnected.')
+        scheduleReconnect()
       },
     })
-    return () => client.close()
+  }
+
+  function scheduleReconnect() {
+    clearReconnectTimer()
+    const attempt = reconnectAttempt.current
+    const delay = Math.min(12_000, 800 + attempt * 700)
+    reconnectAttempt.current = attempt + 1
+    reconnectTimer.current = window.setTimeout(() => {
+      setStatus(attempt === 0 ? 'Reconnecting…' : `Reconnecting (try ${attempt + 1})…`)
+      const client = new GroveSocket()
+      socket.current = client
+      attach(client)
+    }, delay)
+  }
+
+  useEffect(() => {
+    intentionalClose.current = false
+    const client = new GroveSocket()
+    socket.current = client
+    attach(client)
+    return () => {
+      intentionalClose.current = true
+      clearReconnectTimer()
+      client.close()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- mount once
   }, [])
 
   function sendAction(action: Action) {
     socket.current?.action(action)
   }
 
-  if (phase === 'match' && board) {
+  function rememberAuth(nextName: string, nextPassword: string) {
+    authRef.current = { name: nextName, password: nextPassword }
+    saveOnlineAuth(nextName, nextPassword)
+  }
+
+  if ((phase === 'match' || phase === 'reconnect') && board && !board.game.over) {
     return (
-      <Table
-        game={board.game}
-        seed={board.seed}
-        stuck={false}
-        onlineSeat={board.seat}
-        onAction={sendAction}
-        onLobby={() => {
-          socket.current?.leaveMatch()
-          setBoard(null)
-          setPhase('lobby')
-        }}
-      />
+      <>
+        {phase === 'reconnect' ? (
+          <div className="reconnect-banner" data-testid="online-reconnect-banner" role="status">
+            <p>{status}</p>
+            <button
+              type="button"
+              data-testid="online-reconnect-now"
+              onClick={() => {
+                reconnectAttempt.current = 0
+                scheduleReconnect()
+              }}
+            >
+              Retry now
+            </button>
+          </div>
+        ) : null}
+        <Table
+          game={board.game}
+          seed={board.seed}
+          stuck={false}
+          onlineSeat={board.seat}
+          onAction={sendAction}
+          onLobby={() => {
+            socket.current?.leaveMatch()
+            setBoard(null)
+            boardRef.current = null
+            setPhase('lobby')
+            setStatus('Left match.')
+          }}
+        />
+      </>
     )
   }
 
@@ -101,7 +197,7 @@ export function OnlinePlay({ onBack }: { onBack: () => void }) {
       <div className="lobby-copy">
         <p className="eyebrow">Ranked Grove</p>
         <h1>Online</h1>
-        <p className="lede">Register, queue by MMR, and play live. The server runs the rules; opponents never see your hand.</p>
+        <p className="lede">Register, queue by MMR, and play live. The server runs the rules; opponents never see your hand. Dropped connections can return to the same match for a few minutes.</p>
         {player ? (
           <dl>
             <div><dt>You</dt><dd>{player.name}</dd></div>
@@ -111,11 +207,15 @@ export function OnlinePlay({ onBack }: { onBack: () => void }) {
         ) : null}
       </div>
       <form className="lobby-card" onSubmit={(event) => event.preventDefault()}>
-        <h2>{phase === 'auth' || phase === 'connect' ? 'Account' : 'Matchmaking'}</h2>
+        <h2>
+          {phase === 'auth' || phase === 'connect' || phase === 'reconnect'
+            ? 'Account'
+            : 'Matchmaking'}
+        </h2>
         <p className="quiet" data-testid="online-status">{status}</p>
         {fault ? <p className="warn">{fault}</p> : null}
 
-        {(phase === 'auth' || phase === 'connect') && (
+        {(phase === 'auth' || phase === 'connect' || phase === 'reconnect') && (
           <>
             <label>
               Name
@@ -125,12 +225,41 @@ export function OnlinePlay({ onBack }: { onBack: () => void }) {
               Password
               <input data-testid="online-pass" type="password" value={password} onChange={(event) => setPassword(event.target.value)} />
             </label>
-            <button type="button" className="primary block" data-testid="online-register" onClick={() => socket.current?.register(name, password)}>
+            <button
+              type="button"
+              className="primary block"
+              data-testid="online-register"
+              onClick={() => {
+                rememberAuth(name, password)
+                socket.current?.register(name, password)
+              }}
+            >
               Register
             </button>
-            <button type="button" className="block" data-testid="online-login" onClick={() => socket.current?.login(name, password)}>
+            <button
+              type="button"
+              className="block"
+              data-testid="online-login"
+              onClick={() => {
+                rememberAuth(name, password)
+                socket.current?.login(name, password)
+              }}
+            >
               Log in
             </button>
+            {phase === 'reconnect' ? (
+              <button
+                type="button"
+                className="block"
+                data-testid="online-reconnect-now"
+                onClick={() => {
+                  reconnectAttempt.current = 0
+                  scheduleReconnect()
+                }}
+              >
+                Reconnect
+              </button>
+            ) : null}
           </>
         )}
 
@@ -173,6 +302,7 @@ export function OnlinePlay({ onBack }: { onBack: () => void }) {
               onClick={() => {
                 setOver(null)
                 setBoard(null)
+                boardRef.current = null
                 setPhase('lobby')
               }}
             >

@@ -105,10 +105,14 @@ export function Table({
     avgWinnerScore: 0,
     cards: [],
     cardsLow: [],
+    heroes: [],
+    abilities: [],
     heroHigh: [],
     heroLow: [],
+    terrains: [],
     terrainHigh: [],
     terrainLow: [],
+    loot: [],
     lootHigh: [],
     lootLow: [],
     contested: [],
@@ -911,6 +915,8 @@ function Detail({
             ? 'Death Prophet plays the top of the grave for free — pick a team.'
             : trap
             ? 'Choose any team — yours or an opponent’s. At most one trap per team.'
+            : card && display(card.defId).instant
+            ? 'Place onto an existing team or a new one. Ability targets resolve from the card text after seating.'
             : 'Click more heroes in hand to bring them in silently. Only the active ability fires.'}
         </p>
         <div className="inline-choices">

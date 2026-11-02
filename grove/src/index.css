@@ -231,6 +231,30 @@ p { margin: 0; }
   letter-spacing: 0.06em;
   font-size: 0.68rem;
 }
+.debug-table-sort th {
+  padding: 2px 4px;
+}
+.debug-rank-col {
+  width: 1.6rem;
+  color: var(--cream-dim);
+  font-variant-numeric: tabular-nums;
+}
+button.debug-sort {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  padding: 2px 0;
+  cursor: pointer;
+  text-align: left;
+}
+button.debug-sort:hover,
+button.debug-sort.on {
+  color: var(--gold);
+}
 .debug-table td strong {
   display: block;
   font-size: 0.82rem;
@@ -927,6 +951,28 @@ p { margin: 0; }
 .lede { font-size: 1.15rem; max-width: 42rem; margin-top: 14px; }
 .lobby dl { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-top: 22px; }
 .lobby dt { color: var(--gold); font-size: 0.78rem; letter-spacing: 0.12em; text-transform: uppercase; }
+.resume-box {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid color-mix(in srgb, var(--moss) 45%, transparent);
+  background: color-mix(in srgb, var(--moss) 12%, transparent);
+}
+.reconnect-banner {
+  position: sticky;
+  top: 0;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 16px;
+  background: color-mix(in srgb, #8a5a2b 88%, #1a120c);
+  color: var(--cream);
+  border-bottom: 1px solid color-mix(in srgb, var(--cream) 20%, transparent);
+}
+.reconnect-banner p { margin: 0; font-size: 0.92rem; }
 .lobby-card { padding: 18px; display: flex; flex-direction: column; gap: 10px; }
 .lobby-card label { display: flex; flex-direction: column; gap: 4px; color: var(--cream-dim); font-size: 0.85rem; }
 .lobby-card input {

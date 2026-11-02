@@ -20,6 +20,13 @@ import {
   type ScoreRules,
 } from './game/scoring.ts'
 import type { Action, AiStrat, Game } from './game/types.ts'
+import {
+  clearLocalMatch,
+  describeLocalMatch,
+  loadLocalMatch,
+  saveLocalMatch,
+  type SavedLocalMatch,
+} from './local/save.ts'
 import { Glossary } from './ui/Glossary.tsx'
 import { type DebugSpeed, type DebugView } from './ui/DebugRail.tsx'
 import { OnlinePlay } from './ui/OnlinePlay.tsx'
@@ -291,7 +298,9 @@ export default function App() {
         const run = current[0]
         if (!run) return current
         try {
-          return [advanceTracked(run)]
+          const advanced = advanceTracked(run)
+          saveLocalMatch(advanced.seed, advanced.game, getScoreRules())
+          return [advanced]
         } catch (error) {
           const text = error instanceof Error ? error.message : 'The Grove could not finish a play.'
           return [{ ...run, game: log(run.game, text), stuck: true, stall: run.stall + 1 }]
@@ -309,6 +318,7 @@ export default function App() {
       try {
         const next = apply(run.game, action)
         run.tracker.observe(run.game, action, next)
+        saveLocalMatch(run.seed, next, getScoreRules())
         return [{ ...run, game: next, stuck: false, stall: 0 }]
       } catch (error) {
         const text = error instanceof Error ? error.message : 'That play could not resolve.'
@@ -336,6 +346,13 @@ export default function App() {
     watchRef.current = false
     archivedWatchRef.current = null
     window.history.replaceState({}, '', window.location.pathname)
+    // Keep unfinished local matches so the lobby can offer Return to game.
+    if (live && !debug) {
+      if (live.game.over) clearLocalMatch()
+      else saveLocalMatch(live.seed, live.game, getScoreRules())
+    } else if (debug) {
+      clearLocalMatch()
+    }
     setRuns([])
     setReports([])
     setDebug(false)
@@ -347,6 +364,22 @@ export default function App() {
     setStratFilter(ALL_STRAT_FILTER)
     setDebugStrats(Array.from({ length: 2 }, (_, index) => cycleStrat(index)))
     resetScoreRules()
+  }
+
+  function resumeLocal(saved: SavedLocalMatch) {
+    setScoreRules(saved.rules)
+    setMatch((value) => value + 1)
+    setSeed(saved.seed)
+    setSeatCount(
+      SEAT_OPTIONS.includes(saved.game.players.length as SeatCount)
+        ? (saved.game.players.length as SeatCount)
+        : 2,
+    )
+    setDebug(false)
+    const tracker = new BalanceTracker(saved.seed)
+    tracker.start(saved.game)
+    setRuns([{ seed: saved.seed, game: saved.game, tracker, stuck: false, stall: 0 }])
+    setFocus(0)
   }
 
   function resetDebug() {
@@ -515,6 +548,7 @@ export default function App() {
     return (
       <Lobby
         onOnline={() => setOnline(true)}
+        onResumeLocal={resumeLocal}
         onStart={(next, nextSeed, nextDebug, seats, queue, strats, rules) => {
           if (nextDebug) {
             startDebugSession(nextSeed, seats, queue, strats, rules)
@@ -527,6 +561,7 @@ export default function App() {
           setDebug(false)
           const tracker = new BalanceTracker(nextSeed)
           tracker.start(next)
+          saveLocalMatch(nextSeed, next, rules)
           setRuns([{ seed: nextSeed, game: next, tracker, stuck: false, stall: 0 }])
           setFocus(0)
         }}
@@ -583,8 +618,10 @@ export default function App() {
 function Lobby({
   onStart,
   onOnline,
+  onResumeLocal,
 }: {
   onOnline: () => void
+  onResumeLocal: (saved: SavedLocalMatch) => void
   onStart: (
     game: Game,
     seed: number,
@@ -604,6 +641,7 @@ function Lobby({
   const [glossary, setGlossary] = useState(false)
   const [scoreOpen, setScoreOpen] = useState(false)
   const [lobbyRules, setLobbyRules] = useState<ScoreRules>(() => cloneRules(getScoreRules()))
+  const [savedLocal, setSavedLocal] = useState<SavedLocalMatch | null>(() => loadLocalMatch())
 
   function setPlayerCount(next: SeatCount) {
     setCount(next)
@@ -799,8 +837,33 @@ function Lobby({
                 ? 'You go first. AI seats take their turns on their own.'
                 : 'All AI is fine for spectating and debugging.'}
         </p>
+        {savedLocal && !debugPreview ? (
+          <div className="resume-box" data-testid="resume-local-box">
+            <p className="quiet">Unfinished local match found.</p>
+            <p className="quiet">{describeLocalMatch(savedLocal)}</p>
+            <button
+              type="button"
+              className="primary block"
+              data-testid="resume-local"
+              onClick={() => onResumeLocal(savedLocal)}
+            >
+              Return to game
+            </button>
+            <button
+              type="button"
+              className="block"
+              data-testid="discard-local"
+              onClick={() => {
+                clearLocalMatch()
+                setSavedLocal(null)
+              }}
+            >
+              Discard saved match
+            </button>
+          </div>
+        ) : null}
         <button type="button" className="primary block" data-testid="play-solo" onClick={start}>
-          {debugPreview ? `Sim ${queue} game${queue === 1 ? '' : 's'}` : 'Start match'}
+          {debugPreview ? `Sim ${queue} game${queue === 1 ? '' : 's'}` : savedLocal ? 'New match' : 'Start match'}
         </button>
         <button type="button" className="block" data-testid="play-online" onClick={onOnline}>Play online (ranked)</button>
         <button type="button" className="block" data-testid="glossary-open" onClick={() => setGlossary(true)}>Glossary</button>

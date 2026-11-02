@@ -22,8 +22,20 @@ type Client = {
   seat: number | null
 }
 
+/** Soft seat binding — survives socket drops so a player can reconnect. */
+type SeatBind = {
+  roomId: string
+  seat: number
+  disconnectedAt: number | null
+}
+
+/** Forfeit a disconnected seat after this many ms. */
+const DISCONNECT_GRACE_MS = 5 * 60_000
+
 const clients = new Map<string, Client>()
 const rooms = new Map<string, Room>()
+/** playerId → active match seat (even while socket is down). */
+const binds = new Map<string, SeatBind>()
 const queue: QueueEntry[] = []
 let nextClient = 1
 let nextRoom = 1
@@ -33,6 +45,9 @@ function send(ws: WebSocket, msg: ServerMsg) {
 }
 
 function broadcastRoom(room: Room) {
+  if (room.finished) {
+    for (const seat of room.seats) clearBind(seat.playerId)
+  }
   for (const client of clients.values()) {
     if (client.roomId !== room.id || client.seat === null) continue
     send(client.ws, {
@@ -73,7 +88,8 @@ function enqueue(client: Client, seats: 2 | 3 | 4) {
     send(client.ws, { type: 'error', message: 'Unknown player.' })
     return
   }
-  if (client.roomId) {
+  if (client.roomId || (client.playerId && binds.has(client.playerId))) {
+    if (tryResumeMatch(client)) return
     send(client.ws, { type: 'error', message: 'Already in a match.' })
     return
   }
@@ -115,6 +131,7 @@ function matchmake() {
       for (let seat = 0; seat < matched.length; seat += 1) {
         const playerId = matched[seat]!.playerId
         const client = [...clients.values()].find((entry) => entry.playerId === playerId && !entry.roomId)
+        bindSeat(playerId, roomId, seat)
         if (!client) continue
         client.roomId = roomId
         client.seat = seat
@@ -131,52 +148,131 @@ function matchmake() {
   }
 }
 
-function leaveMatch(client: Client) {
-  const roomId = client.roomId
-  if (!roomId) {
-    client.seat = null
+function bindSeat(playerId: string, roomId: string, seat: number) {
+  binds.set(playerId, { roomId, seat, disconnectedAt: null })
+}
+
+function clearBind(playerId: string | null) {
+  if (playerId) binds.delete(playerId)
+}
+
+function detachSocket(client: Client) {
+  client.roomId = null
+  client.seat = null
+}
+
+/** Soft drop: keep the room; mark the seat disconnected for grace reconnect. */
+function softDisconnect(client: Client) {
+  if (!client.playerId || client.roomId === null || client.seat === null) {
+    detachSocket(client)
     return
   }
-  const room = rooms.get(roomId)
-  if (!room || room.finished) {
-    client.roomId = null
-    client.seat = null
-    if (room && [...clients.values()].every((entry) => entry.roomId !== roomId || entry.id === client.id)) {
-      rooms.delete(roomId)
-    }
-    return
+  const bind = binds.get(client.playerId)
+  if (bind && bind.roomId === client.roomId) {
+    binds.set(client.playerId, { ...bind, disconnectedAt: Date.now() })
   }
-  const seat = room.seats.findIndex((entry) => entry.playerId === client.playerId)
-  if (seat < 0) {
-    client.roomId = null
-    client.seat = null
-    return
-  }
+  detachSocket(client)
+}
+
+function forfeitSeat(room: Room, seat: number, reason: string) {
+  if (room.finished) return
   const scores = room.game.players.map((_, index) => (
     index === seat ? -1 : (room.game.over?.scores[index] ?? scoreState(room.game, index).total)
   ))
-  if (!room.finished) {
-    const ratings = room.seats.map((entry) => getPlayer(entry.playerId)?.mmr ?? entry.mmr)
-    const field = eloField(ratings, scores)
-    applyMatchResult(
-      room.seats.map((entry) => entry.playerId),
+  const ratings = room.seats.map((entry) => getPlayer(entry.playerId)?.mmr ?? entry.mmr)
+  const field = eloField(ratings, scores)
+  applyMatchResult(
+    room.seats.map((entry) => entry.playerId),
+    scores,
+    field.next,
+  )
+  room.finished = true
+  room.result = { scores, deltas: field.deltas, nextMmrs: field.next }
+  room.game = {
+    ...room.game,
+    over: room.game.over ?? {
+      reason,
       scores,
-      field.next,
-    )
-    room.finished = true
-    room.result = { scores, deltas: field.deltas, nextMmrs: field.next }
-    room.game = {
-      ...room.game,
-      over: room.game.over ?? {
-        reason: `${room.seats[seat]?.name ?? 'A player'} left.`,
-        scores,
-        parts: scores.map((total) => ({ teams: 0, terrains: 0, total })),
-      },
+      parts: scores.map((total) => ({ teams: 0, terrains: 0, total })),
+    },
+  }
+  for (const seatInfo of room.seats) clearBind(seatInfo.playerId)
+  broadcastRoom(room)
+  // Drop finished rooms once every client has left.
+  if ([...clients.values()].every((entry) => entry.roomId !== room.id)) {
+    rooms.delete(room.id)
+  }
+}
+
+function leaveMatch(client: Client) {
+  const roomId = client.roomId ?? (client.playerId ? binds.get(client.playerId)?.roomId ?? null : null)
+  const seatFromBind = client.playerId ? binds.get(client.playerId)?.seat ?? null : null
+  const seat = client.seat ?? seatFromBind
+  clearBind(client.playerId)
+  detachSocket(client)
+  if (!roomId || seat === null) return
+  const room = rooms.get(roomId)
+  if (!room) return
+  if (room.finished) {
+    if ([...clients.values()].every((entry) => entry.roomId !== roomId)) rooms.delete(roomId)
+    return
+  }
+  forfeitSeat(room, seat, `${room.seats[seat]?.name ?? 'A player'} left.`)
+}
+
+/** After login, rejoin an unfinished match if this account still owns a seat. */
+function tryResumeMatch(client: Client) {
+  if (!client.playerId) return false
+  const bind = binds.get(client.playerId)
+  if (!bind) return false
+  const room = rooms.get(bind.roomId)
+  if (!room || room.finished || room.game.over) {
+    clearBind(client.playerId)
+    return false
+  }
+  // Kick any stale socket still claiming this seat.
+  for (const other of clients.values()) {
+    if (other.id === client.id) continue
+    if (other.playerId === client.playerId || (other.roomId === bind.roomId && other.seat === bind.seat)) {
+      other.roomId = null
+      other.seat = null
     }
   }
-  broadcastRoom(room)
-  client.roomId = null
-  client.seat = null
+  client.roomId = bind.roomId
+  client.seat = bind.seat
+  binds.set(client.playerId, { ...bind, disconnectedAt: null })
+  send(client.ws, {
+    type: 'match',
+    roomId: room.id,
+    seat: bind.seat,
+    seats: room.seats.length,
+    players: room.seats.map((entry) => ({ name: entry.name, mmr: entry.mmr })),
+  })
+  send(client.ws, {
+    type: 'state',
+    roomId: room.id,
+    seat: bind.seat,
+    seed: room.seed,
+    game: seatView(room, bind.seat),
+  })
+  return true
+}
+
+function sweepDisconnects() {
+  const now = Date.now()
+  for (const [playerId, bind] of [...binds.entries()]) {
+    if (bind.disconnectedAt === null) continue
+    if (now - bind.disconnectedAt < DISCONNECT_GRACE_MS) continue
+    const room = rooms.get(bind.roomId)
+    binds.delete(playerId)
+    if (!room || room.finished) continue
+    // Only forfeit if no live socket is attached to this seat.
+    const live = [...clients.values()].some(
+      (entry) => entry.roomId === bind.roomId && entry.seat === bind.seat,
+    )
+    if (live) continue
+    forfeitSeat(room, bind.seat, `${room.seats[bind.seat]?.name ?? 'A player'} disconnected.`)
+  }
 }
 
 function mime(path: string): string {
@@ -267,9 +363,17 @@ wss.on('connection', (ws) => {
         send(ws, { type: 'auth_err', message: result.error })
         return
       }
+      // One live socket per account — drop older connections for the same player.
+      for (const other of clients.values()) {
+        if (other.id !== client.id && other.playerId === result.id) {
+          softDisconnect(other)
+          other.playerId = null
+        }
+      }
       client.playerId = result.id
       send(ws, { type: 'auth_ok', player: publicPlayer(result) })
       send(ws, { type: 'leaderboard', rows: leaderboard(20) })
+      tryResumeMatch(client)
       return
     }
 
@@ -314,12 +418,14 @@ wss.on('connection', (ws) => {
 
   ws.on('close', () => {
     cancelQueue(client)
-    if (client.roomId) leaveMatch(client)
+    // Soft disconnect keeps the match alive for reconnect; explicit leave_match forfeits.
+    if (client.roomId) softDisconnect(client)
     clients.delete(client.id)
   })
 })
 
 setInterval(() => matchmake(), 2000)
+setInterval(() => sweepDisconnects(), 15_000)
 
 server.listen(PORT, () => {
   console.log(`Grove online listening on :${PORT} (ws /ws)`)

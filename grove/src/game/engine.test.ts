@@ -785,6 +785,47 @@ describe('teams', () => {
     expect(options.find((option) => option.id === 'new')?.ok).toBe(false)
     expect(options.find((option) => option.id === 'new')?.reason).toBe('12 teams is the limit.')
   })
+
+  it('lets instant heroes seat on an existing team or open a new one, then target from text', () => {
+    let game = ready()
+    game = only(game, 0, ['dazzle', 'sven', 'earth_spirit'])
+    game = only(game, 1, ['axe'])
+    // Seed an allied team to join.
+    game = apply(game, { type: 'play', uid: uid(game, 0, 'sven'), team: 'new' })
+    game = passInstants(game)
+    const existing = game.players[0].teams[0]!.id
+
+    const dazzleOpts = teamsFor(game, uid(game, 0, 'dazzle'))
+    expect(dazzleOpts.some((option) => option.id === existing && option.ok)).toBe(true)
+    expect(dazzleOpts.some((option) => option.id === 'new' && option.ok)).toBe(true)
+
+    // Dazzle onto the existing team — ability should ask for an allied hero.
+    game = apply(game, { type: 'play', uid: uid(game, 0, 'dazzle'), team: existing })
+    game = passInstants(game)
+    expect(game.pending?.resume.kind).toBe('cast')
+    expect(game.pending?.prompt.toLowerCase()).toMatch(/hero you own|allied hero/)
+    const ally = game.pending!.choices.find((choice) => choice.id.startsWith('hero:'))
+    expect(ally).toBeTruthy()
+    game = apply(game, { type: 'choose', ids: [ally!.id] })
+    expect(game.log.some((line) => /Shallow Grave|cannot be destroyed/i.test(line))).toBe(true)
+
+    // Earth Spirit onto a new team — ability targets an enemy hero.
+    game = apply(game, { type: 'end' })
+    game = apply(game, { type: 'ready' })
+    game = apply(game, { type: 'play', uid: uid(game, 1, 'axe'), team: 'new' })
+    game = passInstants(game)
+    game = apply(game, { type: 'end' })
+    game = apply(game, { type: 'ready' })
+    const spiritOpts = teamsFor(game, uid(game, 0, 'earth_spirit'))
+    expect(spiritOpts.some((option) => option.id === 'new' && option.ok)).toBe(true)
+    expect(spiritOpts.filter((option) => option.id !== 'new' && option.ok).length).toBeGreaterThan(0)
+    game = apply(game, { type: 'play', uid: uid(game, 0, 'earth_spirit'), team: 'new' })
+    game = passInstants(game)
+    expect(game.pending?.resume.kind).toBe('cast')
+    expect(game.pending?.prompt.toLowerCase()).toMatch(/enemy|choose a hero/)
+    const enemy = game.pending!.choices.find((choice) => choice.id.startsWith('hero:'))
+    expect(enemy).toBeTruthy()
+  })
 })
 
 describe('match', () => {
