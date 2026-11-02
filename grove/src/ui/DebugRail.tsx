@@ -297,6 +297,29 @@ export function DebugRail({
         />
       </div>
 
+      <div className="debug-block">
+        <h3>Ability types</h3>
+        <p className="quiet debug-legend">Primary effect family of activated abilities (n = activations). Win% = matches where a seat fired that type at least once.</p>
+        <SortableTable
+          empty="No ability activations yet."
+          columns={[
+            { key: 'type', label: 'Type', get: (row) => row.label, sortValue: (row) => row.label },
+            { key: 'n', label: 'n', get: (row) => String(row.plays), sortValue: (row) => row.plays },
+            { key: 'rel', label: 'Rel', get: (row) => signed(row.avgRelativeSwing), sortValue: (row) => row.avgRelativeSwing },
+            { key: 'self', label: 'Self', get: (row) => signed(row.avgActorSwing), sortValue: (row) => row.avgActorSwing },
+            {
+              key: 'win',
+              label: 'Win%',
+              get: (row) => (row.presence > 0 ? `${Math.round(row.winRate * 100)}%` : '—'),
+              sortValue: (row) => row.winRate,
+            },
+          ]}
+          rows={summary.byAbilityType}
+          rowKey={(row) => row.id}
+          defaultSort={{ key: 'n', dir: 'desc' }}
+        />
+      </div>
+
       <p className="quiet debug-legend">
         Body = score swing from seating the hero (before ability targets resolve). Ability = swing from the cast effect.
         Rel = your Δ minus average opponent Δ. Click a column header to cycle desc → asc → off. Rank follows the active sort.

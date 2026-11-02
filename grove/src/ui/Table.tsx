@@ -120,6 +120,7 @@ export function Table({
     avgCardsByTurn: [],
     turnLabels: [],
     kindSwing: [],
+    byAbilityType: [],
     byStrat: [],
     shapeCompare: [],
     eventStats: [],
@@ -328,7 +329,8 @@ export function Table({
 
   const chosen = liveCombo.map((uid) => you.hand.find((card) => card.uid === uid)).filter((card): card is CardInst => !!card)
   const comboReady = isCombo(chosen)
-  const drawReason = !canAct ? null : game.deck.length === 0 ? 'The deck is empty.' : you.actions < 1 ? 'No actions left.' : you.hand.length >= you.handLimit ? 'Your hand is full.' : null
+  const drawReason = !canAct ? null : game.deck.length === 0 ? 'The deck is empty.' : you.actions < 1 ? 'No actions left.' : null
+  const clinkzPlayable = canAct ? game.clinkzExile.filter((card) => card.kind === 'item') : []
 
   function clickHand(card: CardInst) {
     if (debug) {
@@ -378,16 +380,17 @@ export function Table({
   function playFocused(uid: string) {
     if (!game) return
     const fromGrave = graveTop?.uid === uid ? graveTop : null
-    const card = fromGrave ?? you.hand.find((entry) => entry.uid === uid)
+    const fromClinkz = game.clinkzExile.find((card) => card.uid === uid) ?? null
+    const card = fromGrave ?? fromClinkz ?? you.hand.find((entry) => entry.uid === uid)
     if (!card || !canPlayCards) return
-    if (!fromGrave && playBlock(game, viewer, card)) return
-    if (canInstant && !fromGrave && !display(card.defId).instant) return
+    if (!fromGrave && !fromClinkz && playBlock(game, viewer, card)) return
+    if (canInstant && !fromGrave && !fromClinkz && !display(card.defId).instant) return
     if (card.kind === 'terrain') return
     if (needsTeam(card.defId, card.kind)) {
       setPlacing(uid)
       setExtras((current) => current.filter((extra) => extra !== uid))
       setMoving(null)
-      setFocus(fromGrave ? { kind: 'card', defId: card.defId } : { kind: 'hand', uid })
+      setFocus(fromGrave || fromClinkz ? { kind: 'card', defId: card.defId } : { kind: 'hand', uid })
       return
     }
     onAction({ type: 'play', uid, team: '', extras: extras.length > 0 && card.kind === 'hero' ? extras : undefined })
@@ -654,7 +657,7 @@ export function Table({
           <span>{debug ? `${activeName}'s hand` : 'Your hand'}</span>
           <span>{you.hand.length} / {you.handLimit}</span>
         </div>
-        {you.hand.length === 0 ? <p className="quiet">Nothing in hand.</p> : null}
+        {you.hand.length === 0 && clinkzPlayable.length === 0 ? <p className="quiet">Nothing in hand.</p> : null}
         <div className="hand-row">
           {you.hand.map((card) => (
             <CardFace
@@ -670,7 +673,22 @@ export function Table({
               testId={`hand-${card.defId}`}
             />
           ))}
+          {clinkzPlayable.map((card) => (
+            <CardFace
+              key={`clinkz-${card.uid}`}
+              defId={card.defId}
+              selected={focus?.kind === 'card' && focus.defId === card.defId}
+              onClick={() => {
+                setFocus({ kind: 'card', defId: card.defId })
+                playFocused(card.uid)
+              }}
+              testId={`clinkz-${card.defId}`}
+            />
+          ))}
         </div>
+        {clinkzPlayable.length > 0 ? (
+          <p className="quiet">Skeleton Walk: exiled items above play free this turn.</p>
+        ) : null}
       </footer>
 
       {!debug && game.pending && (!networked || game.pending.actor === onlineSeat) ? (
@@ -713,6 +731,11 @@ function countShapes(game: Game, id: PlayerId): { core: number; mix: number } {
     if (shape === 'mix') mix += 1
   }
   return { core, mix }
+}
+
+function teamLetter(index: number): string {
+  if (index < 26) return String.fromCharCode(65 + index)
+  return String(index + 1)
 }
 
 function Lane({
@@ -765,11 +788,12 @@ function Lane({
         <div className="teams">
           {teams.map((team, index) => {
             const scored = scoreTeam(game, team)
+            const letter = teamLetter(index)
             return (
               <article key={team.id} className="team" data-testid={mine ? `team-${index}` : undefined}>
                 <header>
                   <strong>{scored.points}</strong>
-                  <span>{scored.why}</span>
+                  <span>Team {letter} · {scored.why}</span>
                 </header>
                 <div className="team-heroes">
                   {team.heroes.map((hero) => (
@@ -1039,19 +1063,64 @@ function PileButton({
 }
 
 function LogSheet({ log, onClose }: { log: string[]; onClose: () => void }) {
+  const pages = paginateLog(log)
+  const [page, setPage] = useState(Math.max(0, pages.length - 1))
+  const safe = Math.min(page, pages.length - 1)
+  const current = pages[safe] ?? { title: 'Match', lines: [] as { text: string; kind: LogKind }[] }
   return (
     <div className="scrim" onClick={onClose}>
-      <section className="sheet" role="dialog" aria-modal="true" aria-labelledby="log-title" onClick={(event) => event.stopPropagation()}>
-        <p className="eyebrow">{log.length} lines</p>
+      <section className="sheet sheet-log" role="dialog" aria-modal="true" aria-labelledby="log-title" onClick={(event) => event.stopPropagation()}>
+        <p className="eyebrow">{log.length} lines · {pages.length} round{pages.length === 1 ? '' : 's'}</p>
         <h2 id="log-title">Match log</h2>
-        {log.length === 0 ? <p className="quiet">Nothing logged yet.</p> : null}
+        {pages.length > 1 ? (
+          <div className="log-pager">
+            <button type="button" disabled={safe <= 0} onClick={() => setPage((n) => Math.max(0, n - 1))}>Prev</button>
+            <strong>{current.title}</strong>
+            <button type="button" disabled={safe >= pages.length - 1} onClick={() => setPage((n) => Math.min(pages.length - 1, n + 1))}>Next</button>
+          </div>
+        ) : null}
+        {current.lines.length === 0 ? <p className="quiet">Nothing logged yet.</p> : null}
         <ol className="log-list">
-          {log.map((line, index) => <li key={`${index}-${line}`}>{line}</li>)}
+          {current.lines.map((entry, index) => (
+            <li key={`${safe}-${index}-${entry.text}`} className={`log-line log-${entry.kind}`}>
+              {entry.text}
+            </li>
+          ))}
         </ol>
         <button type="button" className="primary" onClick={onClose}>Close</button>
       </section>
     </div>
   )
+}
+
+type LogKind = 'turn' | 'action' | 'ability' | 'instant' | 'aura' | 'other'
+
+function paginateLog(log: string[]): { title: string; lines: { text: string; kind: LogKind }[] }[] {
+  const pages: { title: string; lines: { text: string; kind: LogKind }[] }[] = []
+  let current: { title: string; lines: { text: string; kind: LogKind }[] } | null = null
+  for (const line of log) {
+    const turn = /^(.+)'s turn\./.exec(line)
+    if (turn) {
+      current = { title: `${turn[1]}'s turn`, lines: [{ text: line, kind: 'turn' }] }
+      pages.push(current)
+      continue
+    }
+    if (!current) {
+      current = { title: 'Opening', lines: [] }
+      pages.push(current)
+    }
+    current.lines.push({ text: line, kind: classifyLog(line) })
+  }
+  return pages.length > 0 ? pages : [{ title: 'Match', lines: [] }]
+}
+
+function classifyLog(line: string): LogKind {
+  if (/'s turn\./.test(line)) return 'turn'
+  if (/plays Instant |Instant /.test(line) || /nullifies|Spiked Carapace|Battle Trance stops Instant/.test(line)) return 'instant'
+  if (/ is an aura|aura\./i.test(line)) return 'aura'
+  if (/fires|ability|Enchant|Toss|Vacuum|Orchid|Blade Fury|Chronosphere|Global Silence|nullified|does not fire/i.test(line)) return 'ability'
+  if (/plays |fields |draws |discards |plants |combo|takes control|Destroy|destroy/i.test(line)) return 'action'
+  return 'other'
 }
 
 function HandSheet({
@@ -1128,7 +1197,14 @@ function PileDialog({
             {gravePlay && top ? ' Death Prophet can play the top card (free).' : ' Anyone can take from the grave when an ability says so.'}
           </p>
         ) : null}
-        {pile === 'exile' ? <p>Exiled cards are out of the game. They do not interact.</p> : null}
+        {pile === 'exile' ? (
+          <p>
+            Exiled cards are normally out of the game.
+            {game.clinkzExile.length > 0
+              ? ' Skeleton Walk items listed in your hand bar can be played free this turn.'
+              : ''}
+          </p>
+        ) : null}
         {gravePlay && top ? (
           <div className="actions">
             <button type="button" className="primary" data-testid="grave-play-dialog" onClick={() => onPlayGrave(top.uid)}>

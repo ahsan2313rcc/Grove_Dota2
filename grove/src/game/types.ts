@@ -86,7 +86,8 @@ export interface Player {
   skip: boolean
   noHeroNext: boolean
   noHeroNow: boolean
-  orchid: boolean
+  /** Orchid: this seat cannot activate abilities until the caster's next turn. */
+  orchid: Timed | null
   bkb: Timed | null
   mailTurn: number | null
   handLimit: number
@@ -129,6 +130,8 @@ export type Resume =
   | { kind: 'venomancer'; cast: CastResume }
   /** Opponents may play an Instant before a hero ability fires. */
   | { kind: 'instant-window'; cast: CastResume; heroUid: string; seats: PlayerId[]; index: number }
+  /** Instant hero from interrupt — pick a team before seating. */
+  | { kind: 'instant-place'; cast: CastResume; heroUid: string; seats: PlayerId[]; index: number; cardUid: string }
   | { kind: 'free-play-offer'; uid: string; actor: PlayerId }
   | { kind: 'torment'; heroUid: string; cast: CastResume | null }
   | { kind: 'slark-trap'; owner: PlayerId; card: CardInst }

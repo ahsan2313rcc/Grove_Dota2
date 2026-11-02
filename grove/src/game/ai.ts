@@ -236,6 +236,12 @@ export function chooseAiPending(state: Game): string[] {
     if (pick) return [pick]
     return ['pass']
   }
+  // Instant hero team pick during interrupt — prefer a new team when available.
+  if (pending.resume.kind === 'instant-place') {
+    const neu = pending.choices.find((choice) => choice.id.endsWith(':new') || choice.id.includes(':new'))
+    if (neu) return [neu.id]
+    return pending.choices[0] ? [pending.choices[0].id] : ['pass']
+  }
 
   // Illusion rune — counter threatening enters.
   const illu = pending.choices.find((choice) => choice.id.startsWith('illu:'))

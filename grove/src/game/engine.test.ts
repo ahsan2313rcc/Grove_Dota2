@@ -39,10 +39,15 @@ describe('scoring', () => {
       { attrs: ['UNI'], range: 'Melee', count: 1 },
     ])
     expect(fullMix.points).toBe(12)
+    // 4 STR + 1 UNI: core ×4 (+6) wins over mix×2 (+0); attack on mix (+3) → 5+6+3=14
     expect(scoreBodies([
       { attrs: ['STR'], range: 'Melee', count: 4 },
       { attrs: ['UNI'], range: 'Melee', count: 1 },
-    ]).points).toBe(8)
+    ]).points).toBe(14)
+    expect(scoreBodies([
+      { attrs: ['STR'], range: 'Melee', count: 4 },
+      { attrs: ['AGI'], range: 'Melee', count: 1 },
+    ]).why).toMatch(/^Strength ×4 · attributes ×2/)
     expect(scoreBodies([{ attrs: [], range: 'Melee', count: 4 }]).points).toBe(6)
     expect(scoreBodies([{ attrs: [], range: 'Melee', count: 5 }]).points).toBe(8)
     // Under 3 bodies: no mix/core — flat only (1), even with multiple attrs on one body.
@@ -170,6 +175,11 @@ describe('turn', () => {
     expect(game.players[1].hand.length).toBe(before + 2)
     expect(game.pending).toBeNull()
     expect(game.players[1].actions).toBe(2)
+    // Action-draw still works above the hand limit.
+    const over = game.players[1].hand.length
+    game = apply(game, { type: 'draw' })
+    expect(game.players[1].hand.length).toBe(over + 1)
+    expect(game.players[1].actions).toBe(1)
     // Ending while over the limit opens the discard prompt.
     game = apply(game, { type: 'end' })
     expect(game.pending?.resume.kind).toBe('limit')
@@ -633,7 +643,7 @@ describe('heroes', () => {
     expect(game.players[0].actions).toBe(1)
   })
 
-  it('mutes an enemy hero with Orchid', () => {
+  it('locks an opponent with Orchid so they cannot activate abilities', () => {
     let game = ready()
     game = only(game, 0, ['orchid'])
     game = only(game, 1, ['sven'])
@@ -641,14 +651,27 @@ describe('heroes', () => {
     game = apply(game, { type: 'ready' })
     game = apply(game, { type: 'play', uid: uid(game, 1, 'sven'), team: 'new' })
     game = passInstants(game)
-    const sven = game.players[1].teams.flatMap((team) => team.heroes).find((hero) => hero.defId === 'sven')
     game = apply(game, { type: 'end' })
     game = apply(game, { type: 'ready' })
     game = apply(game, { type: 'play', uid: uid(game, 0, 'orchid'), team: '' })
     expect(game.players[0].actions).toBe(2)
-    game = apply(game, { type: 'choose', ids: [`hero:${sven?.uid ?? ''}`] })
-    expect(game.players[1].teams[0]?.heroes[0]?.muted).toBe(true)
+    game = apply(game, { type: 'choose', ids: ['player:1'] })
+    expect(game.players[1].orchid).toBeTruthy()
     expect(game.log.at(-1)).toContain('Orchid')
+  })
+
+  it('lets Orchid nullify the interrupted hero ability from the Instant window', () => {
+    let game = ready()
+    game = only(game, 0, ['sven'])
+    game = only(game, 1, ['orchid'])
+    game = apply(game, { type: 'play', uid: uid(game, 0, 'sven'), team: 'new' })
+    expect(game.pending?.resume.kind).toBe('instant-window')
+    const orchid = game.pending?.choices.find((choice) => choice.id.startsWith('instant:'))?.id ?? ''
+    game = apply(game, { type: 'choose', ids: [orchid] })
+    expect(game.players[0].orchid).toBeTruthy()
+    expect(game.players[0].teams[0]?.heroes[0]?.muted).toBe(true)
+    expect(game.log.some((line) => /Orchid nullifies/.test(line))).toBe(true)
+    expect(game.pending?.resume.kind === 'cast').toBe(false)
   })
 
   it('returns an Eul target at the end of the turn without firing', () => {

@@ -112,8 +112,10 @@ export function scoreBodies(bodies: ScoreBody[], rules: ScoreRules = current): {
   const base = flatBodies.length * rules.heroPoints
   const attack = attackBonus(expanded, rules)
   const size = expanded.length
+  const stack = maxMonoStack(expanded)
+  const mixed = union.size >= 2
 
-  // Core: mono-attribute and at least 3 bodies.
+  // Pure mono core (every body same attr, size ≥ 3).
   if (allHaveAttr && union.size === 1 && size >= SHAPE_MIN_HEROES) {
     const color = [...union][0] ?? 'STR'
     const capped = Math.min(size, 5)
@@ -123,12 +125,22 @@ export function scoreBodies(bodies: ScoreBody[], rules: ScoreRules = current): {
     return { points: base + bonus + atk, why: `${label(color)} ×${capped}${whyAtk}` }
   }
 
-  // Mix: 3+ bodies with 2+ attributes (bonus table still zeros 1–2 attrs).
-  if (size >= SHAPE_MIN_HEROES && union.size >= 2) {
+  // Mixed boards (size ≥ 3, 2+ attrs): better of core-stack bonus vs mix-attr bonus.
+  // So 4 STR + 1 AGI still earns the ×4 core bonus instead of flat-only.
+  if (size >= SHAPE_MIN_HEROES && mixed) {
+    const corePts = stack.count >= SHAPE_MIN_HEROES ? (rules.coreBonus[Math.min(stack.count, 5) - 1] ?? 0) : 0
     const mix = mixBonus(union.size, rules)
+    const bonus = Math.max(corePts, mix.points)
+    const useCore = corePts >= mix.points && corePts > 0
     const atk = rules.attackOnMix ? attack.points : 0
     const whyAtk = rules.attackOnMix ? attack.why : ''
-    return { points: base + mix.points + atk, why: `${mix.why}${whyAtk}` }
+    if (useCore) {
+      return {
+        points: base + bonus + atk,
+        why: `${label(stack.attr)} ×${Math.min(stack.count, 5)} · ${mix.why}${whyAtk}`,
+      }
+    }
+    return { points: base + bonus + atk, why: `${mix.why}${whyAtk}` }
   }
 
   // Small / open teams: flat points only (+ attack when attackOnMix).
@@ -141,6 +153,25 @@ export function scoreBodies(bodies: ScoreBody[], rules: ScoreRules = current): {
     return { points: base + atk, why: `No attribute${whyAtk}` }
   }
   return { points: base + atk, why: `Open ×${size}${whyAtk}` }
+}
+
+/** Largest mono-attribute stack (multi-attr bodies do not pad a stack). */
+function maxMonoStack(bodies: ScoreBody[]): { attr: Attr; count: number } {
+  const tallies: Record<Attr, number> = { STR: 0, AGI: 0, INT: 0, UNI: 0 }
+  for (const body of bodies) {
+    if (body.attrs.length !== 1) continue
+    const attr = body.attrs[0]!
+    tallies[attr] += 1
+  }
+  let best: Attr = 'STR'
+  let count = 0
+  for (const attr of ATTRS) {
+    if (tallies[attr] > count) {
+      best = attr
+      count = tallies[attr]
+    }
+  }
+  return { attr: best, count }
 }
 
 function mixBonus(colors: number, rules: ScoreRules): { points: number; why: string } {
@@ -161,7 +192,8 @@ function attackBonus(bodies: ScoreBody[], rules: ScoreRules): { points: number; 
 
 export function teamShape(why: string): 'core' | 'mix' | 'open' {
   const core = /^(Strength|Agility|Intelligence|Universal) ×(\d+)/.exec(why)
-  if (core && Number(core[2]) >= SHAPE_MIN_HEROES) return 'core'
+  // Pure mono core (no · attributes suffix). Mixed boards that won on a core stack still count as mix for shape.
+  if (core && Number(core[2]) >= SHAPE_MIN_HEROES && !why.includes('attributes ×')) return 'core'
   if (why.includes('attributes ×')) return 'mix'
   return 'open'
 }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { HERO_BY_ID, ITEM_BY_ID, TRAP_IDS } from './catalog.ts'
+import { HERO_BY_ID, ITEM_BY_ID, REWARD_BY_ID, TRAP_IDS } from './catalog.ts'
 import { preferredFoe, scoreState } from './flow.ts'
 import { createGame } from './engine.ts'
 
@@ -49,6 +49,15 @@ describe('card retunes', () => {
     expect(ITEM_BY_ID.shadow_blade?.instant).toBe(true)
     expect(ITEM_BY_ID.shadow_blade?.text).toMatch(/cannot be targeted this turn/i)
     expect(ITEM_BY_ID.refresher?.text).toMatch(/extra turn/i)
+  })
+
+  it('makes Haste Instant and neutrals Aura bodies', () => {
+    expect(REWARD_BY_ID.haste?.instant).toBe(true)
+    expect(REWARD_BY_ID.stone_golem?.instant).toBe(false)
+    expect(REWARD_BY_ID.tormentor?.instant).toBe(false)
+    expect(REWARD_BY_ID.roshan?.instant).toBe(false)
+    expect(REWARD_BY_ID.stone_golem?.text).toMatch(/Aura/i)
+    expect(REWARD_BY_ID.tormentor?.text).toMatch(/Aura/i)
   })
 
   it('retunes key board / hand / item lines from the sheet', () => {

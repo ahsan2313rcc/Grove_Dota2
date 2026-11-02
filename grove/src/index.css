@@ -665,6 +665,21 @@ button.debug-sort.on {
   border: 0;
 }
 .log-list { margin: 0; padding-left: 1.1rem; color: var(--cream-dim); display: flex; flex-direction: column; gap: 6px; }
+.sheet-log { max-width: min(560px, 94vw); }
+.log-pager {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 0 0 12px;
+}
+.log-pager strong { flex: 1; text-align: center; }
+.log-line.log-turn { color: var(--gold); font-weight: 600; }
+.log-line.log-action { color: var(--cream); }
+.log-line.log-ability { color: #7ec8e3; }
+.log-line.log-instant { color: #e3b87e; }
+.log-line.log-aura { color: #a8d08d; }
+.log-line.log-other { color: var(--cream-dim); }
 
 .handbar {
   flex: 0 0 auto;

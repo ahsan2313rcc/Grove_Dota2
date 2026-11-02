@@ -7,6 +7,7 @@ import {
   arrived,
   ask,
   attrsOf,
+  aurasSuppressed,
   bounce,
   canTargetHero,
   clearAllTraps,
@@ -159,6 +160,7 @@ export function cast(state: Game, resume: CastResume): Game {
   if (HERO_BY_ID[resume.defId]) {
     if (state.silence) return log(state, 'Global Silence stops the ability.')
     if (abilitiesLocked(state, resume.actor)) return log(state, "Shiva's Guard stops the ability.")
+    if (state.players[resume.actor]?.orchid) return log(state, 'Orchid stops the ability.')
     const source = findHero(state, resume.sourceUid)
     if (source?.hero.muted) return log(state, 'Orchid stops the ability.')
   }
@@ -419,7 +421,7 @@ function questions(state: Game, resume: CastResume): Ask {
       ])
     case 'orchid':
       if (at > 0) return ready()
-      return pose(actor, 'Choose an enemy hero.', enemyHeroes(state, actor, kind))
+      return pose(actor, 'Choose an opponent — they cannot activate abilities.', opponentChoices(state, actor))
     case 'shadow_blade':
       if (at > 0) return ready()
       return pose(actor, 'Choose a hero.', heroChoices(state, actor, kind, () => true))
@@ -1084,11 +1086,18 @@ function effect(state: Game, resume: CastResume): Game {
       return log(next, 'Dark Rift.')
     }
     case 'enchantress': {
-      if (!heroes[0]) return state
+      if (!heroes[0] || !home) return state
       const loc = findHero(state, heroes[0])
       if (!loc) return state
-      let next = editFlag(state, heroes[0], (hero) => ({ ...hero, controller: actor }))
-      next = log(next, 'Enchant takes control.')
+      const weight = heroWeight(loc.hero)
+      const joinBlocked = enterReason(state, home.team, weight, loc.hero.token)
+      const dest = joinBlocked ? 'new' : home.team.id
+      let next = moveOnto(state, heroes[0], actor, dest, { takeControl: true })
+      const landed = findHero(next, heroes[0])
+      if (!landed || landed.hero.controller !== actor) {
+        return log(next, joinBlocked ? `Enchant fails — ${joinBlocked}` : 'Enchant fails.')
+      }
+      next = log(next, `Enchant: ${display(loc.hero.defId).name} joins ${pname(next, actor)}.`)
       if (!resume.picked.includes('yes')) return next
       if (next.stolenCast) return log(next, 'Stolen abilities cannot chain.')
       if (!firesAbility(loc.hero.defId)) return next
@@ -1428,9 +1437,13 @@ function effect(state: Game, resume: CastResume): Game {
       state = toDeck(state, heroes[0], where)
       return queueDraw(state, actor, 1)
     }
-    case 'orchid':
-      if (!heroes[0]) return state
-      return log(editFlag(state, heroes[0], (hero) => ({ ...hero, muted: true })), 'Orchid stops that hero from firing.')
+    case 'orchid': {
+      const target = pickedEnemy(state, resume, actor)
+      return log(
+        setPlayer(state, target, (player) => ({ ...player, orchid: stamp })),
+        `Orchid: ${pname(state, target)} cannot activate abilities.`,
+      )
+    }
     case 'bkb':
       if (!teams[0]) return state
       return log(updateTeamTimed(state, teams[0], 'glyph', stamp), 'Black King Bar.')
@@ -1600,14 +1613,43 @@ function pullIn(state: Game, resume: CastResume, uid: string | undefined, lasso:
   }
 }
 
-function moveOnto(state: Game, uid: string, destPlayer: PlayerId, destTeam: string): Game {
+function moveOnto(
+  state: Game,
+  uid: string,
+  destPlayer: PlayerId,
+  destTeam: string,
+  opts: { takeControl?: boolean } = {},
+): Game {
   const loc = findHero(state, uid)
   if (!loc) return state
   if (loc.hero.controller !== destPlayer && (loc.hero.bkb || loc.player.bkb)) return log(state, 'Black King Bar prevents the theft.')
   if (loc.team.noLeave) return log(state, 'Dream Coil holds them in place.')
+  const thief = opts.takeControl ? destPlayer : null
+  // Puck: cannot leave — but your own Puck must not block your take-control / toss transfers.
+  if (
+    allLocs(state).some(
+      (other) =>
+        other.hero.defId === 'puck' &&
+        other.hero.controller !== loc.hero.controller &&
+        other.hero.controller !== thief &&
+        !aurasSuppressed(state, other.hero.controller),
+    )
+  ) {
+    return log(state, 'Dream Coil holds them in place.')
+  }
   const creating = destTeam === 'new' || destTeam === `new:${destPlayer}`
   if (!creating && loc.team.id === destTeam) return state
-  if (loc.hero.rupture && !loc.hero.bkb) return enqueue(state, uid, 'Rupture', false, true, null)
+  // Bloodseeker: leavers die — skip when you control Rupture and are taking the hero.
+  if (
+    state.rupture &&
+    state.rupture.caster !== loc.hero.controller &&
+    state.rupture.caster !== thief
+  ) {
+    return enqueue(state, uid, 'Rupture', false, true, state.rupture.caster)
+  }
+  if (loc.hero.rupture && !loc.hero.bkb && thief === null) {
+    return enqueue(state, uid, 'Rupture', false, true, null)
+  }
   if (!creating) {
     const dest = teamById(state, destTeam)
     if (!dest || dest.player.id !== destPlayer) return state
@@ -1629,7 +1671,13 @@ function moveOnto(state: Game, uid: string, destPlayer: PlayerId, destTeam: stri
     next = created[0]
     teamId = created[1]
   }
-  const placed = putOnTeam(next, destPlayer, teamId, { ...pulled.hero, controller: destPlayer })
+  const body = {
+    ...pulled.hero,
+    controller: destPlayer,
+    owner: opts.takeControl ? destPlayer : pulled.hero.owner,
+    rupture: opts.takeControl ? false : pulled.hero.rupture,
+  }
+  const placed = putOnTeam(next, destPlayer, teamId, body)
   return arrived(placed, uid).state
 }
 
@@ -2296,7 +2344,7 @@ function dragonKnightReveal(state: Game, actor: PlayerId): Game {
   return log(next, `Elder Dragon Form finds ${terrains.length} terrain(s).`)
 }
 
-/** Tiny: move a hero from Tiny's team onto an enemy team, then destroy 2 other heroes there. */
+/** Tiny: transfer a hero from Tiny's team onto an enemy team (enemy ownership), then destroy 2 others there. */
 function tinyToss(state: Game, resume: CastResume): Game {
   const actor = resume.actor
   const tossed = heroIds(resume.picked)[0]
@@ -2305,12 +2353,16 @@ function tinyToss(state: Game, resume: CastResume): Game {
   if (!tossed || !teamId || !home) return state
   const src = findHero(state, tossed)
   if (!src || src.team.id !== home.team.id) return log(state, 'Toss needs a hero in this team.')
-  let next = moveOnto(state, tossed, findHero(state, tossed)?.hero.controller ?? actor, teamId)
+  const destInfo = teamById(state, teamId)
+  if (!destInfo || destInfo.player.id === actor) return log(state, 'Toss needs an enemy team.')
+  let next = moveOnto(state, tossed, destInfo.player.id, teamId, { takeControl: true })
   const dest = teamById(next, teamId)
-  if (!dest) return next
+  if (!dest || !dest.team.heroes.some((hero) => hero.uid === tossed)) {
+    return log(next, 'Toss fails — that hero could not enter.')
+  }
   const victims = dest.team.heroes.filter((hero) => hero.uid !== tossed).slice(0, 2)
   for (const hero of victims) next = enqueue(next, hero.uid, 'Toss', false, true, actor)
-  return log(next, 'Toss.')
+  return log(next, `Toss: ${display(src.hero.defId).name} joins the enemy team.`)
 }
 
 /** Blink: play a hero from hand into a team; optionally fire its ability (anti-loop). */

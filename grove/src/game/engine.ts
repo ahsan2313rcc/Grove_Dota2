@@ -13,6 +13,7 @@ import {
   discardUid,
   drawItemFromDeck,
   drawsLocked,
+  editHero,
   enqueue,
   enterReason,
   resolveTeam,
@@ -176,7 +177,7 @@ function blank(seed: number, mode: 'hotseat' | 'ai' | 'online', seats: SeatSpec[
     skip: false,
     noHeroNext: false,
     noHeroNow: false,
-    orchid: false,
+    orchid: null,
     bkb: null,
     mailTurn: null,
     handLimit: 7,
@@ -368,7 +369,7 @@ function drawAction(state: Game): Game {
   const actor = state.active
   if (state.players[actor].actions < 1) return state
   if (drawsLocked(state, actor)) return log(state, "Berserker's Call stops draws.")
-  if (state.players[actor].hand.length >= state.players[actor].handLimit) return log(state, 'Your hand is full.')
+  // Hand limit is enforced at end of turn (discard down to 7), not on action-draws.
   if (state.deck.length === 0) return finish(state, 'The deck is empty.')
   state = setPlayer(state, actor, (player) => ({ ...player, actions: player.actions - 1 }))
   return beginDraw(state, actor, 1, false)
@@ -730,9 +731,11 @@ function offerInstantWindow(
     return offerInstantWindow(state, heroUid, resume, order, index + 1)
   }
   if (playable.length === 0) return offerInstantWindow(state, heroUid, resume, order, index + 1)
+  const about = display(resume.defId)
+  const caster = pname(state, resume.actor)
   return ask(state, {
     actor: seat,
-    prompt: `${display(resume.defId).name} is about to fire — play an Instant to interrupt, or pass.`,
+    prompt: `${caster}'s ${about.name} (${about.spell ?? 'ability'}) is about to fire — ${about.text} Play an Instant to interrupt, or pass.`,
     mode: 'pick',
     min: 1,
     max: 1,
@@ -742,7 +745,7 @@ function offerInstantWindow(
         id: `instant:${card.uid}`,
         label: display(card.defId).name,
         defId: card.defId,
-        hint: 'Instant',
+        hint: display(card.defId).text,
       })),
     ],
     resume: { kind: 'instant-window', cast: resume, heroUid, seats: order, index },
@@ -753,7 +756,9 @@ function offerInstantWindow(
 function gateAbility(state: Game, heroUid: string, resume: CastResumeLike): Game {
   const loc = findHero(state, heroUid)
   if (!loc) return log(state, 'The hero is gone — the ability fizzles.')
-  if (loc.hero.muted || state.silence) return log(state, 'The ability is nullified.')
+  if (loc.hero.muted || state.silence || state.players[resume.actor]?.orchid) {
+    return log(state, 'The ability is nullified.')
+  }
   if (allLocs(state).some((loc) => loc.hero.defId === 'pugna' && loc.hero.controller !== resume.actor && !aurasSuppressedSafe(state, loc.hero.controller))) {
     return ask(state, {
       actor: resume.actor,
@@ -988,16 +993,61 @@ function satisfy(state: Game, ids: string[]): Game {
       dumped = enqueue(dumped, resume.heroUid, 'Spiked Carapace', false, true, pending.actor)
       return log(dumped, 'Spiked Carapace counters the ability.')
     }
-    const team = needsTeam(card.defId, card.kind)
-      ? (next.players[pending.actor]!.teams[0]?.id ?? 'new')
-      : ''
-    let played = play(next, cardUid, team, [])
+    // Orchid from interrupt: nullify the ability about to fire (target = that opponent).
+    if (card.defId === 'orchid') {
+      const stamp = { caster: pending.actor, fromTurn: next.turn }
+      let dumped = removeHand(next, pending.actor, cardUid)
+      dumped = toGrave(dumped, card, { type: 'hand', player: pending.actor })
+      dumped = setPlayer(dumped, resume.cast.actor, (player) => ({ ...player, orchid: stamp }))
+      dumped = editHero(dumped, resume.heroUid, (hero) => ({ ...hero, muted: true }))
+      return log(dumped, `Orchid nullifies ${display(resume.cast.defId).name}.`)
+    }
+    // Instant heroes that need a team: ask where to place (never auto-pick team 0).
+    if (needsTeam(card.defId, card.kind)) {
+      const options = teamsFor(next, cardUid).filter((option) => option.ok)
+      if (options.length === 0) {
+        return offerInstantWindow(next, resume.heroUid, resume.cast, resume.seats, resume.index + 1)
+      }
+      if (options.length === 1) {
+        let played = play(next, cardUid, options[0]!.id, [])
+        if (!played.after) {
+          played = { ...played, after: { kind: 'alive', uid: resume.heroUid, cast: resume.cast } }
+        }
+        return played
+      }
+      return ask(next, {
+        actor: pending.actor,
+        prompt: `Play Instant ${display(card.defId).name} — choose a team.`,
+        mode: 'pick',
+        min: 1,
+        max: 1,
+        choices: options.map((option) => ({
+          id: `seat:${cardUid}:${option.id}`,
+          label: option.label,
+          defId: card.defId,
+          hint: option.reason,
+        })),
+        resume: { kind: 'instant-place', cast: resume.cast, heroUid: resume.heroUid, seats: resume.seats, index: resume.index, cardUid },
+      })
+    }
+    let played = play(next, cardUid, '', [])
     // After the Instant resolves (including its own prompts), resume the ability if the hero remains.
     if (!played.after) {
       played = {
         ...played,
         after: { kind: 'alive', uid: resume.heroUid, cast: resume.cast },
       }
+    }
+    return played
+  }
+  if (resume.kind === 'instant-place') {
+    const raw = ids[0] ?? ''
+    const parts = raw.startsWith('seat:') ? raw.slice(5).split(':') : []
+    const cardUid = parts[0] || resume.cardUid
+    const team = parts.slice(1).join(':') || 'new'
+    let played = play(next, cardUid, team, [])
+    if (!played.after) {
+      played = { ...played, after: { kind: 'alive', uid: resume.heroUid, cast: resume.cast } }
     }
     return played
   }
@@ -1168,6 +1218,8 @@ function heldForPlay(state: Game, uid: string): { player: { id: PlayerId }; card
   if (hand) return hand
   const top = playableFromGrave(state, state.active)
   if (top && top.uid === uid) return { player: state.players[state.active]!, card: top }
+  const clinkz = state.clinkzExile.find((card) => card.uid === uid)
+  if (clinkz) return { player: state.players[state.active]!, card: clinkz }
   return null
 }
 
@@ -1183,13 +1235,14 @@ export function teamsFor(
   if (isTrapHero(held.card.defId)) {
     const options: { id: string; label: string; ok: boolean; reason?: string }[] = []
     for (const player of state.players) {
-      for (const team of player.teams) {
+      for (const [index, team] of player.teams.entries()) {
         const scored = scoreTeam(state, team)
         const whose = player.id === actor ? 'Your' : `${player.name}'s`
+        const letter = String.fromCharCode(65 + (index % 26))
         const blocked = team.trap || team.mine
         options.push({
           id: team.id,
-          label: `${whose} team · ${scored.why} · ${scored.points}`,
+          label: `${whose} Team ${letter} · ${scored.why} · ${scored.points}`,
           ok: !blocked,
           reason: blocked ? 'That team already has a trap.' : undefined,
         })
@@ -1201,10 +1254,16 @@ export function teamsFor(
   const companions = extras.filter((extra) => extra !== uid && findHand(state, extra)?.card.kind === 'hero')
   const weight = (held.card.kind === 'hero' || held.card.kind === 'neutral' ? 1 : 0) + companions.length
   const options: { id: string; label: string; ok: boolean; reason?: string }[] = []
-  for (const team of state.players[actor].teams) {
+  for (const [index, team] of state.players[actor].teams.entries()) {
     const reason = enterReason(state, team, weight, token)
     const scored = scoreTeam(state, team)
-    options.push({ id: team.id, label: `${scored.why} · ${scored.points}`, ok: !reason, reason: reason ?? undefined })
+    const letter = String.fromCharCode(65 + (index % 26))
+    options.push({
+      id: team.id,
+      label: `Team ${letter} · ${scored.why} · ${scored.points}`,
+      ok: !reason,
+      reason: reason ?? undefined,
+    })
   }
   const capped = state.players[actor].teams.length >= TEAM_CAP
   options.push({ id: 'new', label: 'New team', ok: !capped, reason: capped ? '12 teams is the limit.' : undefined })

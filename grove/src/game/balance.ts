@@ -406,11 +406,8 @@ export class BalanceTracker {
         this.openImpact(before, held.player.id, held.card.defId, kind)
         this.tallyPlay(held.player.id, held.card.kind, display(held.card.defId).instant, held.card.defId)
         if (kind === 'hero' && firesAbility(held.card.defId)) {
-          // Split body placement vs ability when the cast prompt opens.
-          // Same-tick auto-resolves (Huskar/Bloodseeker stamps, etc.) stay on the body —
-          // their ability rarely moves score immediately, so retagging would mis-bin seating pts.
+          // Split body vs ability when the cast prompt opens; auto-resolves still log a 0-swing ability row.
           this.abilitySplit = { defId: held.card.defId, sourceUid: held.card.uid, actor: held.player.id }
-          if (!resolving(after)) this.abilitySplit = null
         }
       }
     } else if (action.type === 'combo') {
@@ -460,7 +457,10 @@ export class BalanceTracker {
     }
     // Instant window / other prompts still open — wait for the cast (or cancel).
     if (resolving(after)) return
-    // Settled without a cast prompt (auto-resolve / fizzle): body swing already covers seating.
+    // Settled without a cast prompt: keep body seating, then record a 0-swing ability activation.
+    this.sealImpact(after)
+    this.openImpact(after, split.actor, split.defId, 'ability')
+    this.sealImpact(after)
     this.abilitySplit = null
   }
 
@@ -684,6 +684,7 @@ export function summarizeReports(reports: MatchReport[], filter: StratFilter = A
   const presenceMap = new Map<string, { presence: number; wins: number }>()
   const kindMap = new Map<PlayKind, { plays: number; actor: number; relative: number }>()
   const attrMap = new Map<Attr | 'none', { plays: number; actor: number; relative: number }>()
+  const abilityTypeMap = new Map<AbilityEffectType, { plays: number; actor: number; relative: number; presence: number; wins: number }>()
   const ptsByTurn = new Map<number, number[]>()
   const cardsByTurn = new Map<number, number[]>()
   const stratMap = new Map<AiStrat, { seats: number; wins: number; finishes: number; score: number; standing: number; actor: number; relative: number; plays: number }>()
@@ -692,6 +693,7 @@ export function summarizeReports(reports: MatchReport[], filter: StratFilter = A
   const filteringPlays = filter.strats.length > 0
 
   for (const report of scoped) {
+    const seatAbilityTypes: Set<AbilityEffectType>[] = report.seatStrats.map(() => new Set())
     for (let seat = 0; seat < report.seatStrats.length; seat += 1) {
       const strat = report.seatStrats[seat]!
       if (!allowsStrat(filter, strat)) continue
@@ -764,11 +766,34 @@ export function summarizeReports(reports: MatchReport[], filter: StratFilter = A
         attrMap.set(attrKey, attrRow)
       }
 
+      if (swing.kind === 'ability') {
+        const type = abilityEffectType(swing.defId)
+        const typeRow = abilityTypeMap.get(type) ?? { plays: 0, actor: 0, relative: 0, presence: 0, wins: 0 }
+        typeRow.plays += 1
+        typeRow.actor += swing.actorSwing
+        typeRow.relative += swing.relativeSwing
+        abilityTypeMap.set(type, typeRow)
+        seatAbilityTypes[swing.actor]?.add(type)
+      }
+
       const stratRow = stratMap.get(swing.actorStrat) ?? { seats: 0, wins: 0, finishes: 0, score: 0, standing: 0, actor: 0, relative: 0, plays: 0 }
       stratRow.plays += 1
       stratRow.actor += swing.actorSwing
       stratRow.relative += swing.relativeSwing
       stratMap.set(swing.actorStrat, stratRow)
+    }
+
+    if (report.over) {
+      for (let seat = 0; seat < seatAbilityTypes.length; seat += 1) {
+        if (!allowsStrat(filter, report.seatStrats[seat]!)) continue
+        const won = report.winner === seat
+        for (const type of seatAbilityTypes[seat] ?? []) {
+          const typeRow = abilityTypeMap.get(type) ?? { plays: 0, actor: 0, relative: 0, presence: 0, wins: 0 }
+          typeRow.presence += 1
+          if (won) typeRow.wins += 1
+          abilityTypeMap.set(type, typeRow)
+        }
+      }
     }
     for (const round of report.rounds) {
       if (!allowsStrat(filter, round.actorStrat)) continue
@@ -856,6 +881,18 @@ export function summarizeReports(reports: MatchReport[], filter: StratFilter = A
         avgRelativeSwing: row.relative / row.plays,
       }))
       .sort((a, b) => Math.abs(b.avgRelativeSwing) - Math.abs(a.avgRelativeSwing)),
+    byAbilityType: [...abilityTypeMap.entries()]
+      .map(([id, row]) => ({
+        id,
+        label: ABILITY_EFFECT_LABELS[id],
+        plays: row.plays,
+        avgActorSwing: row.plays ? row.actor / row.plays : 0,
+        avgRelativeSwing: row.plays ? row.relative / row.plays : 0,
+        presence: row.presence,
+        wins: row.wins,
+        winRate: row.presence ? row.wins / row.presence : 0,
+      }))
+      .sort((a, b) => b.plays - a.plays || b.avgRelativeSwing - a.avgRelativeSwing),
     byStrat: [...stratMap.entries()]
       .map(([strat, row]) => ({
         strat,
@@ -1169,6 +1206,25 @@ function relBucket(kind: PlayKind, defId: string): RelBucket {
   if (kind === 'hero' || kind === 'morph') return 'hero'
   if (kind === 'combo' || kind === 'terrain' || defId === 'mixed_path' || defId === 'river' || defId === 'jungle' || defId === 'lane') return 'terrain'
   if (kind === 'item' || kind === 'rune' || kind === 'neutral' || kind === 'tower') return 'loot'
+  return 'other'
+}
+
+/** Primary effect family from hero text (one label per ability activation). */
+export function abilityEffectType(defId: string): AbilityEffectType {
+  const hero = HERO_BY_ID[defId]
+  if (!hero) return 'other'
+  if (hero.timing === 'trap') return 'trap'
+  const t = hero.text.toLowerCase()
+  if (/destroy/.test(t)) return 'destroy'
+  if (/exile/.test(t)) return 'exile'
+  if (/return .* (hand|deck)|put .* (top|bottom) of the deck|bounce/.test(t)) return 'bounce'
+  if (/take control|steal|swap control|swap hands|swap .* team/.test(t)) return 'control'
+  if (/move |redistribute|form a new team/.test(t)) return 'move'
+  if (/cannot (play|draw|activate|reactivate)|lose(?:s)? (?:their )?remaining actions|skip their next turn|lose an action/.test(t)) return 'deny'
+  if (/immune|cannot be destroyed|return it to your hand instead|shallow grave|false promise/.test(t)) return 'protect'
+  if (/draw |reveal the top|search the deck|take .* from the grave/.test(t)) return 'draw'
+  if (/discard/.test(t)) return 'discard'
+  if (/reveal/.test(t)) return 'reveal'
   return 'other'
 }
 

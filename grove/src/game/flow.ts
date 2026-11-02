@@ -338,6 +338,11 @@ export function abilitiesLocked(state: Game, id: PlayerId): boolean {
   return !!state.frost && state.frost.caster !== id
 }
 
+/** Orchid: this seat cannot activate ability effects. */
+export function orchidLocked(state: Game, id: PlayerId): boolean {
+  return !!state.players[id]?.orchid
+}
+
 export function itemsLocked(state: Game, id: PlayerId): boolean {
   return allLocs(state).some((loc) => {
     if (loc.hero.controller === id) return false
@@ -682,9 +687,10 @@ export function teamChoices(
       if (!pred(team, player)) continue
       if (!canTargetTeam(state, actor, team, player.id, source)) continue
       const scored = scoreTeam(state, team)
+      const letter = String.fromCharCode(65 + (player.teams.indexOf(team) % 26))
       choices.push({
         id: `team:${team.id}`,
-        label: `${pname(state, player.id)}'s team`,
+        label: `${pname(state, player.id)}'s Team ${letter}`,
         hint: `${scored.why} · ${scored.points}`,
         defId: team.heroes[0]?.defId,
       })
@@ -936,7 +942,7 @@ export function performDestroy(state: Game, item: StackDestroy): Game {
   const loc = findHero(state, item.uid)
   if (!loc) return state
   const name = display(loc.hero.defId).name
-  // Dark Seer: take control instead of destroy this turn.
+  // Dark Seer: take control instead of destroy this turn (ownership switches to Seer).
   if (
     state.darkSeer &&
     state.darkSeer.turn === state.turn &&
@@ -944,11 +950,25 @@ export function performDestroy(state: Game, item: StackDestroy): Game {
     !item.force
   ) {
     const thief = state.darkSeer.actor
-    let [next, teamId] = seatTeam(state, thief)
+    const seer = allLocs(state).find((entry) => entry.hero.defId === 'dark_seer' && entry.hero.controller === thief)
+    let next = state
+    let teamId = ''
+    if (seer && !enterReason(state, seer.team, heroWeight(loc.hero), loc.hero.token)) {
+      teamId = seer.team.id
+    } else {
+      const seated = seatTeam(state, thief)
+      next = seated[0]
+      teamId = seated[1]
+    }
     const moved = removeHero(next, loc.hero.uid)
     if (!moved.hero) return state
-    next = putOnTeam(moved.state, thief, teamId, { ...moved.hero, controller: thief })
-    return log(arrived(next, moved.hero.uid).state, `Vacuum steals ${name}.`)
+    next = putOnTeam(moved.state, thief, teamId, {
+      ...moved.hero,
+      controller: thief,
+      owner: thief,
+      rupture: false,
+    })
+    return log(arrived(next, moved.hero.uid).state, `Vacuum: ${name} joins ${pname(next, thief)}.`)
   }
   const soft = prevented(state, loc, item.force, item.by)
   if (soft) return log(state, soft)
@@ -1251,6 +1271,8 @@ export function expireStart(state: Game): Game {
     ...next,
     players: next.players.map((player) => ({
       ...player,
+      // Orchid expires on the caster's next turn start.
+      orchid: drop(player.orchid),
       teams: player.teams.map((team) => ({
         ...team,
         noEnter: drop(team.noEnter),
