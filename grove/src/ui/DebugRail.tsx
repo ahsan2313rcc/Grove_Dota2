@@ -602,9 +602,9 @@ function HeroModeTable({
         </button>
       </h3>
       <p className="quiet debug-legend">
-        Cycle filters Rel/Press/n (total → silenced → ability fired). Win% / Abil% / Sil% = seat-normalized
-        play wins (100% = fair 1/{seats || 'n'} ≈ {fair}% raw). One copy in the deck does not cancel lobby size —
-        raw seat-win still scales with opponents; we normalize so 2p and 4p are comparable.
+        Cycle filters Rel/Press (total → silenced → ability fired). Win columns stay fixed:
+        nΣ/Win% = all plays · nA/Abil% = ability fired · nS/Sil% = silenced. Rates are seat-normalized
+        (100% = fair 1/{seats || 'n'} ≈ {fair}% raw). Hover % for raw wins/n.
       </p>
       <CardSortTable rows={rows} empty="No hero plays yet for this mode." heroWins seats={seats} />
     </div>
