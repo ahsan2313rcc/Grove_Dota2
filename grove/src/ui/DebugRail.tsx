@@ -713,6 +713,19 @@ function CardSortTable({
   const winCols: Column<CardBalanceRow>[] = heroWins
     ? [
         {
+          key: 'nTotal',
+          label: 'nΣ',
+          get: (row) => {
+            const samples = row.abilityPlays + row.silencedPlays
+            return String(samples > 0 ? samples : row.plays)
+          },
+          sortValue: (row) => {
+            const samples = row.abilityPlays + row.silencedPlays
+            return samples > 0 ? samples : row.plays
+          },
+          className: 'debug-num',
+        },
+        {
           key: 'win',
           label: 'Win%',
           get: (row) => {
@@ -723,10 +736,24 @@ function CardSortTable({
           className: 'debug-num',
         },
         {
+          key: 'nAbil',
+          label: 'nA',
+          get: (row) => (row.abilityPlays > 0 ? String(row.abilityPlays) : '—'),
+          sortValue: (row) => row.abilityPlays,
+          className: 'debug-num',
+        },
+        {
           key: 'abil',
           label: 'Abil%',
           get: (row) => pctCell(row.abilityWinRate, row.abilityWins, row.abilityPlays, seats),
           sortValue: (row) => (seats > 0 ? row.abilityWinRate * seats : row.abilityWinRate),
+          className: 'debug-num',
+        },
+        {
+          key: 'nSil',
+          label: 'nS',
+          get: (row) => (row.silencedPlays > 0 ? String(row.silencedPlays) : '—'),
+          sortValue: (row) => row.silencedPlays,
           className: 'debug-num',
         },
         {
