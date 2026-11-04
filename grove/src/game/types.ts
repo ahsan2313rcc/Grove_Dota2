@@ -277,6 +277,8 @@ export interface Game {
    * Cleared when the destroy queue drains so mid-queue DP deaths still exile teammates.
    */
   exorcismPulse: PlayerId[]
+  /** Rubick Spell Steal: these hero uids cannot resolve abilities for the rest of the turn. */
+  spellNullify: { uid: string; fromTurn: number }[]
   /** Medusa: full exiled teams held until she leaves. */
   medusaHold: { medusaUid: string; owner: PlayerId; cards: CardInst[] }[]
   /** Lifestealer Infest: return LS when host is destroyed. */

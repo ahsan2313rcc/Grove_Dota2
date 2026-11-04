@@ -223,7 +223,15 @@ export const HEROES: HeroDef[] = [
   // —— Intelligence ——
   hero('ancient_apparition', 'Ancient Apparition', 'INT', 'Ranged', 'Ice Blast', 'Cards that would enter the grave are exiled instead.', 'aura'),
   hero('chen', 'Chen', 'INT', 'Ranged', 'Holy Persuasion', 'Take the top Neutral card into your hand. You may play it immediately for free.', 'cast'),
-  hero('crystal_maiden', 'Crystal Maiden', 'INT', 'Ranged', 'Arcane Aura', 'Draw cards from the top of the deck until your hand has 7 cards.', 'cast'),
+  hero(
+    'crystal_maiden',
+    'Crystal Maiden',
+    'INT',
+    'Ranged',
+    'Arcane Aura',
+    'Whenever a hero you control activates an ability, draw a card.',
+    'aura',
+  ),
   hero('dark_seer', 'Dark Seer', 'INT', 'Melee', 'Vacuum', 'Until the end of turn, if an enemy hero would be destroyed, you take control of it instead.', 'cast'),
   hero('dark_willow', 'Dark Willow', 'INT', 'Ranged', 'Terrorize', 'Each opponent sacrifices a hero they control.', 'cast'),
   hero('dazzle', 'Dazzle', 'INT', 'Ranged', 'Shallow Grave', 'Target allied hero cannot be destroyed until your next turn. Instant.', 'instant'),
@@ -276,8 +284,8 @@ export const HEROES: HeroDef[] = [
     'INT',
     'Ranged',
     'Spell Steal',
-    'Reactivate the ability of a target enemy hero on the board.' + NO_CHAIN,
-    'cast',
+    'Copy target enemy hero\'s ability and cast it. Nullify that hero\'s ability this turn. Instant.' + NO_CHAIN,
+    'instant',
   ),
   hero('shadow_demon', 'Shadow Demon', 'INT', 'Ranged', 'Disruption', 'Exile target hero. Return it to your hand when Shadow Demon is removed from the board. Instant.', 'instant'),
   hero(

@@ -25,6 +25,7 @@ export const DEFAULT_STRAT: AiStrat = 'balanced'
 /** Instant / counter cards worth firing into an interrupt window. */
 const INTERRUPT_VALUE: Record<string, number> = {
   nyx_assassin: 12,
+  rubick: 11,
   spirit_breaker: 10,
   faceless_void: 9,
   silencer: 8,

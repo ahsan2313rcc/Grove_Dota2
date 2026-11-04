@@ -17,6 +17,14 @@ describe('card retunes', () => {
     expect(HERO_BY_ID.sniper?.text).toMatch(/more heroes in its team than Sniper/i)
   })
 
+  it('retunes Rubick Instant steal/nullify and CM global Arcane Aura', () => {
+    expect(HERO_BY_ID.rubick?.timing).toBe('instant')
+    expect(HERO_BY_ID.rubick?.text).toMatch(/Copy target enemy hero/i)
+    expect(HERO_BY_ID.rubick?.text).toMatch(/Nullify that hero's ability this turn/i)
+    expect(HERO_BY_ID.crystal_maiden?.timing).toBe('aura')
+    expect(HERO_BY_ID.crystal_maiden?.text).toMatch(/hero you control activates an ability/i)
+  })
+
   it('retunes Lich to sacrifice + draw', () => {
     expect(HERO_BY_ID.lich?.text).toMatch(/Sacrifice a hero/i)
     expect(HERO_BY_ID.lich?.text).toMatch(/Draw 5/i)

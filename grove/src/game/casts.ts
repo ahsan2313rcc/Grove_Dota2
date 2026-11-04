@@ -164,6 +164,10 @@ export function cast(state: Game, resume: CastResume): Game {
     if (state.players[resume.actor]?.orchid) return log(state, 'Orchid stops the ability.')
     const source = findHero(state, resume.sourceUid)
     if (source?.hero.muted) return log(state, 'Orchid stops the ability.')
+    // Rubick Spell Steal: nullify that enemy hero's ability for the rest of the turn.
+    if (state.spellNullify.some((entry) => entry.uid === resume.sourceUid)) {
+      return log(state, `Spell Steal nullifies ${display(resume.defId).name}.`)
+    }
   }
   if (!resume.armed) {
     const asked = questions(state, resume)
@@ -216,7 +220,26 @@ export function cast(state: Game, resume: CastResume): Game {
       })
     }
   }
+  // Crystal Maiden: draw when a hero on her team activates an ability.
+  if (HERO_BY_ID[resume.defId] && !resume.echo) {
+    state = arcaneAuraOnActivate(state, resume.sourceUid)
+  }
   return effect(state, resume)
+}
+
+/** Arcane Aura — one draw per CM you control whenever any of your heroes activates. */
+function arcaneAuraOnActivate(state: Game, sourceUid: string): Game {
+  const source = findHero(state, sourceUid)
+  if (!source) return state
+  const controller = source.hero.controller
+  if (aurasSuppressed(state, controller)) return state
+  let next = state
+  for (const loc of allLocs(state)) {
+    if (loc.hero.defId !== 'crystal_maiden') continue
+    if (loc.hero.controller !== controller) continue
+    next = queueDraw(log(next, 'Arcane Aura.'), controller, 1)
+  }
+  return next
 }
 
 const ATTR_CHOICES: { id: string; label: string }[] = [
@@ -1232,10 +1255,8 @@ function effect(state: Game, resume: CastResume): Game {
       return log(state, 'Nethertoxin is an aura.')
     case 'weaver':
       return timeLapse(log(state, 'Time Lapse.'))
-    case 'crystal_maiden': {
-      const room = state.players[actor].handLimit - state.players[actor].hand.length
-      return queueDraw(log(state, 'Arcane Aura.'), actor, Math.max(0, room))
-    }
+    case 'crystal_maiden':
+      return log(state, 'Arcane Aura is an aura.')
     case 'dark_seer':
       return log({ ...state, darkSeer: { actor, turn: state.turn } }, 'Vacuum: take control of destroyed enemies this turn.')
     case 'dark_willow': {
@@ -2008,7 +2029,13 @@ function stealSpell(state: Game, actor: PlayerId, sourceUid: string, heroUid: st
   if (!loc) return state
   const copied = loc.hero.defId
   if (!firesAbility(copied)) return log(state, 'There is no ability to steal.')
-  const next = cast({ ...state, stolenCast: true }, { kind: 'cast', actor, sourceUid, defId: copied, picked: [], steps: 0 })
+  // Nullify that enemy hero's ability for the rest of this turn (cancels an interrupted cast if it was theirs).
+  let next: Game = {
+    ...state,
+    spellNullify: [...state.spellNullify.filter((entry) => entry.uid !== loc.hero.uid), { uid: loc.hero.uid, fromTurn: state.turn }],
+  }
+  next = log(next, `Spell Steal nullifies ${display(copied).name} this turn.`)
+  next = cast({ ...next, stolenCast: true }, { kind: 'cast', actor, sourceUid, defId: copied, picked: [], steps: 0 })
   return { ...next, stolenCast: false }
 }
 
@@ -2605,6 +2632,9 @@ function gateAbility(state: Game, heroUid: string, resume: CastResume): Game {
   if (!loc) return log(state, 'The hero is gone — the ability fizzles.')
   if (loc.hero.muted || state.silence || state.players[resume.actor]?.orchid) {
     return log(state, 'The ability is nullified.')
+  }
+  if (state.spellNullify.some((entry) => entry.uid === heroUid)) {
+    return log(state, `Spell Steal nullifies ${display(resume.defId).name}.`)
   }
   if (
     allLocs(state).some(
