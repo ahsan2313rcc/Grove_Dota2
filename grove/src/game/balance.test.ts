@@ -7,6 +7,7 @@ import {
   runMatchFast,
   summarizeReports,
   summarizeShapesAtTurn,
+  type MatchReport,
 } from './balance.ts'
 import { apply, createGame } from './engine.ts'
 import { blankTeam, makeCard, makeHero, setPlayer } from './flow.ts'
@@ -152,6 +153,88 @@ describe('balance', () => {
     expect(graph.every((point) => point.samples > 0)).toBe(true)
     const rel = buildTurnGraph([report], ALL_STRAT_FILTER, 'rel', summary.graphHeroes[0]?.defId ?? null)
     expect(Array.isArray(rel)).toBe(true)
+  })
+
+  it('splits hero play-weighted Win% into ability-fired vs silenced', () => {
+    // Build two finished reports with synthetic hero play swings.
+    const base = (seed: number, winner: number, silenced: boolean): MatchReport => {
+      const report = runMatchFast(seed, 2)
+      // Replace swings with a single Enigma play so rates are deterministic.
+      const actor = 0
+      report.winner = winner
+      report.over = true
+      report.swings = [
+        {
+          seed,
+          turn: 1,
+          actor,
+          actorStrat: report.seatStrats[actor] ?? 'balanced',
+          defId: 'enigma',
+          name: 'Enigma',
+          kind: 'hero',
+          bucket: 'hero',
+          attr: 'STR',
+          instant: false,
+          playId: 1,
+          silenced,
+          actorSwing: 1,
+          relativeSwing: 1,
+          fieldSwing: 1,
+          destroy: silenced ? 0 : 3,
+          discard: 0,
+          exile: 0,
+          control: 0,
+          bounce: 0,
+          pressure: silenced ? 0 : 3,
+        },
+        {
+          seed,
+          turn: 1,
+          actor,
+          actorStrat: report.seatStrats[actor] ?? 'balanced',
+          defId: 'enigma',
+          name: 'Enigma',
+          kind: 'ability',
+          bucket: 'ability',
+          attr: 'STR',
+          instant: false,
+          playId: 1,
+          silenced,
+          actorSwing: silenced ? 0 : 2,
+          relativeSwing: silenced ? 0 : 2,
+          fieldSwing: silenced ? 0 : 2,
+          destroy: silenced ? 0 : 3,
+          discard: 0,
+          exile: 0,
+          control: 0,
+          bounce: 0,
+          pressure: silenced ? 0 : 3,
+        },
+      ]
+      report.seatPlays[actor] = [...new Set([...(report.seatPlays[actor] ?? []), 'enigma'])]
+      return report
+    }
+    // 2 ability wins, 1 ability loss, 1 silenced win, 1 silenced loss →
+    // total 5 plays / 3 wins = 60%; ability 3 plays / 2 wins ≈ 67%; sil 2 / 1 = 50%.
+    const reports = [
+      base(501, 0, false),
+      base(502, 0, false),
+      base(503, 1, false),
+      base(504, 0, true),
+      base(505, 1, true),
+    ]
+    const summary = summarizeReports(reports)
+    const row = summary.heroPlaysTotal.find((entry) => entry.defId === 'enigma')
+    expect(row).toBeTruthy()
+    expect(row!.plays).toBe(5)
+    expect(row!.abilityPlays).toBe(3)
+    expect(row!.silencedPlays).toBe(2)
+    expect(row!.playWins).toBe(3)
+    expect(row!.abilityWins).toBe(2)
+    expect(row!.silencedWins).toBe(1)
+    expect(row!.playWinRate).toBeCloseTo(0.6, 5)
+    expect(row!.abilityWinRate).toBeCloseTo(2 / 3, 5)
+    expect(row!.silencedWinRate).toBeCloseTo(0.5, 5)
   })
 
   it('attributes destroy / discard pressure onto the resolving swing', () => {

@@ -214,7 +214,7 @@ export function DebugRail({
           {summary.finished}/{summary.matches} done · avg T{fmt(summary.avgTurns)} · spread {fmt(summary.avgFinalSpread)} · win {fmt(summary.avgWinnerScore)}
         </p>
         <p className="quiet debug-legend">
-          Rel = score vs opponents · Self = own score Δ · Pressure = weighted destroy/exile/discard/steal/bounce · Win% = presence correlation (not causality)
+          Rel = score vs opponents · Self = own score Δ · Press = disruption · Win% = play-weighted seat wins (not causality). Heroes also show Abil% / Sil% when the ability fired vs was silenced.
         </p>
       </div>
 
@@ -574,9 +574,10 @@ function HeroModeTable({
         </button>
       </h3>
       <p className="quiet debug-legend">
-        Body+ability per play. Cycle total → silenced → not silenced. Pres = matches that seat played the card.
+        Body+ability per play. Cycle total → silenced → not silenced. Pres = matches with the card.
+        Win% / Abil% / Sil% = play-weighted seat wins (e.g. 200 plays, 150 ability, 50 silenced).
       </p>
-      <CardSortTable rows={rows} empty="No hero plays yet for this mode." />
+      <CardSortTable rows={rows} empty="No hero plays yet for this mode." heroWins />
     </div>
   )
 }
@@ -669,11 +670,53 @@ function CardSortTable({
   rows,
   empty = 'No card plays yet.',
   defaultSort = { key: 'rel', dir: 'desc' as const },
+  heroWins = false,
 }: {
   rows: CardBalanceRow[]
   empty?: string
   defaultSort?: SortState
+  /** Show Abil% / Sil% play-weighted win columns (heroes). */
+  heroWins?: boolean
 }) {
+  const winCols: Column<CardBalanceRow>[] = heroWins
+    ? [
+        {
+          key: 'win',
+          label: 'Win%',
+          get: (row) => pctCell(row.playWinRate, row.playWins, row.plays),
+          sortValue: (row) => row.playWinRate,
+          className: 'debug-num',
+        },
+        {
+          key: 'abil',
+          label: 'Abil%',
+          get: (row) => pctCell(row.abilityWinRate, row.abilityWins, row.abilityPlays),
+          sortValue: (row) => row.abilityWinRate,
+          className: 'debug-num',
+        },
+        {
+          key: 'sil',
+          label: 'Sil%',
+          get: (row) => pctCell(row.silencedWinRate, row.silencedWins, row.silencedPlays),
+          sortValue: (row) => row.silencedWinRate,
+          className: 'debug-num',
+        },
+      ]
+    : [
+        {
+          key: 'win',
+          label: 'Win%',
+          get: (row) =>
+            row.plays > 0
+              ? pctCell(row.playWinRate, row.playWins, row.plays)
+              : row.presence > 0
+                ? pctCell(row.winRate, row.wins, row.presence)
+                : '—',
+          sortValue: (row) => (row.plays > 0 ? row.playWinRate : row.winRate),
+          className: 'debug-num',
+        },
+      ]
+
   return (
     <SortableTable
       empty={empty}
@@ -691,6 +734,12 @@ function CardSortTable({
                 {row.kind}
                 {row.attr ? ` · ${attrLabel(row.attr)}` : ''}
                 {row.instant ? ' · instant' : ''}
+                {heroWins && row.abilityPlays + row.silencedPlays > 0 ? (
+                  <>
+                    {' · '}
+                    {row.abilityPlays} abil / {row.silencedPlays} sil
+                  </>
+                ) : null}
               </small>
             </>
           ),
@@ -742,15 +791,18 @@ function CardSortTable({
           sortValue: (row) => row.avgSteal,
           className: 'debug-num',
         },
-        {
-          key: 'win',
-          label: 'Win%',
-          get: (row) => (row.presence > 0 ? `${Math.round(row.winRate * 100)}%` : '—'),
-          sortValue: (row) => row.winRate,
-          className: 'debug-num',
-        },
+        ...winCols,
       ]}
     />
+  )
+}
+
+function pctCell(rate: number, wins: number, samples: number): ReactNode {
+  if (samples <= 0) return '—'
+  return (
+    <span title={`${wins}/${samples} wins`}>
+      {Math.round(rate * 100)}%
+    </span>
   )
 }
 

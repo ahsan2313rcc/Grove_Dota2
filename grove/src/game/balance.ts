@@ -247,9 +247,25 @@ export interface CardBalanceRow {
   totalActorSwing: number
   /** Matches where a filtered seat played this card at least once. */
   presence: number
-  /** Wins among those presence matches. */
+  /** Wins among those presence matches (match-level correlation). */
   wins: number
   winRate: number
+  /**
+   * Play-weighted win rate: among `plays`, how often the actor's seat won the match.
+   * Prefer this over match presence for hero context (Enigma 120/200 → 60%).
+   */
+  playWins: number
+  playWinRate: number
+  /** Plays where the on-play ability resolved (not silenced). */
+  abilityPlays: number
+  abilityWins: number
+  /** Win rate among ability-fired plays (e.g. Black Hole landed). */
+  abilityWinRate: number
+  /** Plays where the on-play ability was silenced / orchid / frost-locked. */
+  silencedPlays: number
+  silencedWins: number
+  /** Win rate among silenced plays. */
+  silencedWinRate: number
   /** Mean weighted disruption (destroy/exile/discard/steal/bounce). */
   avgPressure: number
   avgDestroy: number
@@ -864,6 +880,7 @@ export function summarizeReports(reports: MatchReport[], filter: StratFilter = A
     abs: number
     presence: number
     wins: number
+    playWins: number
     destroy: number
     discard: number
     exile: number
@@ -935,6 +952,7 @@ export function summarizeReports(reports: MatchReport[], filter: StratFilter = A
         abs: 0,
         presence: 0,
         wins: 0,
+        playWins: 0,
         destroy: 0,
         discard: 0,
         exile: 0,
@@ -946,6 +964,7 @@ export function summarizeReports(reports: MatchReport[], filter: StratFilter = A
       row.actor += swing.actorSwing
       row.relative += swing.relativeSwing
       row.abs += Math.abs(swing.relativeSwing)
+      if (report.over && report.winner === swing.actor) row.playWins += 1
       row.destroy += swing.destroy
       row.discard += swing.discard
       row.exile += swing.exile
@@ -1012,7 +1031,7 @@ export function summarizeReports(reports: MatchReport[], filter: StratFilter = A
 
   const cards = [...cardMap.values()].map((row) => {
     const presence = presenceMap.get(row.defId) ?? { presence: 0, wins: 0 }
-    return {
+    return finishCardRow({
       defId: row.defId,
       name: row.name,
       kind: row.kind,
@@ -1020,20 +1039,23 @@ export function summarizeReports(reports: MatchReport[], filter: StratFilter = A
       attr: row.attr,
       instant: row.instant,
       plays: row.plays,
-      avgActorSwing: row.actor / row.plays,
-      avgRelativeSwing: row.relative / row.plays,
-      avgAbsSwing: row.abs / row.plays,
-      totalActorSwing: row.actor,
+      actor: row.actor,
+      relative: row.relative,
+      abs: row.abs,
+      pressure: row.pressure,
+      destroy: row.destroy,
+      discard: row.discard,
+      exile: row.exile,
+      control: row.control,
+      bounce: row.bounce,
       presence: presence.presence,
       wins: presence.wins,
-      winRate: presence.presence ? presence.wins / presence.presence : 0,
-      avgPressure: row.pressure / row.plays,
-      avgDestroy: row.destroy / row.plays,
-      avgDiscard: row.discard / row.plays,
-      avgExile: row.exile / row.plays,
-      avgSteal: row.control / row.plays,
-      avgBounce: row.bounce / row.plays,
-    }
+      playWins: row.playWins,
+      abilityPlays: 0,
+      abilityWins: 0,
+      silencedPlays: 0,
+      silencedWins: 0,
+    })
   })
 
   // Prefer cards with enough samples so one-off spikes don't dominate Rel tables.
@@ -1673,7 +1695,10 @@ function buildHeroPlayModes(
     attr: Attr | null
     instant: boolean
     actorStrat: AiStrat
+    /** Ability suppressed on this play. */
     silenced: boolean
+    /** Seat won the finished match. */
+    won: boolean
     actor: number
     relative: number
     destroy: number
@@ -1696,13 +1721,15 @@ function buildHeroPlayModes(
     }
     for (const group of byId.values()) {
       const head = group[0]!
+      const silenced = group.some((swing) => swing.silenced)
       plays.push({
         defId: head.defId,
         name: head.name,
         attr: head.attr,
         instant: head.instant,
         actorStrat: head.actorStrat,
-        silenced: group.some((swing) => swing.silenced),
+        silenced,
+        won: !!report.over && report.winner === head.actor,
         actor: group.reduce((sum, swing) => sum + swing.actorSwing, 0),
         relative: group.reduce((sum, swing) => sum + swing.relativeSwing, 0),
         destroy: group.reduce((sum, swing) => sum + swing.destroy, 0),
@@ -1715,26 +1742,30 @@ function buildHeroPlayModes(
     }
   }
 
-  const toRows = (subset: PlayAgg[]): CardBalanceRow[] => {
-    const map = new Map<
-      string,
-      {
-        defId: string
-        name: string
-        attr: Attr | null
-        instant: boolean
-        plays: number
-        actor: number
-        relative: number
-        abs: number
-        destroy: number
-        discard: number
-        exile: number
-        control: number
-        bounce: number
-        pressure: number
-      }
-    >()
+  type RowAgg = {
+    defId: string
+    name: string
+    attr: Attr | null
+    instant: boolean
+    plays: number
+    actor: number
+    relative: number
+    abs: number
+    destroy: number
+    discard: number
+    exile: number
+    control: number
+    bounce: number
+    pressure: number
+    playWins: number
+    abilityPlays: number
+    abilityWins: number
+    silencedPlays: number
+    silencedWins: number
+  }
+
+  const toRows = (subset: PlayAgg[], opts?: { lockSilenced?: boolean; lockOpen?: boolean }): CardBalanceRow[] => {
+    const map = new Map<string, RowAgg>()
     for (const play of subset) {
       const row = map.get(play.defId) ?? {
         defId: play.defId,
@@ -1751,6 +1782,11 @@ function buildHeroPlayModes(
         control: 0,
         bounce: 0,
         pressure: 0,
+        playWins: 0,
+        abilityPlays: 0,
+        abilityWins: 0,
+        silencedPlays: 0,
+        silencedWins: 0,
       }
       row.plays += 1
       row.actor += play.actor
@@ -1762,39 +1798,123 @@ function buildHeroPlayModes(
       row.control += play.control
       row.bounce += play.bounce
       row.pressure += play.pressure
+      if (play.won) row.playWins += 1
+      // Always accumulate ability/silenced partitions from the full play flags,
+      // even when the subset is already filtered (mode tables stay comparable).
+      if (play.silenced) {
+        row.silencedPlays += 1
+        if (play.won) row.silencedWins += 1
+      } else {
+        row.abilityPlays += 1
+        if (play.won) row.abilityWins += 1
+      }
       map.set(play.defId, row)
     }
     return [...map.values()].map((row) => {
       const presence = presenceMap.get(row.defId) ?? { presence: 0, wins: 0 }
-      return {
+      // Mode views: when locked to silenced/open, ability/silenced counts mirror that slice.
+      const abilityPlays = opts?.lockSilenced ? 0 : opts?.lockOpen ? row.plays : row.abilityPlays
+      const abilityWins = opts?.lockSilenced ? 0 : opts?.lockOpen ? row.playWins : row.abilityWins
+      const silencedPlays = opts?.lockOpen ? 0 : opts?.lockSilenced ? row.plays : row.silencedPlays
+      const silencedWins = opts?.lockOpen ? 0 : opts?.lockSilenced ? row.playWins : row.silencedWins
+      return finishCardRow({
         defId: row.defId,
         name: row.name,
-        kind: 'hero' as PlayKind,
-        bucket: 'hero' as const,
+        kind: 'hero',
+        bucket: 'hero',
         attr: row.attr,
         instant: row.instant,
         plays: row.plays,
-        avgActorSwing: row.plays ? row.actor / row.plays : 0,
-        avgRelativeSwing: row.plays ? row.relative / row.plays : 0,
-        avgAbsSwing: row.plays ? row.abs / row.plays : 0,
-        totalActorSwing: row.actor,
+        actor: row.actor,
+        relative: row.relative,
+        abs: row.abs,
+        pressure: row.pressure,
+        destroy: row.destroy,
+        discard: row.discard,
+        exile: row.exile,
+        control: row.control,
+        bounce: row.bounce,
         presence: presence.presence,
         wins: presence.wins,
-        winRate: presence.presence ? presence.wins / presence.presence : 0,
-        avgPressure: row.plays ? row.pressure / row.plays : 0,
-        avgDestroy: row.plays ? row.destroy / row.plays : 0,
-        avgDiscard: row.plays ? row.discard / row.plays : 0,
-        avgExile: row.plays ? row.exile / row.plays : 0,
-        avgSteal: row.plays ? row.control / row.plays : 0,
-        avgBounce: row.plays ? row.bounce / row.plays : 0,
-      }
+        playWins: row.playWins,
+        abilityPlays,
+        abilityWins,
+        silencedPlays,
+        silencedWins,
+      })
     })
   }
 
   return {
     total: toRows(plays),
-    silenced: toRows(plays.filter((play) => play.silenced)),
-    open: toRows(plays.filter((play) => !play.silenced)),
+    silenced: toRows(
+      plays.filter((play) => play.silenced),
+      { lockSilenced: true },
+    ),
+    open: toRows(
+      plays.filter((play) => !play.silenced),
+      { lockOpen: true },
+    ),
+  }
+}
+
+type CardRowParts = {
+  defId: string
+  name: string
+  kind: PlayKind
+  bucket: RelBucket
+  attr: Attr | null
+  instant: boolean
+  plays: number
+  actor: number
+  relative: number
+  abs: number
+  pressure: number
+  destroy: number
+  discard: number
+  exile: number
+  control: number
+  bounce: number
+  presence: number
+  wins: number
+  playWins: number
+  abilityPlays: number
+  abilityWins: number
+  silencedPlays: number
+  silencedWins: number
+}
+
+function finishCardRow(parts: CardRowParts): CardBalanceRow {
+  const plays = parts.plays
+  return {
+    defId: parts.defId,
+    name: parts.name,
+    kind: parts.kind,
+    bucket: parts.bucket,
+    attr: parts.attr,
+    instant: parts.instant,
+    plays,
+    avgActorSwing: plays ? parts.actor / plays : 0,
+    avgRelativeSwing: plays ? parts.relative / plays : 0,
+    avgAbsSwing: plays ? parts.abs / plays : 0,
+    totalActorSwing: parts.actor,
+    presence: parts.presence,
+    wins: parts.wins,
+    winRate: parts.presence ? parts.wins / parts.presence : 0,
+    playWins: parts.playWins,
+    playWinRate: plays ? parts.playWins / plays : 0,
+    abilityPlays: parts.abilityPlays,
+    abilityWins: parts.abilityWins,
+    abilityWinRate: parts.abilityPlays ? parts.abilityWins / parts.abilityPlays : 0,
+    silencedPlays: parts.silencedPlays,
+    silencedWins: parts.silencedWins,
+    silencedWinRate: parts.silencedPlays ? parts.silencedWins / parts.silencedPlays : 0,
+    avgPressure: plays ? parts.pressure / plays : 0,
+    avgDestroy: plays ? parts.destroy / plays : 0,
+    avgDiscard: plays ? parts.discard / plays : 0,
+    avgExile: plays ? parts.exile / plays : 0,
+    avgSteal: plays ? parts.control / plays : 0,
+    avgBounce: plays ? parts.bounce / plays : 0,
   }
 }
 
