@@ -1229,7 +1229,7 @@ export function abilityEffectType(defId: string): AbilityEffectType {
 }
 
 function mixAttrCount(why: string): number {
-  const match = why.match(/^attributes ×(\d+)/)
+  const match = why.match(/ATTR \+(\d+)/)
   if (!match) return 0
   const n = Number(match[1])
   return n >= 2 && n <= 4 ? n : 0

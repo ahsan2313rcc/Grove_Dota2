@@ -81,6 +81,7 @@ describe('retuned abilities', () => {
     game = passInstants(game)
     expect(game.pending?.prompt.toLowerCase()).toMatch(/larger enemy team/)
     game = apply(game, { type: 'choose', ids: [`hero:${victim}`] })
+    game = passInstants(game)
     while (game.pending?.prompt.includes('would be destroyed')) {
       game = apply(game, { type: 'choose', ids: ['pass'] })
     }
@@ -105,6 +106,7 @@ describe('retuned abilities', () => {
     game = apply(game, { type: 'choose', ids: [`hero:${vs}`] })
     game = apply(game, { type: 'choose', ids: ['new:0'] })
     game = apply(game, { type: 'choose', ids: ['yes'] })
+    game = passInstants(game)
     // Infest exiles Lifestealer and may fire the stolen ability under stolenCast.
     expect(
       game.infests.some((entry) => entry.hostUid === vs) ||

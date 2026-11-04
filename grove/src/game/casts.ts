@@ -23,6 +23,7 @@ import {
   graveLocked,
   heroChoices,
   heroWeight,
+  instantsLocked,
   intelCount,
   log,
   mostRecentEnemy,
@@ -186,6 +187,10 @@ export function cast(state: Game, resume: CastResume): Game {
       state = countered.state
     }
     resume = armed
+    // Hero abilities: choose targets first, then open Instant interrupt announcing those targets.
+    if (HERO_BY_ID[resume.defId] && !resume.echo && !resume.windowed) {
+      return offerInstantWindow(state, resume.sourceUid, { ...resume, windowed: true })
+    }
   }
   const homeTeam = findHero(state, resume.sourceUid)
   if (
@@ -1481,11 +1486,13 @@ function effect(state: Game, resume: CastResume): Game {
       const named = resume.picked.find((id) => id.startsWith('name:'))?.slice(5)
       if (!named) return state
       let next = log(state, `Gem of True Sight names ${display(named).name}.`)
+      const reveals = [...next.reveal]
       for (const id of opponents(state, actor)) {
+        reveals.push({ viewer: actor, target: id, turn: next.turn })
         const hits = next.players[id]!.hand.filter((card) => card.defId === named)
         for (const card of hits) next = give(next, id, actor, card.uid)
       }
-      return next
+      return { ...next, reveal: reveals }
     }
     default:
       return log(state, `${display(resume.defId).name} is already at work.`)
@@ -1603,13 +1610,16 @@ function pullIn(state: Game, resume: CastResume, uid: string | undefined, lasso:
   if (!uid) return state
   const home = here(state, resume)
   if (!home) return log(state, 'There is no team to pull into.')
+  const before = findHero(state, uid)
+  if (!before) return state
+  const homeTeamId = before.team.id
+  const owner = before.hero.owner
   const moved = moveOnto(state, uid, home.player.id, home.team.id)
   if (!lasso) return moved
-  const loc = findHero(moved, uid)
-  if (!loc) return moved
+  if (!findHero(moved, uid)) return moved
   return {
     ...moved,
-    lassos: [...moved.lassos, { uid, caster: resume.actor, owner: loc.hero.owner, fromTurn: state.turn }],
+    lassos: [...moved.lassos, { uid, caster: resume.actor, owner, teamId: homeTeamId, fromTurn: state.turn }],
   }
 }
 
@@ -1811,17 +1821,20 @@ function spray(state: Game, resume: CastResume): Game {
     }
     return next
   }
-  // Nature's Prophet: one kill per terrain combo each opponent controls.
-  let kills = 0
-  for (const id of opponents(state, actor)) kills += state.players[id]!.combos.length
+  // Nature's Prophet: for each opponent, destroy one of their heroes per terrain combo they control.
   let next = state
   const banned = new Set<string>()
-  for (let count = 0; count < kills; count += 1) {
-    const pool = allLocs(next).filter((loc) => loc.hero.controller !== actor && !banned.has(loc.hero.uid))
-    const [rolled, hit] = randomFrom(next, pool)
-    if (!hit) break
-    banned.add(hit.hero.uid)
-    next = enqueue(rolled, hit.hero.uid, 'Wrath of Nature', false, true, actor)
+  for (const id of opponents(state, actor)) {
+    const kills = state.players[id]!.combos.length
+    for (let count = 0; count < kills; count += 1) {
+      const pool = allLocs(next).filter(
+        (loc) => loc.hero.controller === id && !banned.has(loc.hero.uid),
+      )
+      const [rolled, hit] = randomFrom(next, pool)
+      if (!hit) break
+      banned.add(hit.hero.uid)
+      next = enqueue(rolled, hit.hero.uid, 'Wrath of Nature', false, true, actor)
+    }
   }
   return next
 }
@@ -1893,11 +1906,13 @@ function satanic(state: Game, resume: CastResume): Game {
   const teamId = dest.startsWith('team:') ? dest.slice(5) : dest
   const loc = findHero(state, uid)
   if (!loc) return state
+  const homeTeamId = loc.team.id
+  const owner = loc.hero.owner
   state = moveOnto(state, uid, resume.actor, teamId)
-  // Temporary control until end of turn via lasso return.
+  // Temporary control until end of turn via lasso return to the original team.
   state = {
     ...state,
-    lassos: [...state.lassos, { uid, caster: resume.actor, owner: loc.hero.owner, fromTurn: state.turn }],
+    lassos: [...state.lassos, { uid, caster: resume.actor, owner, teamId: homeTeamId, fromTurn: state.turn }],
   }
   const landed = findHero(state, uid)
   if (!landed || landed.hero.controller !== resume.actor) return state
@@ -2519,4 +2534,109 @@ function gateNewTeam(state: Game, resume: CastResume): Game {
   let [next, teamId] = created
   for (const uid of uids) next = moveOnto(next, uid, actor, teamId)
   return log(next, "Fiend's Gate forms a new team.")
+}
+
+/** Let each opponent play an Instant (or pass) after targets are chosen, before the ability resolves. */
+export function offerInstantWindow(
+  state: Game,
+  heroUid: string,
+  resume: CastResume,
+  seats?: PlayerId[],
+  index = 0,
+): Game {
+  const order = seats ?? opponents(state, resume.actor)
+  if (index >= order.length) return gateAbility(state, heroUid, resume)
+  const seat = order[index]!
+  const playable = state.players[seat]!.hand.filter((card) => {
+    const info = display(card.defId)
+    if (!info.instant) return false
+    if (card.kind === 'terrain') return false
+    // Illusion counters plays, not abilities.
+    if (card.defId === 'illusion') return false
+    return true
+  })
+  if (instantsLocked(state, seat)) {
+    if (playable.length > 0) {
+      state = log(state, `Battle Trance stops ${pname(state, seat)} from playing Instant cards.`)
+    }
+    return offerInstantWindow(state, heroUid, resume, order, index + 1)
+  }
+  if (playable.length === 0) return offerInstantWindow(state, heroUid, resume, order, index + 1)
+  const about = display(resume.defId)
+  const caster = pname(state, resume.actor)
+  const targetNote = announceTargets(state, resume)
+  const targetPart = targetNote ? ` targeting ${targetNote}` : ''
+  return ask(state, {
+    actor: seat,
+    prompt: `${caster}'s ${about.name} (${about.spell ?? 'ability'}) is about to fire${targetPart} — ${about.text} Play an Instant to interrupt, or pass.`,
+    mode: 'pick',
+    min: 1,
+    max: 1,
+    choices: [
+      { id: 'pass', label: 'Pass' },
+      ...playable.map((card) => ({
+        id: `instant:${card.uid}`,
+        label: display(card.defId).name,
+        defId: card.defId,
+        hint: display(card.defId).text,
+      })),
+    ],
+    resume: { kind: 'instant-window', cast: resume, heroUid, seats: order, index },
+  })
+}
+
+/** Pugna tax → cast. Nyx counters only via the Instant interrupt window. */
+function gateAbility(state: Game, heroUid: string, resume: CastResume): Game {
+  const loc = findHero(state, heroUid)
+  if (!loc) return log(state, 'The hero is gone — the ability fizzles.')
+  if (loc.hero.muted || state.silence || state.players[resume.actor]?.orchid) {
+    return log(state, 'The ability is nullified.')
+  }
+  if (
+    allLocs(state).some(
+      (entry) =>
+        entry.hero.defId === 'pugna' &&
+        entry.hero.controller !== resume.actor &&
+        !aurasSuppressed(state, entry.hero.controller),
+    )
+  ) {
+    return ask(state, {
+      actor: resume.actor,
+      prompt: 'Nether Ward: discard 1, or the hero does not fire.',
+      mode: 'pick',
+      min: 1,
+      max: 1,
+      choices: [
+        { id: 'discard', label: 'Discard 1' },
+        { id: 'fizzle', label: 'The hero does not fire' },
+      ],
+      resume: { kind: 'pugna', cast: resume },
+    })
+  }
+  return cast(state, { ...resume, armed: true, windowed: true })
+}
+
+function announceTargets(state: Game, resume: CastResume): string {
+  const parts: string[] = []
+  for (const uid of heroIds(resume.picked)) {
+    const loc = findHero(state, uid)
+    if (loc) parts.push(display(loc.hero.defId).name)
+  }
+  for (const teamId of rawTeams(resume.picked)) {
+    const found = teamById(state, teamId)
+    if (!found) continue
+    const idx = found.player.teams.findIndex((team) => team.id === teamId)
+    const letter = idx >= 0 && idx < 26 ? String.fromCharCode(65 + idx) : '?'
+    parts.push(`${found.player.name}'s team ${letter}`)
+  }
+  for (const raw of resume.picked) {
+    if (!raw.startsWith('player:')) continue
+    const id = Number(raw.slice(7))
+    if (Number.isFinite(id) && state.players[id]) parts.push(state.players[id]!.name)
+  }
+  for (const raw of resume.picked) {
+    if (!raw.startsWith('attr:')) continue
+    parts.push(raw.slice(5))
+  }
+  return [...new Set(parts)].join(', ')
 }

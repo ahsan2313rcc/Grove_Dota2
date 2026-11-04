@@ -180,7 +180,8 @@ export function chooseAiAction(state: Game): Action {
     }
   }
 
-  if (state.players[actor].actions > 0 && state.deck.length > 0 && state.players[actor].hand.length < state.players[actor].handLimit) {
+  // Drawing above handLimit is legal mid-turn; discard happens only at end of turn.
+  if (state.players[actor].actions > 0 && state.deck.length > 0) {
     const next = apply({ ...state, autoAll: true }, { type: 'draw' })
     if (moved(state, next)) {
       const score = evaluate(next, actor, strat) + drawBias(state, actor, strat)

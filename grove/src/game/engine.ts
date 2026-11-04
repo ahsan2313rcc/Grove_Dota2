@@ -1,6 +1,6 @@
 import { chooseAiPending } from './ai.ts'
 import { ANCIENT_ID, HEROES, ITEMS, REWARDS, TERRAINS, TURN_DRAW, display, firesAbility } from './catalog.ts'
-import { cast, finishIo, finishKunkka } from './casts.ts'
+import { cast, finishIo, finishKunkka, offerInstantWindow } from './casts.ts'
 import { getScoreRules } from './scoring.ts'
 import {
   addHand,
@@ -28,7 +28,6 @@ import {
   instantsLocked,
   isTrapHero,
   itemsLocked,
-  opponents,
   log,
   makeCard,
   makeHero,
@@ -505,15 +504,16 @@ function play(state: Game, uid: string, team: string, extras: string[] = []): Ga
     graveTop.uid === uid &&
     allLocs(state).some((loc) => loc.hero.defId === 'death_prophet' && loc.hero.controller === actor) &&
     !graveLocked(state, actor)
-  // Clinkz: play an exiled item that was Skeleton-Walked this turn.
+  // Clinkz: play an exiled item that was Skeleton-Walked this turn (free — do not burn freeItems yet).
   const fromClinkz = state.clinkzExile.find((card) => card.uid === uid)
+  let clinkzFree = false
   if (fromClinkz && !held) {
+    clinkzFree = true
     actor = state.active
     state = {
       ...state,
       exile: state.exile.filter((card) => card.uid !== uid),
       clinkzExile: state.clinkzExile.filter((card) => card.uid !== uid),
-      freeItems: Math.max(0, state.freeItems - 1),
     }
     state = addHand(state, actor, [fromClinkz])
     held = findHand(state, uid)
@@ -531,7 +531,7 @@ function play(state: Game, uid: string, team: string, extras: string[] = []): Ga
   const freeGrant = state.freePlay.includes(uid)
   const freeItem =
     held.card.kind === 'item' &&
-    (state.freeItems > 0 || state.clinkzExile.some((card) => card.uid === held.card.uid) || freeGrant)
+    (state.freeItems > 0 || clinkzFree || freeGrant)
   const primalFree =
     held.card.kind === 'item' &&
     !!state.primalItems &&
@@ -701,82 +701,9 @@ function playHeroOnto(state: Game, actor: PlayerId, card: CardInst, teamId: stri
   if (!fires) return next
   const resume = { kind: 'cast' as const, actor, sourceUid: card.uid, defId: card.defId, picked: [], steps: 0 }
   if (landed.mined) return { ...next, after: { kind: 'alive', uid: card.uid, cast: resume } }
-  // Opponents may interrupt with Instant cards before the ability resolves.
-  return offerInstantWindow(next, card.uid, resume)
+  // Targets first, then Instant interrupt (see cast → offerInstantWindow).
+  return cast(next, resume)
 }
-
-/** Let each opponent play an Instant (or pass) before a hero ability fires. */
-function offerInstantWindow(
-  state: Game,
-  heroUid: string,
-  resume: CastResumeLike,
-  seats?: PlayerId[],
-  index = 0,
-): Game {
-  const order = seats ?? opponents(state, resume.actor)
-  if (index >= order.length) return gateAbility(state, heroUid, resume)
-  const seat = order[index]!
-  const playable = state.players[seat]!.hand.filter((card) => {
-    const info = display(card.defId)
-    if (!info.instant) return false
-    if (card.kind === 'terrain') return false
-    // Illusion counters plays, not abilities.
-    if (card.defId === 'illusion') return false
-    return true
-  })
-  if (instantsLocked(state, seat)) {
-    if (playable.length > 0) {
-      state = log(state, `Battle Trance stops ${pname(state, seat)} from playing Instant cards.`)
-    }
-    return offerInstantWindow(state, heroUid, resume, order, index + 1)
-  }
-  if (playable.length === 0) return offerInstantWindow(state, heroUid, resume, order, index + 1)
-  const about = display(resume.defId)
-  const caster = pname(state, resume.actor)
-  return ask(state, {
-    actor: seat,
-    prompt: `${caster}'s ${about.name} (${about.spell ?? 'ability'}) is about to fire — ${about.text} Play an Instant to interrupt, or pass.`,
-    mode: 'pick',
-    min: 1,
-    max: 1,
-    choices: [
-      { id: 'pass', label: 'Pass' },
-      ...playable.map((card) => ({
-        id: `instant:${card.uid}`,
-        label: display(card.defId).name,
-        defId: card.defId,
-        hint: display(card.defId).text,
-      })),
-    ],
-    resume: { kind: 'instant-window', cast: resume, heroUid, seats: order, index },
-  })
-}
-
-/** Pugna tax → cast. Nyx counters only via the Instant interrupt window. */
-function gateAbility(state: Game, heroUid: string, resume: CastResumeLike): Game {
-  const loc = findHero(state, heroUid)
-  if (!loc) return log(state, 'The hero is gone — the ability fizzles.')
-  if (loc.hero.muted || state.silence || state.players[resume.actor]?.orchid) {
-    return log(state, 'The ability is nullified.')
-  }
-  if (allLocs(state).some((loc) => loc.hero.defId === 'pugna' && loc.hero.controller !== resume.actor && !aurasSuppressedSafe(state, loc.hero.controller))) {
-    return ask(state, {
-      actor: resume.actor,
-      prompt: 'Nether Ward: discard 1, or the hero does not fire.',
-      mode: 'pick',
-      min: 1,
-      max: 1,
-      choices: [
-        { id: 'discard', label: 'Discard 1' },
-        { id: 'fizzle', label: 'The hero does not fire' },
-      ],
-      resume: { kind: 'pugna', cast: resume },
-    })
-  }
-  return cast(state, resume)
-}
-
-type CastResumeLike = Extract<Resume, { kind: 'cast' }>
 
 function aurasSuppressedSafe(state: Game, controller: PlayerId): boolean {
   return allLocs(state).some((loc) => loc.hero.defId === 'viper' && loc.hero.controller !== controller)
@@ -1242,7 +1169,7 @@ export function teamsFor(
         const blocked = team.trap || team.mine
         options.push({
           id: team.id,
-          label: `${whose} Team ${letter} · ${scored.why} · ${scored.points}`,
+          label: `${whose} ${letter} ${scored.why} · ${scored.points}`,
           ok: !blocked,
           reason: blocked ? 'That team already has a trap.' : undefined,
         })
@@ -1260,7 +1187,7 @@ export function teamsFor(
     const letter = String.fromCharCode(65 + (index % 26))
     options.push({
       id: team.id,
-      label: `Team ${letter} · ${scored.why} · ${scored.points}`,
+      label: `${letter} ${scored.why} · ${scored.points}`,
       ok: !reason,
       reason: reason ?? undefined,
     })

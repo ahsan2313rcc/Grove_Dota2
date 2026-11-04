@@ -6,7 +6,7 @@ import { teamShape } from '../game/scoring.ts'
 import type { Action, CardInst, Game, PlayerId } from '../game/types.ts'
 import { CardFace } from './CardFace.tsx'
 import { Prompt } from './Prompt.tsx'
-import { emberTargets, handRevealed, heroMarks, isCombo, playBlock, shownAttrs, shownRange, statusLines } from './present.ts'
+import { emberTargets, handRevealed, heroMarks, isCombo, playBlock, playsAsInstant, shownAttrs, shownRange, statusLines } from './present.ts'
 import { ALL_STRAT_FILTER, type BalanceSummary, type MatchReport, type StratFilter } from '../game/balance.ts'
 import { DebugRail, type DebugSpeed, type DebugView } from './DebugRail.tsx'
 import { Glossary } from './Glossary.tsx'
@@ -330,7 +330,7 @@ export function Table({
   const chosen = liveCombo.map((uid) => you.hand.find((card) => card.uid === uid)).filter((card): card is CardInst => !!card)
   const comboReady = isCombo(chosen)
   const drawReason = !canAct ? null : game.deck.length === 0 ? 'The deck is empty.' : you.actions < 1 ? 'No actions left.' : null
-  const clinkzPlayable = canAct ? game.clinkzExile.filter((card) => card.kind === 'item') : []
+  const clinkzPlayable = canPlayCards ? game.clinkzExile.filter((card) => card.kind === 'item') : []
 
   function clickHand(card: CardInst) {
     if (debug) {
@@ -384,7 +384,7 @@ export function Table({
     const card = fromGrave ?? fromClinkz ?? you.hand.find((entry) => entry.uid === uid)
     if (!card || !canPlayCards) return
     if (!fromGrave && !fromClinkz && playBlock(game, viewer, card)) return
-    if (canInstant && !fromGrave && !fromClinkz && !display(card.defId).instant) return
+    if (canInstant && !fromGrave && !fromClinkz && !playsAsInstant(game, viewer, card)) return
     if (card.kind === 'terrain') return
     if (needsTeam(card.defId, card.kind)) {
       setPlacing(uid)
@@ -793,7 +793,7 @@ function Lane({
               <article key={team.id} className="team" data-testid={mine ? `team-${index}` : undefined}>
                 <header>
                   <strong>{scored.points}</strong>
-                  <span>Team {letter} · {scored.why}</span>
+                  <span>{letter} {scored.why}</span>
                 </header>
                 <div className="team-heroes">
                   {team.heroes.map((hero) => (
@@ -939,7 +939,7 @@ function Detail({
             ? 'Death Prophet plays the top of the grave for free — pick a team.'
             : trap
             ? 'Choose any team — yours or an opponent’s. At most one trap per team.'
-            : card && display(card.defId).instant
+            : card && playsAsInstant(game, viewer, card)
             ? 'Place onto an existing team or a new one. Ability targets resolve from the card text after seating.'
             : 'Click more heroes in hand to bring them in silently. Only the active ability fires.'}
         </p>
@@ -1008,7 +1008,8 @@ function Detail({
       .map((uid) => game.players[viewer].hand.find((entry) => entry.uid === uid))
       .filter((entry): entry is CardInst => !!entry && entry.uid !== card.uid)
     : []
-  const offTurnInstant = canInstant && info.instant
+  const asInstant = playsAsInstant(game, viewer, card)
+  const offTurnInstant = canInstant && asInstant
   const playable = canPlayCards && !block && (canAct || offTurnInstant)
   return (
     <div className="detail">
@@ -1028,7 +1029,7 @@ function Detail({
           </button>
         ) : (
           <button type="button" className="primary" data-testid="play-card" disabled={!playable} onClick={() => onPlay(card.uid)}>
-            {info.instant
+            {asInstant
               ? `Play ${info.name} · Instant`
               : mates.length > 0
                 ? `Play squad · 1 action`
@@ -1096,13 +1097,30 @@ function LogSheet({ log, onClose }: { log: string[]; onClose: () => void }) {
 type LogKind = 'turn' | 'action' | 'ability' | 'instant' | 'aura' | 'other'
 
 function paginateLog(log: string[]): { title: string; lines: { text: string; kind: LogKind }[] }[] {
+  // One page per full round. A new round starts when the first seat's turn returns. Turn lines stay highlighted.
   const pages: { title: string; lines: { text: string; kind: LogKind }[] }[] = []
   let current: { title: string; lines: { text: string; kind: LogKind }[] } | null = null
+  let opener: string | null = null
+  let round = 0
   for (const line of log) {
     const turn = /^(.+)'s turn\./.exec(line)
     if (turn) {
-      current = { title: `${turn[1]}'s turn`, lines: [{ text: line, kind: 'turn' }] }
-      pages.push(current)
+      const name = turn[1]!
+      if (!opener) {
+        opener = name
+        round = 1
+        current = { title: `Round ${round}`, lines: [] }
+        pages.push(current)
+      } else if (name === opener) {
+        round += 1
+        current = { title: `Round ${round}`, lines: [] }
+        pages.push(current)
+      }
+      if (!current) {
+        current = { title: 'Opening', lines: [] }
+        pages.push(current)
+      }
+      current.lines.push({ text: line, kind: 'turn' })
       continue
     }
     if (!current) {
@@ -1213,14 +1231,29 @@ function PileDialog({
           </div>
         ) : null}
         {!sealed && cards.length === 0 ? <p className="quiet">Nothing here yet.</p> : null}
-        {!sealed ? (
+        {!sealed && pile === 'grave' ? (
           <div className="hand-row dialog-cards">
-            {cards.map((card, index) => (
+            {top ? (
+              <CardFace
+                key={top.uid}
+                defId={top.defId}
+                compact
+                selected={!!gravePlay}
+                onClick={() => onRead(top.defId)}
+              />
+            ) : null}
+            {cards.length > 1 ? (
+              <p className="quiet">{cards.length - 1} buried under the top card — play from the top only.</p>
+            ) : null}
+          </div>
+        ) : null}
+        {!sealed && pile !== 'grave' ? (
+          <div className="hand-row dialog-cards">
+            {cards.map((card) => (
               <CardFace
                 key={card.uid}
                 defId={card.defId}
                 compact
-                selected={!!gravePlay && index === cards.length - 1}
                 onClick={() => onRead(card.defId)}
               />
             ))}

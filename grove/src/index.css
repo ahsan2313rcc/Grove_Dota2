@@ -550,9 +550,9 @@ button.debug-sort.on {
   background: rgba(255, 255, 255, 0.03);
   flex: 0 0 auto;
 }
-.team header, .team footer, .combo-chip { display: flex; gap: 6px; align-items: baseline; flex-wrap: wrap; }
-.team header strong { color: var(--gold); font-family: Fraunces, Georgia, serif; font-size: 1.15rem; }
-.team header span { color: var(--cream-dim); font-size: 0.78rem; }
+.team header, .team footer, .combo-chip { display: flex; gap: 6px; align-items: baseline; flex-wrap: nowrap; }
+.team header strong { color: var(--gold); font-family: Fraunces, Georgia, serif; font-size: 1.15rem; flex: 0 0 auto; }
+.team header span { color: var(--cream-dim); font-size: 0.72rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .team footer em, .combo-chip em { font-style: normal; color: var(--gold); font-size: 0.75rem; }
 .team-heroes { display: flex; flex-direction: column; }
 

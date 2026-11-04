@@ -117,6 +117,8 @@ export interface CastResume {
   picked: string[]
   echo?: boolean
   armed?: boolean
+  /** Instant interrupt window already opened for this cast. */
+  windowed?: boolean
   steps?: number
   /** Blade Fury tax already collected for this cast. */
   juggPaid?: boolean
@@ -184,6 +186,8 @@ export interface Lasso {
   uid: string
   caster: PlayerId
   owner: PlayerId
+  /** Team the hero should return to when the lasso ends. */
+  teamId: string
   fromTurn: number
 }
 

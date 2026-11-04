@@ -231,8 +231,8 @@ export function DebugRail({
       <div className="debug-block">
         <h3>Shape compare</h3>
         <p className="quiet debug-legend">
-          Core ×3/×4/×5 are exclusive: 3+ heroes and a same-attr stack of exactly 3 / 4 / 5+ (mixed boards count in n).
-          Core team /match = ×3+×4+×5. Mixed · 3 attrs = 3+ heroes with exactly 3 attributes (not 4).
+          Core ×3/×4/×5 are exclusive: 3+ heroes and a same-attr stack of exactly 3 / 4 / 5+ (splash boards with a core stack still count as core).
+          Core team /match = ×3+×4+×5. Mixed = 3+ distinct attributes with no core stack (ATTR +3 / +4).
           Pure / avg pts use mono-core (or matching mix) scores only.
         </p>
         <SortableTable
