@@ -1321,6 +1321,7 @@ export function clearEnd(state: Game): Game {
     maledict: [],
     soulbind: [],
     reveal: [],
+    spellNullify: [],
   }
 }
 

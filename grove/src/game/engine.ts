@@ -237,6 +237,7 @@ function blank(seed: number, mode: 'hotseat' | 'ai' | 'online', seats: SeatSpec[
     freePlay: [],
     lastPlayedHero: null,
     exorcismPulse: [],
+    spellNullify: [],
     medusaHold: [],
     infests: [],
     ancient: null,
