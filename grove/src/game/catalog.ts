@@ -227,7 +227,15 @@ export const HEROES: HeroDef[] = [
   hero('dark_seer', 'Dark Seer', 'INT', 'Melee', 'Vacuum', 'Until the end of turn, if an enemy hero would be destroyed, you take control of it instead.', 'cast'),
   hero('dark_willow', 'Dark Willow', 'INT', 'Ranged', 'Terrorize', 'Each opponent sacrifices a hero they control.', 'cast'),
   hero('dazzle', 'Dazzle', 'INT', 'Ranged', 'Shallow Grave', 'Target allied hero cannot be destroyed until your next turn. Instant.', 'instant'),
-  hero('death_prophet', 'Death Prophet', 'INT', 'Ranged', 'Exorcism', 'You may play the top card of the grave during your turn.', 'aura'),
+  hero(
+    'death_prophet',
+    'Death Prophet',
+    'INT',
+    'Ranged',
+    'Exorcism',
+    'On your turn, play the top grave card (may finish a terrain combo). Exorcised items, runes, and towers exile after use. Heroes and neutrals you control exile instead of dying.',
+    'aura',
+  ),
   hero('disruptor', 'Disruptor', 'INT', 'Ranged', 'Glimpse', 'Put target enemy card on the top or bottom of the deck. Instant.', 'instant'),
   hero(
     'enchantress',

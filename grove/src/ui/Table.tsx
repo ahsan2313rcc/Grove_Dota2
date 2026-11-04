@@ -284,9 +284,9 @@ export function Table({
     && seatLive
   const canPlayCards = canAct || canInstant
   const handIds = new Set(you.hand.map((card) => card.uid))
-  const liveCombo = combo.filter((uid) => handIds.has(uid))
-  if (liveCombo.length !== combo.length) setCombo(liveCombo)
   const graveTop = canAct ? playableFromGrave(game, viewer) : null
+  const liveCombo = combo.filter((uid) => handIds.has(uid) || uid === graveTop?.uid)
+  if (liveCombo.length !== combo.length) setCombo(liveCombo)
   if (placing && !handIds.has(placing) && placing !== graveTop?.uid) {
     setPlacing(null)
     setExtras([])
@@ -332,10 +332,25 @@ export function Table({
     )
   }
 
-  const chosen = liveCombo.map((uid) => you.hand.find((card) => card.uid === uid)).filter((card): card is CardInst => !!card)
+  const chosen = liveCombo
+    .map((uid) => you.hand.find((card) => card.uid === uid) ?? (graveTop?.uid === uid ? graveTop : null))
+    .filter((card): card is CardInst => !!card)
   const comboReady = isCombo(chosen)
   const drawReason = !canAct ? null : game.deck.length === 0 ? 'The deck is empty.' : you.actions < 1 ? 'No actions left.' : null
   const clinkzPlayable = canPlayCards ? game.clinkzExile.filter((card) => card.kind === 'item') : []
+
+  function toggleTerrainCombo(card: CardInst, fromGrave = false) {
+    setPlacing(null)
+    setExtras([])
+    if (liveCombo.includes(card.uid)) {
+      setCombo((current) => current.filter((uid) => uid !== card.uid))
+      if (focus?.kind === 'hand' && focus.uid === card.uid) setFocus(null)
+      return
+    }
+    if (liveCombo.length >= 3) return
+    setCombo((current) => [...current, card.uid])
+    setFocus(fromGrave ? { kind: 'card', defId: card.defId } : { kind: 'hand', uid: card.uid })
+  }
 
   function clickHand(card: CardInst) {
     if (debug) {
@@ -344,16 +359,7 @@ export function Table({
     }
     setMoving(null)
     if (card.kind === 'terrain') {
-      setPlacing(null)
-      setExtras([])
-      if (liveCombo.includes(card.uid)) {
-        setCombo((current) => current.filter((uid) => uid !== card.uid))
-        if (focus?.kind === 'hand' && focus.uid === card.uid) setFocus(null)
-        return
-      }
-      if (liveCombo.length >= 3) return
-      setCombo((current) => [...current, card.uid])
-      setFocus({ kind: 'hand', uid: card.uid })
+      toggleTerrainCombo(card)
       return
     }
     // Active hero (placing or focused) + other heroes toggle silent companions for one action.
@@ -390,7 +396,11 @@ export function Table({
     if (!card || !canPlayCards) return
     if (!fromGrave && !fromClinkz && playBlock(game, viewer, card)) return
     if (canInstant && !fromGrave && !fromClinkz && !playsAsInstant(game, viewer, card)) return
-    if (card.kind === 'terrain') return
+    // Exorcism terrain: fold into the combo picker instead of a lone play.
+    if (card.kind === 'terrain') {
+      if (fromGrave) toggleTerrainCombo(card, true)
+      return
+    }
     if (needsTeam(card.defId, card.kind)) {
       setPlacing(uid)
       setExtras((current) => current.filter((extra) => extra !== uid))
@@ -597,9 +607,15 @@ export function Table({
                   className="combo"
                   data-testid="grave-play"
                   onClick={() => playFocused(graveTop.uid)}
-                  title="Death Prophet — play the top card of the grave"
+                  title={
+                    graveTop.kind === 'terrain'
+                      ? 'Death Prophet — include this terrain in a combo'
+                      : 'Death Prophet — play the top card of the grave'
+                  }
                 >
                   Exorcism · {display(graveTop.defId).name}
+                  {graveTop.kind === 'terrain' ? ' · combo' : ''}
+                  {liveCombo.includes(graveTop.uid) ? ' ✓' : ''}
                 </button>
               ) : null}
             </div>

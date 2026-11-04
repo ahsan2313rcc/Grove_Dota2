@@ -127,7 +127,7 @@ export function chooseAiAction(state: Game): Action {
   const heroUids = hand.filter((card) => card.kind === 'hero' && !isTrapHero(card.defId)).map((card) => card.uid)
   const seen = new Set<string>()
 
-  // Death Prophet: play the top of the grave (free Exorcism).
+  // Death Prophet: play the top of the grave (free Exorcism), including terrain combo plans.
   const graveTop = playableFromGrave(state, actor)
   if (graveTop && graveTop.kind !== 'terrain') {
     const teams = needsTeam(graveTop.defId, graveTop.kind)
@@ -139,6 +139,18 @@ export function chooseAiAction(state: Game): Action {
       if (!moved(state, next)) continue
       let score = evaluate(next, actor, strat)
       score += playBias(state, next, actor, strat, graveTop, team.id, 0) + 2.4
+      if (score > bestScore) {
+        bestScore = score
+        best = action
+      }
+    }
+  } else if (graveTop?.kind === 'terrain') {
+    for (const plan of comboPlans(state)) {
+      if (!plan.uids.includes(graveTop.uid)) continue
+      const action: Action = { type: 'combo', uids: plan.uids }
+      const next = apply({ ...state, autoAll: true }, action)
+      if (!moved(state, next)) continue
+      const score = evaluate(next, actor, strat) + 2.6
       if (score > bestScore) {
         bestScore = score
         best = action

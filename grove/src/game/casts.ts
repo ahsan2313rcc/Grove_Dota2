@@ -1557,9 +1557,23 @@ function toDeck(state: Game, uid: string | undefined, where: 'top' | 'bottom'): 
 }
 
 function toHand(state: Game, uid: string, player: PlayerId, cause: string): Game {
+  const loc = findHero(state, uid)
+  // Prefer bounce → owner hand (PA / owner rules) when the destination is the owner.
+  if (loc && loc.hero.owner === player) return bounce(state, uid, cause)
   const removed = removeHero(state, uid)
   if (!removed.hero) return state
   const card: CardInst = { uid: removed.hero.uid, defId: removed.hero.defId, kind: 'hero' }
+  // Non-owner destination (e.g. Gate overflow steal): still apply PA exile when relevant.
+  if (
+    allLocs(removed.state).some(
+      (other) =>
+        other.hero.defId === 'phantom_assassin' &&
+        other.hero.controller !== removed.hero!.owner &&
+        !aurasSuppressed(removed.state, other.hero.controller),
+    )
+  ) {
+    return log(toExile(removed.state, card), `Coup de Grace exiles ${display(card.defId).name}.`)
+  }
   return afterBoardToHand(
     log(addHand(removed.state, player, [card]), `${cause} returns ${display(card.defId).name} to hand.`),
   )

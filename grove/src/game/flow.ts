@@ -774,22 +774,20 @@ export function releaseHeld(state: Game, hero: BoardHero): Game {
     attrMode: current.attrMode === 'set' ? 'base' : current.attrMode,
     attrSet: [],
   }))
-  // Shadow Demon: return exiled hero to the caster's hand.
+  // Shadow Demon: return exiled hero to the caster's hand (held.owner is the SD controller).
   if (hero.defId === 'shadow_demon') {
     const next = addHand(state, held.owner, [held.card])
     return log(next, `${display(held.card.defId).name} returns to ${pname(state, held.owner)}'s hand.`)
   }
-  // Medusa: rebuild the gazed team for its owner.
-  if (hero.defId === 'medusa' && held.mode === 'razor') {
-    // Single-card fallback; full team restore uses medusaGaze on Game when present.
-  }
+  // Razor / Morphling: reseat the held hero under its original owner.
   let cardState = state
-  const made = makeHero(held.card, held.owner, held.owner, cardState)
+  const owner = held.owner
+  const made = makeHero(held.card, owner, owner, cardState)
   let teamId = ''
-  ;[cardState, teamId] = seatTeam(cardState, held.owner)
-  cardState = putOnTeam(cardState, held.owner, teamId, made)
+  ;[cardState, teamId] = seatTeam(cardState, owner)
+  cardState = putOnTeam(cardState, owner, teamId, made)
   const landed = arrived(cardState, made.uid)
-  return log(landed.state, `${display(held.card.defId).name} returns from under ${display(hero.defId).name}.`)
+  return log(landed.state, `${display(held.card.defId).name} returns to ${pname(state, owner)}.`)
 }
 
 export function extract(state: Game, uid: string): { state: Game; hero: BoardHero | null } {
@@ -1021,13 +1019,8 @@ export function performDestroy(state: Game, item: StackDestroy): Game {
     }
   }
   if (!forced && loc.hero.dawn && loc.hero.dawn.turn === state.turn) {
-    const caster = loc.hero.dawn.caster
-    const removed = removeHero(state, loc.hero.uid)
-    if (!removed.hero) return state
-    const card: CardInst = { uid: removed.hero.uid, defId: removed.hero.defId, kind: 'hero' }
-    return afterBoardToHand(
-      log(addHand(removed.state, caster, [card]), `Solar Guardian returns ${name} to hand.`),
-    )
+    // Bounce to the hero's owner (not the Dawnbreaker caster) so PA / owner-hand rules apply.
+    return bounce(state, loc.hero.uid, 'Solar Guardian', true)
   }
   if (!forced && loc.hero.defId === 'phantom_lancer') {
     return bounce(state, loc.hero.uid, 'Juxtapose', true)
@@ -1064,6 +1057,22 @@ export function performDestroy(state: Game, item: StackDestroy): Game {
 
   const teamId = loc.team.id
   const snapshot = loc.hero
+  // Death Prophet: heroes/neutrals you control exile instead of dying.
+  // Pulse keeps the aura for the rest of this destroy cascade if DP dies mid-queue.
+  const hasDpNow =
+    !aurasSuppressed(state, snapshot.controller) &&
+    (snapshot.defId === 'death_prophet' ||
+      allLocs(state).some(
+        (other) => other.hero.defId === 'death_prophet' && other.hero.controller === snapshot.controller,
+      ) ||
+      state.queue.some((queued) => {
+        const other = findHero(state, queued.uid)
+        return !!other && other.hero.defId === 'death_prophet' && other.hero.controller === snapshot.controller
+      }))
+  if (hasDpNow && !state.exorcismPulse.includes(snapshot.controller)) {
+    state = { ...state, exorcismPulse: [...state.exorcismPulse, snapshot.controller] }
+  }
+  const exorcismExile = state.exorcismPulse.includes(snapshot.controller) || hasDpNow
   const removed = removeHero(state, snapshot.uid)
   state = removed.state
   if (!removed.hero) return state
@@ -1072,9 +1081,14 @@ export function performDestroy(state: Game, item: StackDestroy): Game {
     defId: removed.hero.defId,
     kind: removed.hero.token ? 'neutral' : 'hero',
   }
-  if (removed.hero.token) state = toExile(state, card)
+  if (removed.hero.token || exorcismExile) state = toExile(state, card)
   else state = toGrave(state, card, { type: 'board', hero: snapshot, teamId })
-  state = log(state, `${item.cause} destroys ${name}.`)
+  state = log(
+    state,
+    exorcismExile && !removed.hero.token
+      ? `Exorcism exiles ${name}.`
+      : `${item.cause} destroys ${name}.`,
+  )
   if (snapshot.defId === 'tormentor' && item.sourceUid && findHero(state, item.sourceUid)) {
     state = enqueue(state, item.sourceUid, 'Tormentor', false, true, snapshot.controller)
   }
