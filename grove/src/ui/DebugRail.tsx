@@ -560,34 +560,17 @@ function HeroModeTable({
   seats: number
 }) {
   const [mode, setMode] = useState<HeroSwingMode>('total')
-  const swingRows = mode === 'total' ? total : mode === 'silenced' ? silenced : open
-  // Rel/Press/n follow the cycle; Win%/Abil%/Sil% always use the full play partition from `total`.
-  const winById = useMemo(() => new Map(total.map((row) => [row.defId, row])), [total])
-  const rows = useMemo(
-    () =>
-      swingRows.map((row) => {
-        const wins = winById.get(row.defId)
-        if (!wins) return row
-        return {
-          ...row,
-          presence: wins.presence,
-          wins: wins.wins,
-          winRate: wins.winRate,
-          playWins: wins.playWins,
-          playWinRate: wins.playWinRate,
-          abilityPlays: wins.abilityPlays,
-          abilityWins: wins.abilityWins,
-          abilityWinRate: wins.abilityWinRate,
-          silencedPlays: wins.silencedPlays,
-          silencedWins: wins.silencedWins,
-          silencedWinRate: wins.silencedWinRate,
-        }
-      }),
-    [swingRows, winById],
-  )
+  // Cycle drives Rel/Press and the Win% partition (total vs ability vs silenced).
+  const rows = mode === 'total' ? total : mode === 'silenced' ? silenced : open
   const label =
     mode === 'total' ? 'Total (body+ability)' : mode === 'silenced' ? 'Silenced' : 'Ability fired'
   const fair = seats > 0 ? Math.round(100 / seats) : 50
+  const winLegend =
+    mode === 'total'
+      ? 'nΣ/Win% all plays · nA/Abil% ability fired · nS/Sil% silenced'
+      : mode === 'silenced'
+        ? 'n / Win% = silenced plays only'
+        : 'n / Win% = ability-fired plays only'
   return (
     <div className="debug-block">
       <h3>
@@ -602,11 +585,17 @@ function HeroModeTable({
         </button>
       </h3>
       <p className="quiet debug-legend">
-        Cycle filters Rel/Press (total → silenced → ability fired). Win columns stay fixed:
-        nΣ/Win% = all plays · nA/Abil% = ability fired · nS/Sil% = silenced. Rates are seat-normalized
-        (100% = fair 1/{seats || 'n'} ≈ {fair}% raw). Hover % for raw wins/n.
+        Cycle total → silenced → ability fired updates Rel/Press and win columns. {winLegend}.
+        Rates seat-normalized (100% = fair 1/{seats || 'n'} ≈ {fair}% raw). Hover % for raw wins/n.
       </p>
-      <CardSortTable rows={rows} empty="No hero plays yet for this mode." heroWins seats={seats} />
+      <CardSortTable
+        key={mode}
+        rows={rows}
+        empty="No hero plays yet for this mode."
+        heroWins
+        heroWinMode={mode}
+        seats={seats}
+      />
     </div>
   )
 }
@@ -695,11 +684,105 @@ function TurnGraph({
   )
 }
 
+function heroWinColumns(mode: HeroSwingMode, seats: number): Column<CardBalanceRow>[] {
+  if (mode === 'silenced') {
+    return [
+      {
+        key: 'nSil',
+        label: 'n',
+        get: (row) => String(row.plays),
+        sortValue: (row) => row.plays,
+        className: 'debug-num',
+      },
+      {
+        key: 'sil',
+        label: 'Win%',
+        get: (row) => pctCell(row.playWinRate, row.playWins, row.plays, seats),
+        sortValue: (row) => (seats > 0 ? row.playWinRate * seats : row.playWinRate),
+        className: 'debug-num',
+      },
+    ]
+  }
+  if (mode === 'open') {
+    return [
+      {
+        key: 'nAbil',
+        label: 'n',
+        get: (row) => String(row.plays),
+        sortValue: (row) => row.plays,
+        className: 'debug-num',
+      },
+      {
+        key: 'abil',
+        label: 'Win%',
+        get: (row) => pctCell(row.playWinRate, row.playWins, row.plays, seats),
+        sortValue: (row) => (seats > 0 ? row.playWinRate * seats : row.playWinRate),
+        className: 'debug-num',
+      },
+    ]
+  }
+  // total — full split
+  return [
+    {
+      key: 'nTotal',
+      label: 'nΣ',
+      get: (row) => {
+        const samples = row.abilityPlays + row.silencedPlays
+        return String(samples > 0 ? samples : row.plays)
+      },
+      sortValue: (row) => {
+        const samples = row.abilityPlays + row.silencedPlays
+        return samples > 0 ? samples : row.plays
+      },
+      className: 'debug-num',
+    },
+    {
+      key: 'win',
+      label: 'Win%',
+      get: (row) => {
+        const samples = row.abilityPlays + row.silencedPlays
+        return pctCell(row.playWinRate, row.playWins, samples > 0 ? samples : row.plays, seats)
+      },
+      sortValue: (row) => (seats > 0 ? row.playWinRate * seats : row.playWinRate),
+      className: 'debug-num',
+    },
+    {
+      key: 'nAbil',
+      label: 'nA',
+      get: (row) => (row.abilityPlays > 0 ? String(row.abilityPlays) : '—'),
+      sortValue: (row) => row.abilityPlays,
+      className: 'debug-num',
+    },
+    {
+      key: 'abil',
+      label: 'Abil%',
+      get: (row) => pctCell(row.abilityWinRate, row.abilityWins, row.abilityPlays, seats),
+      sortValue: (row) => (seats > 0 ? row.abilityWinRate * seats : row.abilityWinRate),
+      className: 'debug-num',
+    },
+    {
+      key: 'nSil',
+      label: 'nS',
+      get: (row) => (row.silencedPlays > 0 ? String(row.silencedPlays) : '—'),
+      sortValue: (row) => row.silencedPlays,
+      className: 'debug-num',
+    },
+    {
+      key: 'sil',
+      label: 'Sil%',
+      get: (row) => pctCell(row.silencedWinRate, row.silencedWins, row.silencedPlays, seats),
+      sortValue: (row) => (seats > 0 ? row.silencedWinRate * seats : row.silencedWinRate),
+      className: 'debug-num',
+    },
+  ]
+}
+
 function CardSortTable({
   rows,
   empty = 'No card plays yet.',
   defaultSort = { key: 'rel', dir: 'desc' as const },
   heroWins = false,
+  heroWinMode = 'total' as HeroSwingMode,
   seats = 0,
 }: {
   rows: CardBalanceRow[]
@@ -707,63 +790,13 @@ function CardSortTable({
   defaultSort?: SortState
   /** Show Abil% / Sil% play-weighted win columns (heroes). */
   heroWins?: boolean
+  /** Cycle mode: which win partition (and columns) to show. */
+  heroWinMode?: HeroSwingMode
   /** Lobby size for seat-normalized hero Win% (100% = fair 1/seats). */
   seats?: number
 }) {
   const winCols: Column<CardBalanceRow>[] = heroWins
-    ? [
-        {
-          key: 'nTotal',
-          label: 'nΣ',
-          get: (row) => {
-            const samples = row.abilityPlays + row.silencedPlays
-            return String(samples > 0 ? samples : row.plays)
-          },
-          sortValue: (row) => {
-            const samples = row.abilityPlays + row.silencedPlays
-            return samples > 0 ? samples : row.plays
-          },
-          className: 'debug-num',
-        },
-        {
-          key: 'win',
-          label: 'Win%',
-          get: (row) => {
-            const samples = row.abilityPlays + row.silencedPlays
-            return pctCell(row.playWinRate, row.playWins, samples > 0 ? samples : row.plays, seats)
-          },
-          sortValue: (row) => (seats > 0 ? row.playWinRate * seats : row.playWinRate),
-          className: 'debug-num',
-        },
-        {
-          key: 'nAbil',
-          label: 'nA',
-          get: (row) => (row.abilityPlays > 0 ? String(row.abilityPlays) : '—'),
-          sortValue: (row) => row.abilityPlays,
-          className: 'debug-num',
-        },
-        {
-          key: 'abil',
-          label: 'Abil%',
-          get: (row) => pctCell(row.abilityWinRate, row.abilityWins, row.abilityPlays, seats),
-          sortValue: (row) => (seats > 0 ? row.abilityWinRate * seats : row.abilityWinRate),
-          className: 'debug-num',
-        },
-        {
-          key: 'nSil',
-          label: 'nS',
-          get: (row) => (row.silencedPlays > 0 ? String(row.silencedPlays) : '—'),
-          sortValue: (row) => row.silencedPlays,
-          className: 'debug-num',
-        },
-        {
-          key: 'sil',
-          label: 'Sil%',
-          get: (row) => pctCell(row.silencedWinRate, row.silencedWins, row.silencedPlays, seats),
-          sortValue: (row) => (seats > 0 ? row.silencedWinRate * seats : row.silencedWinRate),
-          className: 'debug-num',
-        },
-      ]
+    ? heroWinColumns(heroWinMode, seats)
     : [
         {
           key: 'win',
@@ -782,6 +815,9 @@ function CardSortTable({
         },
       ]
 
+  // Mode-specific views already put sample size in winCols as `n`; hide the generic n column then.
+  const hideGenericN = heroWins && heroWinMode !== 'total'
+
   return (
     <SortableTable
       empty={empty}
@@ -799,7 +835,7 @@ function CardSortTable({
                 {row.kind}
                 {row.attr ? ` · ${attrLabel(row.attr)}` : ''}
                 {row.instant ? ' · instant' : ''}
-                {heroWins && row.abilityPlays + row.silencedPlays > 0 ? (
+                {heroWins && heroWinMode === 'total' && row.abilityPlays + row.silencedPlays > 0 ? (
                   <>
                     {' · '}
                     {row.abilityPlays} abil / {row.silencedPlays} sil
@@ -810,7 +846,9 @@ function CardSortTable({
           ),
           sortValue: (row) => row.name,
         },
-        { key: 'n', label: 'n', get: (row) => String(row.plays), sortValue: (row) => row.plays, className: 'debug-num' },
+        ...(hideGenericN
+          ? []
+          : [{ key: 'n', label: 'n', get: (row: CardBalanceRow) => String(row.plays), sortValue: (row: CardBalanceRow) => row.plays, className: 'debug-num' }]),
         {
           key: 'pres',
           label: 'Pres',
