@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { AI_STRATS, chooseAiAction, cycleStrat, DEFAULT_STRAT, isAiStrat, stratLabel } from './game/ai.ts'
+import { AI_STRATS, chooseAiAction, chooseAiPending, cycleStrat, DEFAULT_STRAT, isAiStrat, stratLabel } from './game/ai.ts'
 import {
   ALL_STRAT_FILTER,
   aiRoster,
@@ -10,11 +10,26 @@ import {
   type StratFilter,
 } from './game/balance.ts'
 import { apply, createGame, type SeatSpec } from './game/engine.ts'
-import { log } from './game/flow.ts'
-import { cloneRules, DEFAULT_SCORE_RULES, getScoreRules, resetScoreRules, setScoreRules, type ScoreRules } from './game/scoring.ts'
+import { log, scoreState } from './game/flow.ts'
+import {
+  cloneRules,
+  DEFAULT_SCORE_RULES,
+  getScoreRules,
+  resetScoreRules,
+  setScoreRules,
+  type ScoreRules,
+} from './game/scoring.ts'
 import type { Action, AiStrat, Game } from './game/types.ts'
+import {
+  clearLocalMatch,
+  describeLocalMatch,
+  loadLocalMatch,
+  saveLocalMatch,
+  type SavedLocalMatch,
+} from './local/save.ts'
 import { Glossary } from './ui/Glossary.tsx'
 import { type DebugSpeed, type DebugView } from './ui/DebugRail.tsx'
+import { OnlinePlay } from './ui/OnlinePlay.tsx'
 import { ScoreRulesPanel } from './ui/ScoreRulesPanel.tsx'
 import { Table } from './ui/Table.tsx'
 
@@ -22,6 +37,12 @@ export type SeatCount = 2 | 3 | 4 | 5 | 6 | 7 | 8
 
 const SEAT_OPTIONS: SeatCount[] = [2, 3, 4, 5, 6, 7, 8]
 const BASE_TICK_MS = 420
+/** Max background / sequential sims from lobby or debug rail. */
+const MAX_QUEUE = 1024
+
+function randomSeed(): number {
+  return (Math.floor(Math.random() * 1_000_000_000) || Math.floor(Date.now() % 1_000_000_000) || 1)
+}
 
 type LobbySeat = { name: string; kind: 'human' | 'ai'; strat: AiStrat }
 
@@ -30,6 +51,8 @@ type LiveRun = {
   game: Game
   tracker: BalanceTracker
   stuck: boolean
+  /** Consecutive no-op advances — escalate escapes so Watch never freezes forever. */
+  stall: number
 }
 
 function defaultSeats(count: SeatCount): LobbySeat[] {
@@ -40,53 +63,114 @@ function defaultSeats(count: SeatCount): LobbySeat[] {
   })
 }
 
-function parseSeedInput(raw: string): { seed: number; debug: boolean } | null {
+function parseSeedInput(raw: string): number | null {
   const text = raw.trim()
   if (!text) return null
-  const debug = /^d(\d+)$/i.exec(text)
-  if (debug) return { seed: Math.floor(Number(debug[1])) || 1, debug: true }
+  // Legacy d58 → 58 (debug is now a lobby checkbox).
+  const legacy = /^d(\d+)$/i.exec(text)
+  if (legacy) return Math.floor(Number(legacy[1])) || 1
   const parsed = Number(text)
-  if (Number.isFinite(parsed)) return { seed: Math.floor(parsed) || 1, debug: false }
+  if (Number.isFinite(parsed)) return Math.floor(parsed) || 1
   return null
 }
 
 function makeRun(seed: number, seats: number, strats?: AiStrat[]): LiveRun {
-  const game = createGame({ seed, seats: aiRoster(seats, strats, seed) })
+  const game = createGame({
+    seed,
+    seats: aiRoster(seats, strats, seed),
+    ancientEndgame: getScoreRules().ancientEndgame,
+  })
   const tracker = new BalanceTracker(seed)
   tracker.start(game)
-  return { seed, game, tracker, stuck: false }
+  return { seed, game, tracker, stuck: false, stall: 0 }
+}
+
+function pendingMark(pending: Game['pending']): string {
+  if (!pending) return ''
+  return `${pending.actor}|${pending.resume.kind}|${pending.prompt}|${pending.choices.length}|${pending.min}|${pending.max}`
+}
+
+function softFinishLive(game: Game, reason: string): Game {
+  const parts = game.players.map((player) => scoreState(game, player.id))
+  return {
+    ...game,
+    pending: null,
+    veil: false,
+    queue: [],
+    echoes: [],
+    after: null,
+    pendingDraws: [],
+    over: { reason, scores: parts.map((part) => part.total), parts },
+    log: [...game.log, reason],
+  }
 }
 
 function advanceTracked(run: LiveRun): LiveRun {
   const game = run.game
   if (game.over) return run
-  if (game.veil) {
-    const next = apply(game, { type: 'ready' })
-    run.tracker.observe(game, { type: 'ready' }, next)
-    return { ...run, game: next, stuck: false }
-  }
-  if (game.pending) {
-    if (game.players[game.pending.actor]?.ai || game.autoAll) {
-      const next = { ...game, pending: null, log: [...game.log, 'Forced past a stuck choice.'] }
-      return { ...run, game: next, stuck: false }
+  try {
+    if (game.veil) {
+      const next = apply(game, { type: 'ready' })
+      run.tracker.observe(game, { type: 'ready' }, next)
+      return { ...run, game: next, stuck: false, stall: 0 }
     }
-    return run
+    if (game.pending) {
+      if (game.players[game.pending.actor]?.ai || game.autoAll) {
+        const ids = chooseAiPending(game)
+        let next = apply(game, { type: 'choose', ids })
+        run.tracker.observe(game, { type: 'choose', ids }, next)
+        if (next.pending && pendingMark(next.pending) === pendingMark(game.pending)) {
+          const stall = run.stall + 1
+          if (stall >= 3) {
+            next = { ...next, pending: null, log: [...next.log, 'Forced past a stuck choice.'] }
+            return { ...run, game: next, stuck: false, stall: 0 }
+          }
+          return { ...run, game: next, stuck: true, stall }
+        }
+        return { ...run, game: next, stuck: false, stall: 0 }
+      }
+      return run
+    }
+    if (!game.players[game.active]?.ai) return run
+
+    // Escalating escapes when prior ticks made no progress.
+    if (run.stall >= 8) {
+      const finished = softFinishLive(game, 'Match halted (soft-lock).')
+      return { ...run, game: finished, stuck: false, stall: 0 }
+    }
+    if (run.stall >= 5) {
+      const next = apply(game, { type: 'end' })
+      run.tracker.observe(game, { type: 'end' }, next)
+      const progressed = next.active !== game.active || next.turn !== game.turn || !!next.over
+      return { ...run, game: next, stuck: !progressed, stall: progressed ? 0 : run.stall + 1 }
+    }
+    if (run.stall >= 3) {
+      const hand = game.players[game.active]?.hand ?? []
+      const pitch = hand.find((card) => card.kind === 'terrain') ?? hand[0]
+      if (pitch && (game.players[game.active]?.actions ?? 0) > 0) {
+        const next = apply(game, { type: 'discard', uid: pitch.uid })
+        run.tracker.observe(game, { type: 'discard', uid: pitch.uid }, next)
+        const progressed = next !== game && (next.log.at(-1) !== game.log.at(-1) || next.deck.length !== game.deck.length)
+        return { ...run, game: next, stuck: !progressed, stall: progressed ? 0 : run.stall + 1 }
+      }
+    }
+
+    const action = chooseAiAction(game)
+    const next = apply(game, action)
+    run.tracker.observe(game, action, next)
+    const same = next === game
+      || (next.active === game.active
+        && next.turn === game.turn
+        && next.log.at(-1) === game.log.at(-1)
+        && next.deck.length === game.deck.length
+        && !next.pending
+        && next.veil === game.veil
+        && !next.over)
+    return { ...run, game: next, stuck: same, stall: same ? run.stall + 1 : 0 }
+  } catch (error) {
+    const text = error instanceof Error ? error.message : 'The Grove could not finish a play.'
+    return { ...run, game: log(game, text), stuck: true, stall: run.stall + 1 }
   }
-  if (!game.players[game.active]?.ai) return run
-  const action = chooseAiAction(game)
-  let next = apply(game, action)
-  if (next.pending && (next.players[next.pending.actor]?.ai || next.autoAll)) {
-    next = { ...next, pending: null, log: [...next.log, 'Forced past a stuck choice.'] }
-  }
-  run.tracker.observe(game, action, next)
-  const same = next === game
-    || (next.active === game.active
-      && next.turn === game.turn
-      && next.log.at(-1) === game.log.at(-1)
-      && next.deck.length === game.deck.length
-      && !next.pending
-      && next.veil === game.veil)
-  return { ...run, game: next, stuck: same }
 }
 
 function readStart(): { debug: boolean; seed: number; seats: SeatCount; runs: LiveRun[]; view: DebugView } | null {
@@ -94,9 +178,8 @@ function readStart(): { debug: boolean; seed: number; seats: SeatCount; runs: Li
   const mode = params.get('mode')
   if (mode !== 'ai' && mode !== 'hotseat' && mode !== 'debug') return null
   const seedParam = params.get('seed') ?? ''
-  const parsed = parseSeedInput(/^d\d+$/i.test(seedParam) ? seedParam : seedParam ? String(Number(seedParam) || 1) : '')
-  const seed = parsed?.seed ?? (Math.floor(Date.now() % 100000) || 1)
-  const debug = mode === 'debug' || !!parsed?.debug
+  const seed = parseSeedInput(seedParam) ?? randomSeed()
+  const debug = mode === 'debug'
   const seatRaw = Number(params.get('seats'))
   const count: SeatCount = SEAT_OPTIONS.includes(seatRaw as SeatCount) ? seatRaw as SeatCount : 2
   const view: DebugView = params.get('view') === 'stats' ? 'stats' : 'watch'
@@ -110,11 +193,10 @@ function readStart(): { debug: boolean; seed: number; seats: SeatCount; runs: Li
     const game = createGame({ seed, seats })
     const tracker = new BalanceTracker(seed)
     tracker.start(game)
-    return { debug: false, seed, seats: count, runs: [{ seed, game, tracker, stuck: false }], view: 'watch' }
+    return { debug: false, seed, seats: count, runs: [{ seed, game, tracker, stuck: false, stall: 0 }], view: 'watch' }
   }
-  const batch = Math.max(1, Math.min(8, Number(params.get('batch')) || 1))
-  const runs = Array.from({ length: batch }, (_, index) => makeRun(seed + index, count))
-  return { debug: true, seed, seats: count, runs, view }
+  // Debug defaults to Stats (fast sim); open Watch from the rail to slow the board.
+  return { debug: true, seed, seats: count, runs: [], view: 'stats' }
 }
 
 export default function App() {
@@ -125,62 +207,103 @@ export default function App() {
   const [runs, setRuns] = useState<LiveRun[]>(boot?.runs ?? [])
   const [focus, setFocus] = useState(0)
   const [debugSpeed, setDebugSpeed] = useState<DebugSpeed>(1)
-  const [debugView, setDebugView] = useState<DebugView>(boot?.view ?? 'watch')
-  const [batchSize, setBatchSize] = useState(4)
+  const [debugView, setDebugView] = useState<DebugView>(boot?.view ?? 'stats')
+  const [queueSize, setQueueSize] = useState(1)
   const [reports, setReports] = useState<MatchReport[]>([])
-  const [runningBatch, setRunningBatch] = useState(false)
   const [match, setMatch] = useState(boot ? 1 : 0)
-  const [batchDone, setBatchDone] = useState(0)
+  const [queueLeft, setQueueLeft] = useState(0)
+  const [runningFast, setRunningFast] = useState(false)
   const [stratFilter, setStratFilter] = useState<StratFilter>(ALL_STRAT_FILTER)
   const [debugStrats, setDebugStrats] = useState<AiStrat[]>(() => Array.from({ length: boot?.seats ?? 2 }, (_, index) => cycleStrat(index)))
-  const batchToken = useRef(0)
+  const queueToken = useRef(0)
+  const watchRef = useRef(false)
+  const watchAdvanceRef = useRef(0)
+  const archivedWatchRef = useRef<number | null>(null)
+  const seatCountRef = useRef(seatCount)
+  const debugStratsRef = useRef(debugStrats)
+  seatCountRef.current = seatCount
+  debugStratsRef.current = debugStrats
 
-  const live = runs[Math.min(focus, Math.max(0, runs.length - 1))] ?? null
+  const live = runs[0] ?? null
   const game = live?.game ?? null
   const stuck = live?.stuck ?? false
 
   const summary = useMemo(() => {
-    const liveReports = runs.map((run) => run.tracker.snapshot(run.game))
+    const archived = new Set(reports.map((report) => report.seed))
+    const liveReports = runs
+      .filter((run) => !archived.has(run.seed))
+      .map((run) => run.tracker.snapshot(run.game))
     return summarizeReports([...reports, ...liveReports], stratFilter)
   }, [reports, runs, stratFilter])
 
-  const finishedCount = reports.filter((report) => report.over).length + runs.filter((run) => run.game.over).length
-  const runCount = runningBatch ? batchSize : Math.max(runs.length, 1)
+  const finishedCount = reports.filter((report) => report.over).length
+  const runCount = (live && !live.game.over ? 1 : 0) + queueLeft + (runningFast ? 1 : 0)
 
+  // Watch mode: tick the live board at the chosen speed (stats mode never ticks).
   useEffect(() => {
-    if (!debug || debugView === 'stats' || runningBatch) return
+    if (!debug || debugView !== 'watch' || runningFast) return
     if (runs.length === 0) return
     if (debugSpeed === 0) return
-    const open = runs.some((run) => !run.game.over && !run.stuck)
-    if (!open) return
-    const delay = Math.round(BASE_TICK_MS / debugSpeed)
+    const run = runs[0]
+    if (!run || run.game.over) return
+    // Auto-unstick: keep ticking even if a prior noop marked stuck.
+    const delay = Math.round(BASE_TICK_MS / Math.max(debugSpeed, 0.5))
     const timer = window.setTimeout(() => {
-      setRuns((current) => current.map((run) => {
-        if (run.game.over || run.stuck) return run
+      setRuns((current) => {
+        const liveRun = current[0]
+        if (!liveRun || liveRun.game.over) return current
         try {
-          return advanceTracked(run)
+          return [advanceTracked(liveRun)]
         } catch (error) {
           const text = error instanceof Error ? error.message : 'The Grove could not finish a play.'
-          return { ...run, game: log(run.game, text), stuck: true }
+          return [{ ...liveRun, game: log(liveRun.game, text), stuck: true, stall: liveRun.stall + 1 }]
         }
-      }))
+      })
     }, delay)
     return () => window.clearTimeout(timer)
-  }, [debug, debugView, debugSpeed, runs, runningBatch])
+  }, [debug, debugView, debugSpeed, runs, runningFast])
+
+  // Archive a finished watch match; if still watching with queue left, start the next live seed.
+  useEffect(() => {
+    if (!debug || debugView !== 'watch' || runningFast || !live?.game.over) return
+    const finished = live
+    if (archivedWatchRef.current !== finished.seed) {
+      archivedWatchRef.current = finished.seed
+      setReports((current) => {
+        if (current.some((report) => report.seed === finished.seed)) return current
+        return [...current, finished.tracker.snapshot(finished.game)]
+      })
+    }
+    if (queueLeft <= 0 || !watchRef.current) return
+    const gen = ++watchAdvanceRef.current
+    const nextSeed = finished.seed + 1
+    const timer = window.setTimeout(() => {
+      if (watchAdvanceRef.current !== gen || !watchRef.current) return
+      setSeed(nextSeed)
+      setQueueLeft((left) => Math.max(0, left - 1))
+      setMatch((value) => value + 1)
+      setRuns([makeRun(nextSeed, seatCountRef.current, debugStratsRef.current)])
+    }, 120)
+    return () => window.clearTimeout(timer)
+  }, [debug, debugView, live, queueLeft, runningFast])
 
   useEffect(() => {
     if (debug) return
-    if (!game || game.over || game.veil || game.pending || stuck) return
-    if (!game.players[game.active]?.ai) return
+    if (!game || game.over || stuck) return
+    const pendingAi = !!game.pending && (!!game.players[game.pending.actor]?.ai || game.autoAll)
+    const activeAi = !game.pending && (game.veil || !!game.players[game.active]?.ai)
+    if (!pendingAi && !activeAi) return
     const timer = window.setTimeout(() => {
       setRuns((current) => {
         const run = current[0]
         if (!run) return current
         try {
-          return [advanceTracked(run)]
+          const advanced = advanceTracked(run)
+          saveLocalMatch(advanced.seed, advanced.game, getScoreRules())
+          return [advanced]
         } catch (error) {
           const text = error instanceof Error ? error.message : 'The Grove could not finish a play.'
-          return [{ ...run, game: log(run.game, text), stuck: true }]
+          return [{ ...run, game: log(run.game, text), stuck: true, stall: run.stall + 1 }]
         }
       })
     }, BASE_TICK_MS)
@@ -195,7 +318,8 @@ export default function App() {
       try {
         const next = apply(run.game, action)
         run.tracker.observe(run.game, action, next)
-        return [{ ...run, game: next, stuck: false }]
+        saveLocalMatch(run.seed, next, getScoreRules())
+        return [{ ...run, game: next, stuck: false, stall: 0 }]
       } catch (error) {
         const text = error instanceof Error ? error.message : 'That play could not resolve.'
         return [{ ...run, game: log(run.game, text) }]
@@ -204,81 +328,164 @@ export default function App() {
   }
 
   function stepDebug() {
-    setRuns((current) => current.map((run, index) => {
-      if (index !== focus) return run
-      if (run.game.over) return run
+    setRuns((current) => {
+      const run = current[0]
+      if (!run || run.game.over) return current
       try {
-        return advanceTracked(run)
+        return [advanceTracked(run)]
       } catch (error) {
         const text = error instanceof Error ? error.message : 'The Grove could not finish a play.'
-        return { ...run, game: log(run.game, text), stuck: true }
+        return [{ ...run, game: log(run.game, text), stuck: true, stall: run.stall + 1 }]
       }
-    }))
+    })
   }
 
   function leave() {
-    batchToken.current += 1
+    queueToken.current += 1
+    watchAdvanceRef.current += 1
+    watchRef.current = false
+    archivedWatchRef.current = null
     window.history.replaceState({}, '', window.location.pathname)
+    // Keep unfinished local matches so the lobby can offer Return to game.
+    if (live && !debug) {
+      if (live.game.over) clearLocalMatch()
+      else saveLocalMatch(live.seed, live.game, getScoreRules())
+    } else if (debug) {
+      clearLocalMatch()
+    }
     setRuns([])
     setReports([])
     setDebug(false)
     setDebugSpeed(1)
-    setDebugView('watch')
+    setDebugView('stats')
     setFocus(0)
-    setRunningBatch(false)
-    setBatchDone(0)
+    setQueueLeft(0)
+    setRunningFast(false)
     setStratFilter(ALL_STRAT_FILTER)
     setDebugStrats(Array.from({ length: 2 }, (_, index) => cycleStrat(index)))
     resetScoreRules()
   }
 
-  function resetDebug() {
-    if (runningBatch) return
-    batchToken.current += 1
-    setReports([])
-    setBatchDone(0)
+  function resumeLocal(saved: SavedLocalMatch) {
+    setScoreRules(saved.rules)
+    setMatch((value) => value + 1)
+    setSeed(saved.seed)
+    setSeatCount(
+      SEAT_OPTIONS.includes(saved.game.players.length as SeatCount)
+        ? (saved.game.players.length as SeatCount)
+        : 2,
+    )
+    setDebug(false)
+    const tracker = new BalanceTracker(saved.seed)
+    tracker.start(saved.game)
+    setRuns([{ seed: saved.seed, game: saved.game, tracker, stuck: false, stall: 0 }])
     setFocus(0)
-    setRunningBatch(false)
+  }
+
+  function resetDebug() {
+    queueToken.current += 1
+    watchAdvanceRef.current += 1
+    archivedWatchRef.current = null
+    setRunningFast(false)
+    setReports([])
+    setQueueLeft(0)
+    setFocus(0)
     setMatch((value) => value + 1)
     if (debugView === 'stats') {
       setRuns([])
       return
     }
-    const count = Math.max(1, Math.min(8, runs.length || 1))
-    setRuns(Array.from({ length: count }, (_, index) => makeRun(seed + index, seatCount, debugStrats)))
+    setRuns([makeRun(seed, seatCount, debugStrats)])
   }
 
-  async function runBatch() {
-    if (runningBatch) return
-    const token = ++batchToken.current
-    setRunningBatch(true)
+  /** Run N matches in the background at full speed (one finished report at a time). */
+  async function runFastQueue(fromSeed: number, count: number, seats: SeatCount, strats: AiStrat[]) {
+    const token = ++queueToken.current
+    watchAdvanceRef.current += 1
+    const total = Math.max(1, Math.min(MAX_QUEUE, count))
+    setRunningFast(true)
     setDebugView('stats')
-    setBatchDone(0)
-    const baseSeed = seed
-    const seats = seatCount
-    const strats = debugStrats
-    const total = Math.max(1, Math.min(1024, batchSize))
-    const chunk: MatchReport[] = []
-    const yieldEvery = total >= 64 ? 8 : 1
-    for (let index = 0; index < total; index += 1) {
-      if (batchToken.current !== token) return
-      const report = runMatchFast(baseSeed + index, seats, strats)
-      chunk.push(report)
-      if (chunk.length >= yieldEvery || index === total - 1) {
-        const batch = chunk.splice(0, chunk.length)
-        setBatchDone(index + 1)
-        setReports((current) => [...current, ...batch])
-        await new Promise((resolve) => window.setTimeout(resolve, 0))
-      }
-    }
-    if (batchToken.current !== token) return
+    watchRef.current = false
     setRuns([])
-    setFocus(0)
-    setRunningBatch(false)
+    setQueueLeft(total)
+    const chunk: MatchReport[] = []
+    const flushEvery = 1
+    for (let index = 0; index < total; index += 1) {
+      if (queueToken.current !== token) return
+      if (watchRef.current) {
+        if (chunk.length > 0) {
+          const batch = chunk.splice(0, chunk.length)
+          setReports((current) => [...current, ...batch])
+        }
+        const nextSeed = fromSeed + index
+        setSeed(nextSeed)
+        setQueueLeft(total - index)
+        setMatch((value) => value + 1)
+        setRuns([makeRun(nextSeed, seats, strats)])
+        setRunningFast(false)
+        return
+      }
+      try {
+        chunk.push(runMatchFast(fromSeed + index, seats, strats))
+      } catch (error) {
+        // runMatchFast soft-finishes internally; this is a last-resort stub so the queue never stalls.
+        const reason = error instanceof Error ? error.message : 'sim error'
+        const stub = makeRun(fromSeed + index, seats, strats)
+        const finished = softFinishLive(stub.game, `Match halted (${reason}).`)
+        chunk.push(stub.tracker.finish(finished))
+      }
+      setQueueLeft(total - index - 1)
+      if (chunk.length >= flushEvery || index === total - 1) {
+        const batch = chunk.splice(0, chunk.length)
+        setSeed(fromSeed + index)
+        setReports((current) => [...current, ...batch])
+      }
+      // Yield so React can paint and cancel tokens stay responsive.
+      await new Promise<void>((resolve) => {
+        window.setTimeout(resolve, 0)
+      })
+    }
+    if (queueToken.current !== token) return
+    setQueueLeft(0)
+    setRunningFast(false)
+  }
+
+  function queueMore() {
+    const extra = Math.max(1, Math.min(MAX_QUEUE, queueSize))
+    if (debugView === 'watch') {
+      if (!live || live.game.over) {
+        const jump = live?.game.over ? live.seed + 1 : seed
+        setSeed(jump)
+        setMatch((value) => value + 1)
+        setRuns([makeRun(jump, seatCount, debugStrats)])
+        setQueueLeft((left) => Math.min(MAX_QUEUE, left + Math.max(0, extra - 1)))
+      } else {
+        setQueueLeft((left) => Math.min(MAX_QUEUE, left + extra))
+      }
+      if (debugSpeed === 0) setDebugSpeed(1)
+      return
+    }
+    const fromSeed = (reports.at(-1)?.seed ?? seed - 1) + 1
+    void runFastQueue(fromSeed, extra, seatCount, debugStrats)
+  }
+
+  function playNext() {
+    queueToken.current += 1
+    setRunningFast(false)
+    watchRef.current = true
+    if (live && !live.game.over) {
+      setReports((current) => [...current, live.tracker.snapshot(live.game)])
+    }
+    const jump = (live?.seed ?? seed) + 1
+    setSeed(jump)
+    setMatch((value) => value + 1)
+    setRuns([makeRun(jump, seatCount, debugStrats)])
+    setDebugView('watch')
+    if (debugSpeed === 0) setDebugSpeed(1)
   }
 
   function startWatchFromStats() {
-    if (runningBatch) return
+    watchRef.current = true
     const created = [makeRun(seed, seatCount, debugStrats)]
     setRuns(created)
     setFocus(0)
@@ -288,14 +495,28 @@ export default function App() {
   }
 
   function onDebugView(view: DebugView) {
-    if (view === 'watch' && runs.length === 0 && !runningBatch) {
-      startWatchFromStats()
+    if (view === 'watch') {
+      watchRef.current = true
+      // Mid-batch: let runFastQueue hand off the remaining queue — don't spawn a parallel live run.
+      if (runningFast) {
+        setDebugView('watch')
+        return
+      }
+      if (runs.length === 0) {
+        startWatchFromStats()
+        return
+      }
+      setDebugView('watch')
       return
     }
-    setDebugView(view)
+    // Leaving Watch cancels the archive→next-seed timer without aborting a fast queue.
+    watchAdvanceRef.current += 1
+    watchRef.current = false
+    setDebugView('stats')
   }
 
-  function startDebugSession(nextSeed: number, seats: SeatCount, parallel: number, background: boolean, strats: AiStrat[], rules: ScoreRules) {
+  function startDebugSession(nextSeed: number, seats: SeatCount, queue: number, strats: AiStrat[], rules: ScoreRules) {
+    queueToken.current += 1
     setScoreRules(rules)
     setMatch((value) => value + 1)
     setSeed(nextSeed)
@@ -304,49 +525,33 @@ export default function App() {
     setDebugSpeed(1)
     setFocus(0)
     setReports([])
-    setBatchDone(0)
     setDebugStrats(strats)
     setStratFilter(ALL_STRAT_FILTER)
-    if (background) {
-      const total = Math.max(1, Math.min(1024, parallel))
-      setRuns([])
-      setDebugView('stats')
-      setBatchSize(total)
-      window.setTimeout(() => {
-        void (async () => {
-          const token = ++batchToken.current
-          setRunningBatch(true)
-          const chunk: MatchReport[] = []
-          const yieldEvery = total >= 64 ? 8 : 1
-          for (let index = 0; index < total; index += 1) {
-            if (batchToken.current !== token) return
-            chunk.push(runMatchFast(nextSeed + index, seats, strats))
-            if (chunk.length >= yieldEvery || index === total - 1) {
-              const batch = chunk.splice(0, chunk.length)
-              setBatchDone(index + 1)
-              setReports((current) => [...current, ...batch])
-              await new Promise((resolve) => window.setTimeout(resolve, 0))
-            }
-          }
-          if (batchToken.current !== token) return
-          setRunningBatch(false)
-        })()
-      }, 0)
-      return
-    }
-    const count = Math.max(1, Math.min(8, parallel))
-    setBatchSize(Math.max(count, 4))
-    const created = Array.from({ length: count }, (_, index) => makeRun(nextSeed + index, seats, strats))
-    setDebugView('watch')
-    setRuns(created)
+    const total = Math.max(1, Math.min(MAX_QUEUE, queue))
+    setQueueSize(total)
+    setQueueLeft(0)
+    setRuns([])
+    setDebugView('stats')
+    watchRef.current = false
+    window.setTimeout(() => {
+      void runFastQueue(nextSeed, total, seats, strats)
+    }, 0)
+  }
+
+  const [online, setOnline] = useState(false)
+
+  if (online) {
+    return <OnlinePlay onBack={() => setOnline(false)} />
   }
 
   if (runs.length === 0 && !debug) {
     return (
       <Lobby
-        onStart={(next, nextSeed, nextDebug, seats, parallel, background, strats, rules) => {
+        onOnline={() => setOnline(true)}
+        onResumeLocal={resumeLocal}
+        onStart={(next, nextSeed, nextDebug, seats, queue, strats, rules) => {
           if (nextDebug) {
-            startDebugSession(nextSeed, seats, parallel, background, strats, rules)
+            startDebugSession(nextSeed, seats, queue, strats, rules)
             return
           }
           setScoreRules(rules)
@@ -356,7 +561,8 @@ export default function App() {
           setDebug(false)
           const tracker = new BalanceTracker(nextSeed)
           tracker.start(next)
-          setRuns([{ seed: nextSeed, game: next, tracker, stuck: false }])
+          saveLocalMatch(nextSeed, next, rules)
+          setRuns([{ seed: nextSeed, game: next, tracker, stuck: false, stall: 0 }])
           setFocus(0)
         }}
       />
@@ -373,20 +579,22 @@ export default function App() {
         debug
         debugSpeed={debugSpeed}
         debugView={debugView}
-        debugBatchSize={batchSize}
-        debugFocus={focus}
+        debugBatchSize={queueSize}
+        debugFocus={0}
         debugRunCount={runCount}
-        debugFinished={runningBatch ? batchDone : finishedCount}
-        debugRunningBatch={runningBatch}
+        debugFinished={finishedCount}
+        debugRunningBatch={runningFast || queueLeft > 0}
+        debugQueueLeft={queueLeft}
         debugSummary={summary}
         debugReports={reports}
         debugStratFilter={stratFilter}
         onDebugSpeed={setDebugSpeed}
         onDebugStep={stepDebug}
         onDebugView={onDebugView}
-        onDebugBatchSize={setBatchSize}
+        onDebugBatchSize={setQueueSize}
         onDebugFocus={setFocus}
-        onDebugRunBatch={runBatch}
+        onDebugRunBatch={queueMore}
+        onDebugPlayNext={playNext}
         onDebugStratFilter={setStratFilter}
         onDebugReset={resetDebug}
         onAction={send}
@@ -409,27 +617,31 @@ export default function App() {
 
 function Lobby({
   onStart,
+  onOnline,
+  onResumeLocal,
 }: {
+  onOnline: () => void
+  onResumeLocal: (saved: SavedLocalMatch) => void
   onStart: (
     game: Game,
     seed: number,
     debug: boolean,
     seats: SeatCount,
-    parallel: number,
-    background: boolean,
+    queue: number,
     strats: AiStrat[],
     rules: ScoreRules,
   ) => void
 }) {
   const [seedText, setSeedText] = useState('')
+  const [debugMode, setDebugMode] = useState(false)
   const [count, setCount] = useState<SeatCount>(2)
   const [seats, setSeats] = useState<LobbySeat[]>(() => defaultSeats(2))
-  const [parallel, setParallel] = useState(1)
-  const [background, setBackground] = useState(false)
+  const [queue, setQueue] = useState(1)
   const [fault, setFault] = useState('')
   const [glossary, setGlossary] = useState(false)
   const [scoreOpen, setScoreOpen] = useState(false)
   const [lobbyRules, setLobbyRules] = useState<ScoreRules>(() => cloneRules(getScoreRules()))
+  const [savedLocal, setSavedLocal] = useState<SavedLocalMatch | null>(() => loadLocalMatch())
 
   function setPlayerCount(next: SeatCount) {
     setCount(next)
@@ -444,9 +656,8 @@ function Lobby({
   }
 
   function start() {
-    const parsed = parseSeedInput(seedText)
-    const seed = parsed?.seed ?? (Math.floor(Date.now() % 100000) || 1)
-    const debug = !!parsed?.debug
+    const seed = parseSeedInput(seedText) ?? randomSeed()
+    const debug = debugMode
     const strats = seats.map((seat, index) => (debug || seat.kind === 'ai' ? seat.strat : cycleStrat(index)))
     const roster: SeatSpec[] = seats.map((seat, index) => {
       const ai = debug ? true : seat.kind === 'ai'
@@ -460,26 +671,36 @@ function Lobby({
       }
     })
     try {
-      const rules = debug ? lobbyRules : DEFAULT_SCORE_RULES
-      onStart(createGame({ seed, seats: roster }), seed, debug, count, debug ? parallel : 1, debug && background, strats, rules)
+      const rules = debug
+        ? lobbyRules
+        : { ...DEFAULT_SCORE_RULES, ancientEndgame: lobbyRules.ancientEndgame }
+      onStart(
+        createGame({ seed, seats: roster, ancientEndgame: rules.ancientEndgame }),
+        seed,
+        debug,
+        count,
+        debug ? queue : 1,
+        strats,
+        rules,
+      )
     } catch (error) {
       setFault(error instanceof Error ? error.message : 'The deck could not be dealt.')
     }
   }
 
   const humans = seats.filter((seat) => seat.kind === 'human').length
-  const debugPreview = /^d\d+$/i.test(seedText.trim())
+  const debugPreview = debugMode
 
   return (
     <main className="lobby">
       <div className="lobby-copy">
         <p className="eyebrow">A shared deck of heroes</p>
         <h1>Grove</h1>
-        <p className="lede">Each player scores for themselves. Two actions a turn — draw a card, or play one. Three settings are free (never a single River, Jungle, or Lane): three of a kind or a mixed path both score 5; three of a kind also takes a hidden reward. Heroes score in teams by attribute — core up to 15, mix up to 12 with an attack bonus.</p>
+        <p className="lede">Each player scores for themselves. Two actions a turn — draw a card, or play one. Three terrains are free (never a single River, Jungle, or Lane): three of a kind or a mixed path both score 5; three of a kind also takes a hidden reward. Heroes score in teams by attribute — core up to 15, mix up to 12 with an attack bonus.</p>
         <dl>
-          <div><dt>Deck</dt><dd>127 heroes, 36 items, 36 settings</dd></div>
+          <div><dt>Deck</dt><dd>127 heroes, 36 items, 36 terrains</dd></div>
           <div><dt>Hand</dt><dd>Five to open. Seven is the limit.</dd></div>
-          <div><dt>End</dt><dd>The match ends when the deck is empty.</dd></div>
+          <div><dt>End</dt><dd>Ancient final round, or when the deck is empty.</dd></div>
         </dl>
       </div>
       <form className="lobby-card" onSubmit={(event) => event.preventDefault()}>
@@ -549,66 +770,108 @@ function Lobby({
             )
           })}
         </ul>
-        {debugPreview ? (
-          <fieldset className="debug-lobby">
-            <legend>Debug runs</legend>
-            <label>
-              {background ? 'Background games' : 'Live parallel games'}
-              <input
-                data-testid="lobby-parallel"
-                type="number"
-                min={1}
-                max={background ? 1024 : 8}
-                value={parallel}
-                onChange={(event) => setParallel(Math.max(1, Math.min(background ? 1024 : 8, Number(event.target.value) || 1)))}
-              />
-            </label>
-            <label className="check-row">
-              <input
-                data-testid="lobby-background"
-                type="checkbox"
-                checked={background}
-                onChange={(event) => {
-                  const next = event.target.checked
-                  setBackground(next)
-                  if (!next && parallel > 8) setParallel(8)
-                }}
-              />
-              Run in background (stats only)
-            </label>
-            <p className="quiet">
-              {background
-                ? `Simulates up to ${parallel} AI matches (max 1024) using the seat strats above.`
-                : parallel > 1
-                  ? `Watches game 1 of ${parallel} (max 8 live). Switch focus in the debug rail.`
-                  : 'AI seats auto-play with the strats chosen above.'}
-            </p>
-            <button type="button" data-testid="lobby-scoring" onClick={() => setScoreOpen(true)}>
-              Scoring…
-            </button>
-            <p className="quiet">
-              Core combo {lobbyRules.coreCombo} · mix combo {lobbyRules.mixCombo}
-              {lobbyRules.attackOnCore ? ' · atk on core' : ''}
-              {lobbyRules.attackOnMix ? ' · atk on mix' : ''}
-            </p>
-          </fieldset>
-        ) : null}
+        <fieldset className="debug-lobby">
+          <legend>Match options</legend>
+          <label className="check-row">
+            <input
+              data-testid="lobby-ancient-endgame"
+              type="checkbox"
+              checked={lobbyRules.ancientEndgame}
+              onChange={(event) => setLobbyRules((current) => ({ ...current, ancientEndgame: event.target.checked }))}
+            />
+            Ancient endgame
+          </label>
+          <p className="quiet">
+            {lobbyRules.ancientEndgame
+              ? 'The Ancient is in the deck: draw reveal awards +10, then each seat gets one final turn.'
+              : 'No Ancient — the match ends when the shared deck empties.'}
+          </p>
+          <label className="check-row">
+            <input
+              data-testid="lobby-debug"
+              type="checkbox"
+              checked={debugMode}
+              onChange={(event) => setDebugMode(event.target.checked)}
+            />
+            Debug balance
+          </label>
+          <p className="quiet">
+            {debugMode
+              ? 'All seats run as AI. Sims run in the background at full speed; open Watch to slow the board.'
+              : 'Tick to run AI balance sims with stats instead of a normal match.'}
+          </p>
+          {debugPreview ? (
+            <>
+              <label>
+                Sequential games
+                <input
+                  data-testid="lobby-parallel"
+                  type="number"
+                  min={1}
+                  max={MAX_QUEUE}
+                  value={queue}
+                  onChange={(event) => setQueue(Math.max(1, Math.min(MAX_QUEUE, Number(event.target.value) || 1)))}
+                />
+              </label>
+              <p className="quiet">
+                Sims one game at a time at full speed in Stats. Open Watch to slow the board. Queue up to {MAX_QUEUE}.
+              </p>
+              <button type="button" data-testid="lobby-scoring" onClick={() => setScoreOpen(true)}>
+                Scoring…
+              </button>
+              <p className="quiet">
+                Core combo {lobbyRules.coreCombo} · mix combo {lobbyRules.mixCombo}
+                {lobbyRules.attackOnCore ? ' · atk on core' : ''}
+                {lobbyRules.attackOnMix ? ' · atk on mix' : ''}
+                {lobbyRules.ancientEndgame ? ' · Ancient on' : ' · Ancient off'}
+              </p>
+            </>
+          ) : null}
+        </fieldset>
         <p className="quiet">
           {debugPreview
-            ? 'Debug seed detected. Seat strats apply to every simulated match.'
+            ? 'Seat strats apply to every simulated match. Blank seed rolls a random start.'
             : humans >= 2
               ? 'Multiple humans pass the seat automatically.'
               : humans === 1
                 ? 'You go first. AI seats take their turns on their own.'
                 : 'All AI is fine for spectating and debugging.'}
         </p>
-        <button type="button" className="primary block" data-testid="play-solo" onClick={start}>Start match</button>
+        {savedLocal && !debugPreview ? (
+          <div className="resume-box" data-testid="resume-local-box">
+            <p className="quiet">Unfinished local match found.</p>
+            <p className="quiet">{describeLocalMatch(savedLocal)}</p>
+            <button
+              type="button"
+              className="primary block"
+              data-testid="resume-local"
+              onClick={() => onResumeLocal(savedLocal)}
+            >
+              Return to game
+            </button>
+            <button
+              type="button"
+              className="block"
+              data-testid="discard-local"
+              onClick={() => {
+                clearLocalMatch()
+                setSavedLocal(null)
+              }}
+            >
+              Discard saved match
+            </button>
+          </div>
+        ) : null}
+        <button type="button" className="primary block" data-testid="play-solo" onClick={start}>
+          {debugPreview ? `Sim ${queue} game${queue === 1 ? '' : 's'}` : savedLocal ? 'New match' : 'Start match'}
+        </button>
+        <button type="button" className="block" data-testid="play-online" onClick={onOnline}>Play online (ranked)</button>
         <button type="button" className="block" data-testid="glossary-open" onClick={() => setGlossary(true)}>Glossary</button>
         <label>
           Seed
           <input
             data-testid="seed"
-            placeholder="Random or d58"
+            placeholder="Random"
             value={seedText}
             onChange={(event) => setSeedText(event.target.value)}
           />

@@ -1,13 +1,13 @@
 import { useMemo, useState } from 'react'
-import { HEROES, ITEMS, REWARDS, SETTINGS } from '../game/catalog.ts'
+import { ANCIENT, HEROES, ITEMS, REWARDS, TERRAINS } from '../game/catalog.ts'
 import type { Attr } from '../game/types.ts'
 
-type Tab = 'heroes' | 'items' | 'settings' | 'runes' | 'neutrals' | 'towers'
+type Tab = 'heroes' | 'items' | 'terrains' | 'runes' | 'neutrals' | 'towers'
 
 const TABS: { id: Tab; label: string }[] = [
   { id: 'heroes', label: 'Heroes' },
   { id: 'items', label: 'Items' },
-  { id: 'settings', label: 'Settings' },
+  { id: 'terrains', label: 'Terrains' },
   { id: 'runes', label: 'Runes' },
   { id: 'neutrals', label: 'Neutrals' },
   { id: 'towers', label: 'Towers' },
@@ -26,6 +26,7 @@ const TIMING_LABEL = {
   cast: 'On play',
   aura: 'Aura',
   instant: 'Instant',
+  trap: 'Trap',
 } as const
 
 export function Glossary({ onClose }: { onClose: () => void }) {
@@ -49,8 +50,8 @@ export function Glossary({ onClose }: { onClose: () => void }) {
       .sort((a, b) => a.name.localeCompare(b.name) || b.copies - a.copies)
   }, [needle])
 
-  const settings = useMemo(() => {
-    return SETTINGS.filter((setting) => matches(needle, setting.name, setting.text))
+  const terrains = useMemo(() => {
+    return TERRAINS.filter((terrain) => matches(needle, terrain.name, terrain.text))
   }, [needle])
 
   const rewards = useMemo(() => {
@@ -65,7 +66,7 @@ export function Glossary({ onClose }: { onClose: () => void }) {
 
   const count = tab === 'heroes' ? heroes.length
     : tab === 'items' ? items.length
-      : tab === 'settings' ? settings.length
+      : tab === 'terrains' ? terrains.length
         : rewards.length
 
   return (
@@ -73,7 +74,14 @@ export function Glossary({ onClose }: { onClose: () => void }) {
       <article className="sheet glossary" role="dialog" aria-modal="true" aria-labelledby="glossary-title" onClick={(event) => event.stopPropagation()}>
         <p className="eyebrow">Card reference</p>
         <h2 id="glossary-title">Glossary</h2>
-        <p className="quiet">Browse every hero, item, setting, and reward in the shared decks.</p>
+        <p className="quiet">Browse every hero, item, terrain, and reward in the shared decks. The Ancient (+10 on draw reveal, then one final turn each) is placed after the opening deal by seat count (mid for 2–4, deep for 5–6, last for 7–8).</p>
+        <div className="glossary-entry" data-kind="ancient" style={{ marginBottom: 12 }}>
+          <header>
+            <strong>{ANCIENT.name}</strong>
+            <span className="glossary-marks"><span className="pill muted">1× endgame</span></span>
+          </header>
+          <p>{ANCIENT.text}</p>
+        </div>
 
         <div className="glossary-tabs" role="tablist" aria-label="Card type">
           {TABS.map((entry) => (
@@ -123,7 +131,7 @@ export function Glossary({ onClose }: { onClose: () => void }) {
                   <span className="glossary-marks">
                     <span className={`pill attr-${hero.attr}`}>{ATTR_LABEL[hero.attr]}</span>
                     <span className="pill range">{hero.range}</span>
-                    <span className="pill muted">{TIMING_LABEL[hero.timing]}</span>
+                    <span className={`type-pill inline timing-${hero.timing}`}>{TIMING_LABEL[hero.timing]}</span>
                   </span>
                 </header>
                 <p className="spell">{hero.spell}</p>
@@ -141,7 +149,7 @@ export function Glossary({ onClose }: { onClose: () => void }) {
                   <strong>{item.name}</strong>
                   <span className="glossary-marks">
                     <span className="pill muted">{item.copies}× in deck</span>
-                    {item.instant ? <span className="free-pill">Free</span> : null}
+                    {item.instant ? <span className="type-pill inline timing-instant">Instant</span> : null}
                   </span>
                 </header>
                 <p>{item.text}</p>
@@ -150,15 +158,15 @@ export function Glossary({ onClose }: { onClose: () => void }) {
           </ul>
         ) : null}
 
-        {tab === 'settings' ? (
+        {tab === 'terrains' ? (
           <ul className="glossary-list">
-            {settings.map((setting) => (
-              <li key={setting.id} className="glossary-entry" data-kind={setting.id}>
+            {terrains.map((terrain) => (
+              <li key={terrain.id} className="glossary-entry" data-kind={terrain.id}>
                 <header>
-                  <strong>{setting.name}</strong>
+                  <strong>{terrain.name}</strong>
                   <span className="glossary-marks"><span className="pill muted">12× in deck</span></span>
                 </header>
-                <p>{setting.text}</p>
+                <p>{terrain.text}</p>
               </li>
             ))}
           </ul>
@@ -173,7 +181,7 @@ export function Glossary({ onClose }: { onClose: () => void }) {
                   <span className="glossary-marks">
                     {reward.attr ? <span className={`pill attr-${reward.attr}`}>{ATTR_LABEL[reward.attr]}</span> : null}
                     <span className="pill muted">{reward.copies}× in pile</span>
-                    {reward.instant ? <span className="free-pill">Free</span> : null}
+                    {reward.instant ? <span className="type-pill inline timing-instant">Instant</span> : null}
                     {reward.token ? <span className="pill muted">Neutral body</span> : null}
                   </span>
                 </header>

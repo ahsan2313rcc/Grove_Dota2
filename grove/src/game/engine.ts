@@ -1,4 +1,5 @@
-import { HEROES, ITEMS, REWARDS, SETTINGS, display } from './catalog.ts'
+import { chooseAiPending } from './ai.ts'
+import { ANCIENT_ID, HEROES, ITEMS, REWARDS, TERRAINS, TURN_DRAW, display, firesAbility } from './catalog.ts'
 import { cast, finishIo, finishKunkka } from './casts.ts'
 import { getScoreRules } from './scoring.ts'
 import {
@@ -6,28 +7,39 @@ import {
   allLocs,
   arrived,
   ask,
+  askCoupContinue,
   cardsLocked,
   clearEnd,
   discardUid,
+  drawItemFromDeck,
+  drawsLocked,
+  editHero,
   enqueue,
   enterReason,
   resolveTeam,
   expireStart,
   findHand,
   findHero,
+  finishTrapChoose,
+  graveLocked,
   holderWith,
   nextSeat,
   heroWeight,
+  instantsLocked,
+  isTrapHero,
   itemsLocked,
+  opponents,
   log,
   makeCard,
   makeHero,
   mint,
+  plantTrap,
   seatTeam,
   performDestroy,
   pname,
   putOnTeam,
   queueDraw,
+  randInt,
   removeHand,
   returnLassos,
   returnPhased,
@@ -51,15 +63,19 @@ const DEFAULT_STRAT: AiStrat = 'balanced'
 
 export function createGame(opts: {
   seed?: number
-  mode?: 'hotseat' | 'ai'
+  mode?: 'hotseat' | 'ai' | 'online'
   names?: [string, string]
   seats?: SeatSpec[]
+  /** Override The Ancient endgame; defaults to current score rules. */
+  ancientEndgame?: boolean
 }): Game {
   const seats = opts.seats ?? legacySeats(opts.mode ?? 'hotseat', opts.names)
   if (seats.length < 2 || seats.length > 8) throw new Error('Grove seats 2 to 8 players.')
   const humans = seats.filter((seat) => !seat.ai).length
-  const mode: 'hotseat' | 'ai' = humans >= 2 ? 'hotseat' : 'ai'
-  let state = blank(opts.seed ?? (Date.now() % 100000), mode, seats)
+  const mode: 'hotseat' | 'ai' | 'online' =
+    opts.mode === 'online' ? 'online' : humans >= 2 ? 'hotseat' : 'ai'
+  const ancientEnabled = opts.ancientEndgame ?? getScoreRules().ancientEndgame
+  let state = blank(opts.seed ?? (Date.now() % 100000), mode, seats, ancientEnabled)
   const cards: CardInst[] = []
   for (const hero of HEROES) {
     const made = makeCard(state, hero.id, 'hero')
@@ -73,9 +89,9 @@ export function createGame(opts: {
       cards.push(made[1])
     }
   }
-  for (const setting of SETTINGS) {
+  for (const terrain of TERRAINS) {
     for (let copy = 0; copy < 12; copy += 1) {
-      const made = makeCard(state, setting.id, 'setting')
+      const made = makeCard(state, terrain.id, 'terrain')
       state = made[0]
       cards.push(made[1])
     }
@@ -85,25 +101,54 @@ export function createGame(opts: {
   state = fillPile(state, 'runes')
   state = fillPile(state, 'neutrals')
   state = fillPile(state, 'towers')
-  for (let id = 0; id < seats.length; id += 1) state = takeDraw(state, id, 5)
+  // Opening deal without The Ancient so the final round cannot fire before turn 1.
+  for (let id = 0; id < seats.length; id += 1) state = takeDraw(state, id, 3)
+  if (ancientEnabled) {
+    const made = makeCard(state, ANCIENT_ID, 'ancient')
+    state = made[0]
+    const placed = placeAncient(state, state.deck, made[1], seats.length)
+    state = { ...placed[0], deck: placed[1] }
+  }
   const names = seats.map((seat) => seat.name)
   const listed = names.length === 2 ? `${names[0]} and ${names[1]}` : names.join(', ')
   state = {
     ...state,
     live: true,
-    veil: mode === 'hotseat' && !seats[0]!.ai,
-    log: [`${listed} draw 5. ${names[0]} acts first.`],
+    turn: 0,
+    veil: false,
+    log: [`${listed} draw 3.`],
   }
-  state = setPlayer(state, 0, (player) => ({ ...player, actions: 2 }))
-  return state
+  // Seat 0 starts turn 1 with the usual turn draw + 2 actions.
+  return startTurn(state, 0)
 }
 
-function legacySeats(mode: 'hotseat' | 'ai', names?: [string, string]): SeatSpec[] {
+function legacySeats(mode: 'hotseat' | 'ai' | 'online', names?: [string, string]): SeatSpec[] {
   const labels = names ?? (mode === 'ai' ? ['You', 'The Grove'] : ['Player 1', 'Player 2'])
   return [
     { name: labels[0], ai: false },
     { name: labels[1], ai: mode === 'ai' },
   ]
+}
+
+/**
+ * Insert The Ancient into the remaining deck by seat count (deck[0] = next draw):
+ * 2–4p → random depth in 40–60%, 5–6p → 70–80%, 7–8p → last card.
+ */
+export function placeAncient(
+  state: Game,
+  deck: CardInst[],
+  ancient: CardInst,
+  seats: number,
+): [Game, CardInst[]] {
+  const len = deck.length
+  if (len === 0 || seats >= 7) return [state, [...deck, ancient]]
+
+  const [lo, hi] = seats >= 5 ? [0.7, 0.8] : [0.4, 0.6]
+  const minIdx = Math.floor(lo * len)
+  const maxIdx = Math.max(minIdx, Math.min(len, Math.floor(hi * len)))
+  const [rolled, offset] = randInt(state, maxIdx - minIdx + 1)
+  const index = minIdx + offset
+  return [rolled, [...deck.slice(0, index), ancient, ...deck.slice(index)]]
 }
 
 function fillPile(state: Game, pile: 'runes' | 'neutrals' | 'towers'): Game {
@@ -119,7 +164,7 @@ function fillPile(state: Game, pile: 'runes' | 'neutrals' | 'towers'): Game {
   return { ...shuffled[0], [pile]: shuffled[1] }
 }
 
-function blank(seed: number, mode: 'hotseat' | 'ai', seats: SeatSpec[]): Game {
+function blank(seed: number, mode: 'hotseat' | 'ai' | 'online', seats: SeatSpec[], ancientEnabled = true): Game {
   const player = (id: PlayerId, name: string, ai: boolean, strat: AiStrat): Player => ({
     id,
     name,
@@ -132,7 +177,7 @@ function blank(seed: number, mode: 'hotseat' | 'ai', seats: SeatSpec[]): Game {
     skip: false,
     noHeroNext: false,
     noHeroNow: false,
-    orchid: false,
+    orchid: null,
     bkb: null,
     mailTurn: null,
     handLimit: 7,
@@ -150,7 +195,7 @@ function blank(seed: number, mode: 'hotseat' | 'ai', seats: SeatSpec[]): Game {
     towers: [],
     players: seats.map((seat, id) => player(id, seat.name, seat.ai, seat.strat ?? DEFAULT_STRAT)),
     active: 0,
-    turn: 1,
+    turn: 0,
     log: [],
     pending: null,
     after: null,
@@ -165,10 +210,13 @@ function blank(seed: number, mode: 'hotseat' | 'ai', seats: SeatSpec[]): Game {
     silence: null,
     naga: null,
     lockPlay: null,
+    frost: null,
     troll: null,
     viper: [],
     maledict: [],
     bonds: [],
+    rupture: null,
+    taxAction: null,
     soulbind: [],
     sdBan: [],
     phased: [],
@@ -179,6 +227,20 @@ function blank(seed: number, mode: 'hotseat' | 'ai', seats: SeatSpec[]): Game {
     pendingDraws: [],
     limbo: [],
     echoes: [],
+    stolenCast: false,
+    extraTurn: null,
+    noDraw: null,
+    attrBan: null,
+    freeItems: 0,
+    clinkzExile: [],
+    darkSeer: null,
+    primalItems: null,
+    freePlay: [],
+    lastPlayedHero: null,
+    medusaHold: [],
+    infests: [],
+    ancient: null,
+    ancientEnabled,
   }
 }
 
@@ -198,7 +260,8 @@ function reduce(state: Game, action: Action): Game {
   if (action.type === 'combo') return combo(state, action.uids)
   if (action.type === 'move') return moveEmber(state, action.uid, action.team)
   if (action.type === 'morph') return morphCast(state, action.uid)
-  if (action.type === 'play') return play(state, action.uid, action.team)
+  if (action.type === 'undying') return reviveUndying(state, action.team, action.discards)
+  if (action.type === 'play') return play(state, action.uid, action.team, action.extras ?? [])
   if (action.type === 'discard') return discardStuck(state, action.uid)
   return state
 }
@@ -210,7 +273,13 @@ export function settle(state: Game): Game {
     if (state.over) return state
     if (state.pending) {
       if (state.autoAll || state.players[state.pending.actor].ai) {
-        state = satisfy(state, autoIds(state))
+        const stuck = state.pending
+        const ids = chooseAiPending(state)
+        state = satisfy(state, ids)
+        // If auto-pick couldn't meet min/max (empty choices, bad assign), skip the prompt.
+        if (state.pending === stuck) {
+          state = log({ ...state, pending: null }, 'A choice is skipped.')
+        }
         continue
       }
       return state
@@ -237,11 +306,7 @@ export function settle(state: Game): Game {
       state = beginDraw(state, draw!.player, draw!.n, false)
       continue
     }
-    const limited = ([0, 1] as const).find((id) => state.players[id].hand.length > state.players[id].handLimit)
-    if (limited !== undefined) {
-      state = askLimit(state, limited, 'none')
-      continue
-    }
+    // Hand limit is enforced only when ending a turn — draws may go above 7 mid-turn.
     if (state.live && state.deck.length === 0) return finish(state, 'The deck is empty.')
     return state
   }
@@ -251,18 +316,21 @@ export function settle(state: Game): Game {
 function runAfter(state: Game, after: Resume): Game {
   if (after.kind === 'alive') {
     if (!findHero(state, after.uid)) return state
-    if (state.silence || !castableHero(after.cast.defId)) return state
+    if (state.silence || (state.frost && state.frost.caster !== after.cast.actor) || !castableHero(after.cast.defId)) {
+      return state
+    }
     return cast(state, after.cast)
   }
   return state
 }
 
 function castableHero(defId: string): boolean {
-  return display(defId).kind === 'hero' && display(defId).text.length > 0 && HEROES.some((hero) => hero.id === defId && hero.timing !== 'aura')
+  return display(defId).kind === 'hero' && display(defId).text.length > 0 && firesAbility(defId)
 }
 
 function beginDraw(state: Game, player: PlayerId, count: number, asked: boolean): Game {
   if (count <= 0) return state
+  if (drawsLocked(state, player)) return log(state, "Berserker's Call stops the draw.")
   if (!asked && state.grave.some((card) => card.defId === 'slark')) {
     return ask(state, {
       actor: player,
@@ -300,7 +368,8 @@ function askLimit(state: Game, player: PlayerId, then: 'end' | 'none'): Game {
 function drawAction(state: Game): Game {
   const actor = state.active
   if (state.players[actor].actions < 1) return state
-  if (state.players[actor].hand.length >= state.players[actor].handLimit) return log(state, 'Your hand is full.')
+  if (drawsLocked(state, actor)) return log(state, "Berserker's Call stops draws.")
+  // Hand limit is enforced at end of turn (discard down to 7), not on action-draws.
   if (state.deck.length === 0) return finish(state, 'The deck is empty.')
   state = setPlayer(state, actor, (player) => ({ ...player, actions: player.actions - 1 }))
   return beginDraw(state, actor, 1, false)
@@ -310,7 +379,22 @@ function endTurn(state: Game): Game {
   const actor = state.active
   if (state.players[actor].hand.length > state.players[actor].handLimit) return askLimit(state, actor, 'end')
   state = returnPhased(state, state.turn)
-  state = clearEnd(state)
+  const extra = state.extraTurn
+  state = clearEnd({
+    ...state,
+    extraTurn: null,
+    freeItems: 0,
+    clinkzExile: [],
+    darkSeer: null,
+    stolenCast: false,
+    freePlay: [],
+  })
+  if (state.ancient) {
+    const endsLeft = state.ancient.endsLeft - 1
+    state = { ...state, ancient: { ...state.ancient, endsLeft } }
+    if (endsLeft <= 0) return finish(state, 'The Ancient ends the match.')
+  }
+  if (extra === actor) return startTurn(log(state, 'Refresher Orb grants another turn.'), actor)
   return startTurn(state, nextSeat(state, actor))
 }
 
@@ -334,37 +418,27 @@ function startTurn(state: Game, id: PlayerId): Game {
     if (player.noHeroNext) {
       state = setPlayer(state, active, (current) => ({ ...current, noHeroNext: false, noHeroNow: true }))
     }
-    state = setPlayer(state, active, (current) => ({ ...current, actions: 2 }))
+    const tax =
+      state.taxAction && state.taxAction.caster !== active && state.taxAction.fromTurn < state.turn
+        ? 1
+        : 0
+    state = setPlayer(state, active, (current) => ({ ...current, actions: Math.max(0, 2 - tax) }))
+    state = beginDraw(state, active, TURN_DRAW, false)
     const veil = state.mode === 'hotseat' && !state.autoAll && !state.players[active].ai
-    return log({ ...state, veil }, `${state.players[active].name}'s turn. 2 actions.`)
+    return log(
+      { ...state, veil },
+      `${state.players[active].name}'s turn. Draws ${TURN_DRAW}. 2 actions.`,
+    )
   }
   return state
 }
 
-function combo(state: Game, uids: string[], forced = false): Game {
+function combo(state: Game, uids: string[]): Game {
   const actor = state.active
   if (cardsLocked(state, actor)) return log(state, 'Chronosphere stops you from playing cards.')
   if (uids.length !== 3) return state
   const cards = uids.map((uid) => state.players[actor].hand.find((card) => card.uid === uid))
-  if (cards.some((card) => !card || card.kind !== 'setting')) return state
-  if (!forced) {
-    const holder = holderWith(state, actor, 'nyx_assassin')
-    if (holder !== null) {
-      const nyx = state.players[holder]!.hand.filter((card) => card.defId === 'nyx_assassin')
-      return ask(state, {
-        actor: holder,
-        prompt: `${pname(state, holder)} may discard Nyx Assassin to counter the setting combo, or pass.`,
-        mode: 'pick',
-        min: 1,
-        max: 1,
-        choices: [
-          { id: 'pass', label: 'Pass' },
-          ...nyx.map((card) => ({ id: `nyx:${card.uid}`, label: 'Spiked Carapace', defId: card.defId })),
-        ],
-        resume: { kind: 'counter-combo', uids, actor },
-      })
-    }
-  }
+  if (cards.some((card) => !card || card.kind !== 'terrain')) return state
   const picked = cards as CardInst[]
   const same = picked.every((card) => card.defId === picked[0]?.defId)
   const rules = getScoreRules()
@@ -389,10 +463,23 @@ function combo(state: Game, uids: string[], forced = false): Game {
       next = log(next, 'The reward pile is empty.')
     }
   }
+  const jungles = picked.filter((card) => card.defId === 'jungle').length
+  if (jungles > 0) {
+    const lunaOwners = new Set(
+      allLocs(next)
+        .filter((loc) => loc.hero.defId === 'luna' && loc.hero.controller === actor)
+        .map((loc) => loc.hero.controller),
+    )
+    for (const owner of lunaOwners) {
+      for (let step = 0; step < jungles; step += 1) {
+        next = drawItemFromDeck(next, owner)
+      }
+    }
+  }
   return next
 }
 
-/** Spend an action to pitch a stuck hand card (Poison Nova / lone settings) so the seat can dig. */
+/** Spend an action to pitch a stuck hand card (Poison Nova / lone terrains) so the seat can dig. */
 function discardStuck(state: Game, uid: string): Game {
   const actor = state.active
   if (cardsLocked(state, actor)) return log(state, 'Chronosphere stops you from playing cards.')
@@ -404,86 +491,277 @@ function discardStuck(state: Game, uid: string): Game {
   return log(next, `${pname(next, actor)} discards ${display(held.card.defId).name} to dig.`)
 }
 
-function play(state: Game, uid: string, team: string): Game {
-  const actor = state.active
-  const held = findHand(state, uid)
-  if (!held || held.player.id !== actor) return state
-  if (held.card.kind === 'setting') return log(state, 'Settings are played three at a time.')
+function play(state: Game, uid: string, team: string, extras: string[] = []): Game {
+  // Peek hand owner first — Instant cards may be played off-turn by non-active seats.
+  let held = findHand(state, uid)
+  let actor = held?.player.id ?? state.active
+
+  // Death Prophet: play the top card of the grave (your turn only).
+  const graveTop = state.grave[state.grave.length - 1]
+  const fromGrave =
+    !held &&
+    actor === state.active &&
+    !!graveTop &&
+    graveTop.uid === uid &&
+    allLocs(state).some((loc) => loc.hero.defId === 'death_prophet' && loc.hero.controller === actor) &&
+    !graveLocked(state, actor)
+  // Clinkz: play an exiled item that was Skeleton-Walked this turn.
+  const fromClinkz = state.clinkzExile.find((card) => card.uid === uid)
+  if (fromClinkz && !held) {
+    actor = state.active
+    state = {
+      ...state,
+      exile: state.exile.filter((card) => card.uid !== uid),
+      clinkzExile: state.clinkzExile.filter((card) => card.uid !== uid),
+      freeItems: Math.max(0, state.freeItems - 1),
+    }
+    state = addHand(state, actor, [fromClinkz])
+    held = findHand(state, uid)
+  }
+  if (fromGrave && graveTop) {
+    state = { ...state, grave: state.grave.slice(0, -1) }
+    state = addHand(state, actor, [graveTop])
+    held = findHand(state, uid)
+  }
+
+  if (!held) return state
+  actor = held.player.id
+  if (held.card.kind === 'terrain') return log(state, 'Terrains are played three at a time.')
   const info = display(held.card.defId)
-  const instant = info.instant
+  const freeGrant = state.freePlay.includes(uid)
+  const freeItem =
+    held.card.kind === 'item' &&
+    (state.freeItems > 0 || state.clinkzExile.some((card) => card.uid === held.card.uid) || freeGrant)
+  const primalFree =
+    held.card.kind === 'item' &&
+    !!state.primalItems &&
+    state.primalItems.caster === actor
+  const instant = info.instant || freeItem || primalFree || freeGrant || fromGrave
+  const offTurn = actor !== state.active
+  if (offTurn && !instant) {
+    return log(state, 'Only Instant cards can be played during an opponent\'s turn.')
+  }
+  // Off-turn instants: no multi-drop, no traps onto board as "plays" that need your turn structure.
+  if (offTurn && (extras.length > 0 || isTrapHero(held.card.defId))) {
+    return log(state, 'That Instant cannot be multi-dropped or planted off-turn.')
+  }
   if (cardsLocked(state, actor)) return log(state, 'Chronosphere stops you from playing cards.')
   if (!instant && state.players[actor].actions < 1) return state
-  if (held.card.kind === 'item' && itemsLocked(state, actor)) return log(state, 'Poison Nova stops items.')
-  if ((held.card.kind === 'hero' || held.card.kind === 'neutral') && state.players[actor].noHeroNow && held.card.kind === 'hero') {
-    return log(state, 'Doom stops you from playing heroes.')
+  if (held.card.kind === 'item' && itemsLocked(state, actor)) return log(state, 'Doom locks item cards.')
+  if (instant && !freeItem && !primalFree && !freeGrant && !fromGrave && instantsLocked(state, actor)) {
+    return log(state, 'Battle Trance stops Instant cards.')
+  }
+  if (held.card.kind === 'hero' && state.players[actor].noHeroNow && !offTurn) {
+    return log(state, 'You cannot play hero cards this turn.')
+  }
+  // Instant heroes may still enter the board off-turn (e.g. Dazzle/Oracle onto a team).
+  if (held.card.kind === 'hero' && state.attrBan && state.attrBan.caster !== actor) {
+    const attr = HEROES.find((hero) => hero.id === held.card.defId)?.attr
+    if (attr && attr === state.attrBan.attr) return log(state, "Reaper's Scythe bans that attribute.")
+  }
+  if (isTrapHero(held.card.defId)) {
+    const found = teamById(state, team)
+    if (!found) return log(state, 'Choose any team for the trap.')
+    if (found.team.trap || found.team.mine) return log(state, 'That team already has a trap.')
+    if (!instant) state = setPlayer(state, actor, (player) => ({ ...player, actions: player.actions - 1 }))
+    return plantTrap(state, actor, held.card, found.team.id)
   }
   if (state.sdBan.some((ban) => ban.uid === uid && findHero(state, ban.sdUid)?.hero.controller === ban.caster)) {
     return log(state, 'Disruption stops that hero from being played.')
   }
-  if (needsTeam(held.card.defId, held.card.kind)) {
+
+  const companions = held.card.kind === 'hero'
+    ? [...new Set(extras.filter((extra) => extra !== uid))]
+    : []
+  if (companions.length > 0 && held.card.kind !== 'hero') {
+    return log(state, 'Only heroes can multi-drop.')
+  }
+  for (const extra of companions) {
+    const other = findHand(state, extra)
+    if (!other || other.player.id !== actor || other.card.kind !== 'hero') {
+      return log(state, 'A companion hero is missing.')
+    }
+    if (state.sdBan.some((ban) => ban.uid === extra && findHero(state, ban.sdUid)?.hero.controller === ban.caster)) {
+      return log(state, 'Disruption stops a companion hero.')
+    }
+  }
+
+  if (needsTeam(held.card.defId, held.card.kind) || companions.length > 0) {
     const resolved = resolveTeam(state, actor, team)
     if (!resolved) return state
     const dest = teamById(resolved[0], resolved[1])
-    const weight = held.card.defId === 'meepo' ? 2 : 1
-    const token = held.card.kind === 'neutral'
     if (!dest) return state
+    let weight = held.card.kind === 'hero' || held.card.kind === 'neutral' ? 1 : 0
+    for (const _extra of companions) weight += 1
+    const token = held.card.kind === 'neutral'
     const reason = enterReason(resolved[0], dest.team, weight, token)
     if (reason) return log(state, reason)
   }
   if (!instant) state = setPlayer(state, actor, (player) => ({ ...player, actions: player.actions - 1 }))
-  return offerCounter(state, actor, uid, team)
+  if (freeItem && !freeGrant) {
+    state = {
+      ...state,
+      freeItems: Math.max(0, state.freeItems - 1),
+      clinkzExile: state.clinkzExile.filter((card) => card.uid !== held!.card.uid),
+    }
+  }
+  if (freeGrant) {
+    state = { ...state, freePlay: state.freePlay.filter((id) => id !== uid) }
+  }
+  if (offTurn) {
+    state = log(state, `${pname(state, actor)} plays Instant ${info.name}.`)
+  }
+  // Illusion counters on-turn hero/item plays; skip when reacting off-turn.
+  if (!offTurn && (held.card.kind === 'hero' || held.card.kind === 'item')) {
+    return offerIllusion(state, actor, uid, team, companions)
+  }
+  return resolvePlay(state, actor, uid, team, companions)
 }
 
-function offerCounter(state: Game, actor: PlayerId, uid: string, team: string): Game {
-  const enemy = holderWith(state, actor, 'nyx_assassin')
-  if (enemy === null) return resolvePlay(state, uid, team)
-  const cards = state.players[enemy]!.hand.filter((card) => card.defId === 'nyx_assassin')
+function offerIllusion(state: Game, actor: PlayerId, uid: string, team: string, extras: string[] = []): Game {
+  const enemy = holderWith(state, actor, 'illusion')
+  if (enemy === null) return resolvePlay(state, actor, uid, team, extras)
+  const cards = state.players[enemy]!.hand.filter((card) => card.defId === 'illusion')
   const played = findHand(state, uid)
   const name = played ? display(played.card.defId).name : 'that card'
+  const note = extras.length > 0 ? ` (companions still enter)` : ''
   return ask(state, {
     actor: enemy,
-    prompt: `${pname(state, enemy)} may discard Nyx Assassin to counter ${name}, or pass.`,
+    prompt: `${pname(state, enemy)} may play Illusion Rune to counter ${name}${note}, or pass.`,
     mode: 'pick',
     min: 1,
     max: 1,
     choices: [
       { id: 'pass', label: 'Pass' },
-      ...cards.map((card) => ({ id: `nyx:${card.uid}`, label: 'Spiked Carapace', defId: card.defId })),
+      ...cards.map((card) => ({ id: `illu:${card.uid}`, label: 'Illusion Rune', defId: card.defId })),
     ],
-    resume: { kind: 'counter', uid, team, actor },
+    resume: { kind: 'counter', uid, team, actor, extras },
   })
 }
 
-function resolvePlay(state: Game, uid: string, team: string): Game {
+function resolvePlay(state: Game, actor: PlayerId, uid: string, team: string, extras: string[] = []): Game {
   const held = findHand(state, uid)
-  if (!held) return state
-  const actor = held.player.id
-  if (held.card.kind === 'hero') return playHero(state, actor, held.card, team)
-  if (held.card.kind === 'neutral' && held.card.defId !== 'tormentor') return playToken(state, actor, held.card, team)
+  if (!held) {
+    return landSquad(state, actor, null, extras, team, false)
+  }
+  if (held.card.kind === 'hero') return landSquad(state, actor, held.card, extras, team, true)
+  if (held.card.kind === 'neutral') return playToken(state, actor, held.card, team)
   if (held.card.kind === 'item') return playItem(state, actor, held.card)
   return playReward(state, actor, held.card)
 }
 
-function playHero(state: Game, actor: PlayerId, card: CardInst, team: string): Game {
-  const hero = makeHero(card, actor, actor, state)
+/** Place silent companions then the active hero onto one concrete team (resolve `new` once). */
+function landSquad(
+  state: Game,
+  actor: PlayerId,
+  active: CardInst | null,
+  extras: string[],
+  team: string,
+  fireActive: boolean,
+): Game {
+  if (!active && extras.length === 0) return state
   const resolved = resolveTeam(state, actor, team)
   if (!resolved) return state
   let [next, teamId] = resolved
-  const dest = teamById(next, teamId)
+  for (const uid of extras) {
+    const held = findHand(next, uid)
+    if (!held || held.player.id !== actor || held.card.kind !== 'hero') continue
+    next = playHeroOnto(next, actor, held.card, teamId, false)
+  }
+  if (active) next = playHeroOnto(next, actor, active, teamId, fireActive)
+  return next
+}
+
+function landCompanions(state: Game, actor: PlayerId, extras: string[], team: string): Game {
+  return landSquad(state, actor, null, extras, team, false)
+}
+
+function playHero(state: Game, actor: PlayerId, card: CardInst, team: string, fire: boolean): Game {
+  const resolved = resolveTeam(state, actor, team)
+  if (!resolved) return state
+  return playHeroOnto(resolved[0], actor, card, resolved[1], fire)
+}
+
+function playHeroOnto(state: Game, actor: PlayerId, card: CardInst, teamId: string, fire: boolean): Game {
+  const hero = makeHero(card, actor, actor, state)
+  const dest = teamById(state, teamId)
   if (!dest) return state
-  const reason = enterReason(next, dest.team, heroWeight(hero), false)
-  if (reason) return log(next, reason)
-  next = putOnTeam(removeHand(next, actor, card.uid), actor, teamId, hero)
+  const reason = enterReason(state, dest.team, heroWeight(hero), false)
+  if (reason) return log(state, reason)
+  let next = putOnTeam(removeHand(state, actor, card.uid), actor, teamId, hero)
   const landed = arrived(next, card.uid)
-  next = log(landed.state, `${pname(next, actor)} plays ${display(card.defId).name}.`)
-  if (card.defId === 'nyx_assassin') return next
-  const fires = HEROES.some((entry) => entry.id === card.defId && entry.timing !== 'aura') && !next.silence
+  const verb = fire ? 'plays' : 'fields'
+  next = log(landed.state, `${pname(next, actor)} ${verb} ${display(card.defId).name}${fire ? '' : ' (silent)'}.`)
+  next = {
+    ...next,
+    lastPlayedHero: { uid: card.uid, defId: card.defId, player: actor, turn: next.turn },
+  }
+  if (!fire || card.defId === 'nyx_assassin' || card.defId === 'spirit_breaker') return next
+  const fires = firesAbility(card.defId) && !next.silence
   if (!fires) return next
   const resume = { kind: 'cast' as const, actor, sourceUid: card.uid, defId: card.defId, picked: [], steps: 0 }
   if (landed.mined) return { ...next, after: { kind: 'alive', uid: card.uid, cast: resume } }
-  if (allLocs(next).some((loc) => loc.hero.defId === 'pugna' && loc.hero.controller !== actor)) {
-    return ask(next, {
-      actor,
+  // Opponents may interrupt with Instant cards before the ability resolves.
+  return offerInstantWindow(next, card.uid, resume)
+}
+
+/** Let each opponent play an Instant (or pass) before a hero ability fires. */
+function offerInstantWindow(
+  state: Game,
+  heroUid: string,
+  resume: CastResumeLike,
+  seats?: PlayerId[],
+  index = 0,
+): Game {
+  const order = seats ?? opponents(state, resume.actor)
+  if (index >= order.length) return gateAbility(state, heroUid, resume)
+  const seat = order[index]!
+  const playable = state.players[seat]!.hand.filter((card) => {
+    const info = display(card.defId)
+    if (!info.instant) return false
+    if (card.kind === 'terrain') return false
+    // Illusion counters plays, not abilities.
+    if (card.defId === 'illusion') return false
+    return true
+  })
+  if (instantsLocked(state, seat)) {
+    if (playable.length > 0) {
+      state = log(state, `Battle Trance stops ${pname(state, seat)} from playing Instant cards.`)
+    }
+    return offerInstantWindow(state, heroUid, resume, order, index + 1)
+  }
+  if (playable.length === 0) return offerInstantWindow(state, heroUid, resume, order, index + 1)
+  const about = display(resume.defId)
+  const caster = pname(state, resume.actor)
+  return ask(state, {
+    actor: seat,
+    prompt: `${caster}'s ${about.name} (${about.spell ?? 'ability'}) is about to fire — ${about.text} Play an Instant to interrupt, or pass.`,
+    mode: 'pick',
+    min: 1,
+    max: 1,
+    choices: [
+      { id: 'pass', label: 'Pass' },
+      ...playable.map((card) => ({
+        id: `instant:${card.uid}`,
+        label: display(card.defId).name,
+        defId: card.defId,
+        hint: display(card.defId).text,
+      })),
+    ],
+    resume: { kind: 'instant-window', cast: resume, heroUid, seats: order, index },
+  })
+}
+
+/** Pugna tax → cast. Nyx counters only via the Instant interrupt window. */
+function gateAbility(state: Game, heroUid: string, resume: CastResumeLike): Game {
+  const loc = findHero(state, heroUid)
+  if (!loc) return log(state, 'The hero is gone — the ability fizzles.')
+  if (loc.hero.muted || state.silence || state.players[resume.actor]?.orchid) {
+    return log(state, 'The ability is nullified.')
+  }
+  if (allLocs(state).some((loc) => loc.hero.defId === 'pugna' && loc.hero.controller !== resume.actor && !aurasSuppressedSafe(state, loc.hero.controller))) {
+    return ask(state, {
+      actor: resume.actor,
       prompt: 'Nether Ward: discard 1, or the hero does not fire.',
       mode: 'pick',
       min: 1,
@@ -495,25 +773,13 @@ function playHero(state: Game, actor: PlayerId, card: CardInst, team: string): G
       resume: { kind: 'pugna', cast: resume },
     })
   }
-  return offerTorment(next, card.uid, resume)
+  return cast(state, resume)
 }
 
-function offerTorment(state: Game, heroUid: string, resume: Resume & { kind: 'cast' }): Game {
-  const enemy = holderWith(state, resume.actor, 'tormentor')
-  if (enemy === null) return cast(state, resume)
-  const cards = state.players[enemy]!.hand.filter((card) => card.defId === 'tormentor')
-  return ask(state, {
-    actor: enemy,
-    prompt: 'Play Tormentor on the hero that just entered, or pass.',
-    mode: 'pick',
-    min: 1,
-    max: 1,
-    choices: [
-      { id: 'pass', label: 'Pass' },
-      ...cards.map((card) => ({ id: `torment:${card.uid}`, label: 'Tormentor', defId: card.defId })),
-    ],
-    resume: { kind: 'torment', heroUid, cast: resume },
-  })
+type CastResumeLike = Extract<Resume, { kind: 'cast' }>
+
+function aurasSuppressedSafe(state: Game, controller: PlayerId): boolean {
+  return allLocs(state).some((loc) => loc.hero.defId === 'viper' && loc.hero.controller !== controller)
 }
 
 function playToken(state: Game, actor: PlayerId, card: CardInst, team: string): Game {
@@ -531,6 +797,7 @@ function playToken(state: Game, actor: PlayerId, card: CardInst, team: string): 
 
 function playItem(state: Game, actor: PlayerId, card: CardInst): Game {
   let next = removeHand(state, actor, card.uid)
+  const stamp = { caster: actor, fromTurn: next.turn }
   next = allLocs(next).reduce((current, loc) => {
     if (loc.hero.defId !== 'ursa' || loc.hero.controller !== actor) return current
     return {
@@ -540,15 +807,40 @@ function playItem(state: Game, actor: PlayerId, card: CardInst): Game {
         teams: player.teams.map((team) => ({
           ...team,
           heroes: team.heroes.map((hero) =>
-            hero.uid === loc.hero.uid ? { ...hero, ward: { caster: actor, fromTurn: current.turn } } : hero,
+            hero.uid === loc.hero.uid ? { ...hero, bkb: stamp } : hero,
           ),
         })),
       })) as Game['players'],
     }
   }, next)
+  // Alchemist: draw whenever you play an item.
+  for (const loc of allLocs(next)) {
+    if (loc.hero.defId === 'alchemist' && loc.hero.controller === actor && !aurasSuppressedSafe(next, actor)) {
+      next = queueDraw(next, actor, 1)
+    }
+  }
   next = toGrave(next, card, { type: 'deck' })
   next = log(next, `${pname(next, actor)} plays ${display(card.defId).name}.`)
-  return cast(next, { kind: 'cast', actor, sourceUid: card.uid, defId: card.defId, picked: [], steps: 0 })
+  const resume = { kind: 'cast' as const, actor, sourceUid: card.uid, defId: card.defId, picked: [], steps: 0 }
+  if (
+    allLocs(next).some(
+      (loc) => loc.hero.defId === 'venomancer' && loc.hero.controller !== actor && !aurasSuppressedSafe(next, loc.hero.controller),
+    )
+  ) {
+    return ask(next, {
+      actor,
+      prompt: 'Poison Nova: discard 1, or the item does nothing.',
+      mode: 'pick',
+      min: 1,
+      max: 1,
+      choices: [
+        { id: 'discard', label: 'Discard 1' },
+        { id: 'fizzle', label: 'Nullify the item' },
+      ],
+      resume: { kind: 'venomancer', cast: resume },
+    })
+  }
+  return cast(next, resume)
 }
 
 function playReward(state: Game, actor: PlayerId, card: CardInst): Game {
@@ -587,13 +879,45 @@ function moveEmber(state: Game, uid: string, team: string): Game {
   return log(arrived(next, uid).state, 'Fire Remnant.')
 }
 
+function reviveUndying(state: Game, team: string, discards: string[]): Game {
+  const actor = state.active
+  if (state.pending || discards.length < 2) return state
+  const card = state.grave.find((entry) => entry.defId === 'undying')
+  if (!card) return log(state, 'Undying is not in the grave.')
+  const hand = state.players[actor]?.hand ?? []
+  if (!discards.every((uid) => hand.some((entry) => entry.uid === uid))) {
+    return log(state, 'Flesh Golem needs two cards from your hand.')
+  }
+  const resolved = resolveTeam(state, actor, team)
+  if (!resolved) return state
+  const [based, teamId] = resolved
+  const dest = teamById(based, teamId)
+  if (!dest) return state
+  const reason = enterReason(based, dest.team, 1, false)
+  if (reason) return log(based, reason)
+  let next = based
+  for (const uid of discards.slice(0, 2)) next = discardUid(next, actor, uid)
+  next = { ...next, grave: next.grave.filter((entry) => entry.uid !== card.uid) }
+  const hero = makeHero(card, actor, actor, next)
+  next = putOnTeam(next, actor, teamId, hero)
+  return log(arrived(next, hero.uid).state, 'Flesh Golem: Undying returns.')
+}
+
 function morphCast(state: Game, uid: string): Game {
   const loc = findHero(state, uid)
   const held = loc?.hero.held
   if (!loc || !held || held.mode !== 'morph' || held.takenTurn !== state.turn) return state
-  if (loc.hero.controller !== state.active || loc.hero.castTurn === state.turn || loc.hero.muted || state.silence) return state
+  if (
+    loc.hero.controller !== state.active ||
+    loc.hero.castTurn === state.turn ||
+    loc.hero.muted ||
+    state.silence ||
+    (state.frost && state.frost.caster !== state.active)
+  ) {
+    return state
+  }
   const copied = held.card.defId
-  if (!HEROES.some((hero) => hero.id === copied && hero.timing !== 'aura')) return log(state, 'That hero has no ability to cast.')
+  if (!firesAbility(copied)) return log(state, 'That hero has no ability to cast.')
   const marked = {
     ...state,
     players: state.players.map((player) => ({
@@ -613,30 +937,25 @@ function satisfy(state: Game, ids: string[]): Game {
   const legal = new Set(pending.choices.map((choice) => choice.id))
   if (pending.mode === 'pick' && ids.some((id) => !legal.has(id) && id !== 'pass')) return state
   if (ids.length < pending.min || ids.length > pending.max) return state
-  const next: Game = { ...state, pending: null }
+  const trapDone = finishTrapChoose(state, ids)
+  if (trapDone) return trapDone
+  let next: Game = { ...state, pending: null }
   const resume = pending.resume
   if (resume.kind === 'cast') {
     return cast(next, { ...resume, steps: (resume.steps ?? 0) + 1, picked: [...resume.picked, ...ids] })
   }
   if (resume.kind === 'counter') {
     const choice = ids[0]
-    if (!choice || choice === 'pass') return resolvePlay(next, resume.uid, resume.team)
-    const nyxUid = choice.slice(4)
-    let dumped = discardUid(next, pending.actor, nyxUid)
+    const extras = resume.extras ?? []
+    if (!choice || choice === 'pass') return resolvePlay(next, resume.actor, resume.uid, resume.team, extras)
+    const illuUid = choice.startsWith('illu:') ? choice.slice(5) : choice.slice(4)
+    let dumped = next
+    const rune = dumped.players[pending.actor]?.hand.find((entry) => entry.uid === illuUid)
+    if (rune) dumped = toExile(removeHand(dumped, pending.actor, illuUid), rune)
     const card = dumped.players[resume.actor].hand.find((entry) => entry.uid === resume.uid)
     if (card) dumped = toGrave(removeHand(dumped, resume.actor, card.uid), card, { type: 'hand', player: resume.actor })
-    return log(dumped, `Spiked Carapace counters ${card ? display(card.defId).name : 'the card'}.`)
-  }
-  if (resume.kind === 'counter-combo') {
-    const choice = ids[0]
-    if (!choice || choice === 'pass') return combo(next, resume.uids, true)
-    const nyxUid = choice.slice(4)
-    let dumped = discardUid(next, pending.actor, nyxUid)
-    for (const uid of resume.uids) {
-      const card = dumped.players[resume.actor].hand.find((entry) => entry.uid === uid)
-      if (card) dumped = toGrave(removeHand(dumped, resume.actor, card.uid), card, { type: 'hand', player: resume.actor })
-    }
-    return log(dumped, 'Spiked Carapace counters the setting combo.')
+    dumped = landCompanions(dumped, resume.actor, extras, resume.team)
+    return log(dumped, `Illusion Rune counters ${card ? display(card.defId).name : 'the card'}.`)
   }
   if (resume.kind === 'pugna') {
     if (ids[0] === 'discard') {
@@ -644,19 +963,107 @@ function satisfy(state: Game, ids: string[]): Game {
       const card = hand[0]
       let dumped = next
       if (card) dumped = discardUid(dumped, resume.cast.actor, card.uid)
-      return offerTorment(dumped, resume.cast.sourceUid, resume.cast)
+      return cast(dumped, resume.cast)
     }
     return log(next, 'The hero does not fire.')
   }
-  if (resume.kind === 'torment') {
+  if (resume.kind === 'venomancer') {
+    if (ids[0] === 'discard') {
+      const hand = next.players[resume.cast.actor].hand
+      const card = hand[0]
+      let dumped = next
+      if (card) dumped = discardUid(dumped, resume.cast.actor, card.uid)
+      return cast(dumped, resume.cast)
+    }
+    return log(next, 'Poison Nova nullifies the item.')
+  }
+  if (resume.kind === 'instant-window') {
     const choice = ids[0]
-    if (!choice || choice === 'pass' || !resume.cast) return resume.cast ? cast(next, resume.cast) : next
-    const uid = choice.slice('torment:'.length)
-    const owner = pending.actor
-    const card = next.players[owner].hand.find((entry) => entry.uid === uid)
-    let played = card ? toExile(removeHand(next, owner, uid), card) : next
-    played = enqueue(played, resume.heroUid, 'Tormentor', false, true, owner)
-    return { ...played, after: { kind: 'alive', uid: resume.heroUid, cast: resume.cast } }
+    if (!choice || choice === 'pass') {
+      return offerInstantWindow(next, resume.heroUid, resume.cast, resume.seats, resume.index + 1)
+    }
+    const cardUid = choice.startsWith('instant:') ? choice.slice(8) : choice
+    const card = next.players[pending.actor]?.hand.find((entry) => entry.uid === cardUid)
+    if (!card) {
+      return offerInstantWindow(next, resume.heroUid, resume.cast, resume.seats, resume.index + 1)
+    }
+    // Nyx from hand: counter this ability and destroy the hero (do not put Nyx on the board).
+    if (card.defId === 'nyx_assassin') {
+      let dumped = discardUid(next, pending.actor, cardUid)
+      dumped = enqueue(dumped, resume.heroUid, 'Spiked Carapace', false, true, pending.actor)
+      return log(dumped, 'Spiked Carapace counters the ability.')
+    }
+    // Orchid from interrupt: nullify the ability about to fire (target = that opponent).
+    if (card.defId === 'orchid') {
+      const stamp = { caster: pending.actor, fromTurn: next.turn }
+      let dumped = removeHand(next, pending.actor, cardUid)
+      dumped = toGrave(dumped, card, { type: 'hand', player: pending.actor })
+      dumped = setPlayer(dumped, resume.cast.actor, (player) => ({ ...player, orchid: stamp }))
+      dumped = editHero(dumped, resume.heroUid, (hero) => ({ ...hero, muted: true }))
+      return log(dumped, `Orchid nullifies ${display(resume.cast.defId).name}.`)
+    }
+    // Instant heroes that need a team: ask where to place (never auto-pick team 0).
+    if (needsTeam(card.defId, card.kind)) {
+      const options = teamsFor(next, cardUid).filter((option) => option.ok)
+      if (options.length === 0) {
+        return offerInstantWindow(next, resume.heroUid, resume.cast, resume.seats, resume.index + 1)
+      }
+      if (options.length === 1) {
+        let played = play(next, cardUid, options[0]!.id, [])
+        if (!played.after) {
+          played = { ...played, after: { kind: 'alive', uid: resume.heroUid, cast: resume.cast } }
+        }
+        return played
+      }
+      return ask(next, {
+        actor: pending.actor,
+        prompt: `Play Instant ${display(card.defId).name} — choose a team.`,
+        mode: 'pick',
+        min: 1,
+        max: 1,
+        choices: options.map((option) => ({
+          id: `seat:${cardUid}:${option.id}`,
+          label: option.label,
+          defId: card.defId,
+          hint: option.reason,
+        })),
+        resume: { kind: 'instant-place', cast: resume.cast, heroUid: resume.heroUid, seats: resume.seats, index: resume.index, cardUid },
+      })
+    }
+    let played = play(next, cardUid, '', [])
+    // After the Instant resolves (including its own prompts), resume the ability if the hero remains.
+    if (!played.after) {
+      played = {
+        ...played,
+        after: { kind: 'alive', uid: resume.heroUid, cast: resume.cast },
+      }
+    }
+    return played
+  }
+  if (resume.kind === 'instant-place') {
+    const raw = ids[0] ?? ''
+    const parts = raw.startsWith('seat:') ? raw.slice(5).split(':') : []
+    const cardUid = parts[0] || resume.cardUid
+    const team = parts.slice(1).join(':') || 'new'
+    let played = play(next, cardUid, team, [])
+    if (!played.after) {
+      played = { ...played, after: { kind: 'alive', uid: resume.heroUid, cast: resume.cast } }
+    }
+    return played
+  }
+  if (resume.kind === 'free-play-offer') {
+    if (ids[0] === 'yes') {
+      const card = next.players[resume.actor]?.hand.find((entry) => entry.uid === resume.uid)
+      if (!card) return next
+      const withFree = { ...next, freePlay: [...next.freePlay, resume.uid] }
+      const team = needsTeam(card.defId, card.kind) ? 'new' : 'new'
+      return play(withFree, resume.uid, team, [])
+    }
+    return log(next, 'They keep the reward for later.')
+  }
+  if (resume.kind === 'torment') {
+    // Legacy path removed — Tormentor is a board token now.
+    return resume.cast ? cast(next, resume.cast) : next
   }
   if (resume.kind === 'save') {
     const choice = ids[0]
@@ -678,10 +1085,21 @@ function satisfy(state: Game, ids: string[]): Game {
     if (resume.then === 'end') return endTurn(dumped)
     return dumped
   }
+  if (resume.kind === 'jugg-kill') {
+    const uid = ids[0]?.startsWith('hero:') ? ids[0].slice(5) : ids[0]
+    if (uid) next = enqueue(next, uid, 'Blade Fury', false, true, resume.actor)
+    return cast(next, resume.after)
+  }
   if (resume.kind === 'bristle' || resume.kind === 'mail') {
     const uid = ids[0]?.startsWith('hero:') ? ids[0].slice(5) : ids[0]
     if (!uid) return next
     return enqueue(next, uid, resume.kind === 'mail' ? 'Blade Mail' : 'Bristleback', false, true, resume.actor)
+  }
+  if (resume.kind === 'pa') {
+    const uid = ids[0]?.startsWith('hero:') ? ids[0].slice(5) : ids[0]
+    let resolved = next
+    if (uid) resolved = enqueue(resolved, uid, 'Coup de Grace', false, true, pending.actor)
+    return askCoupContinue(resolved, resume.rest)
   }
   if (resume.kind === 'kunkka-split') {
     const pileA = ids.filter((id) => id.startsWith('a:')).map((id) => id.slice(2))
@@ -787,17 +1205,65 @@ function finish(state: Game, reason: string): Game {
   }
 }
 
-export function teamsFor(state: Game, uid: string): { id: string; label: string; ok: boolean; reason?: string }[] {
-  const held = findHand(state, uid)
+/** Top grave card playable via Death Prophet's Exorcism (controller's turn, not Muerta-locked). */
+export function playableFromGrave(state: Game, actor: PlayerId): CardInst | null {
+  if (actor !== state.active) return null
+  if (graveLocked(state, actor)) return null
+  if (!allLocs(state).some((loc) => loc.hero.defId === 'death_prophet' && loc.hero.controller === actor)) return null
+  return state.grave[state.grave.length - 1] ?? null
+}
+
+function heldForPlay(state: Game, uid: string): { player: { id: PlayerId }; card: CardInst } | null {
+  const hand = findHand(state, uid)
+  if (hand) return hand
+  const top = playableFromGrave(state, state.active)
+  if (top && top.uid === uid) return { player: state.players[state.active]!, card: top }
+  const clinkz = state.clinkzExile.find((card) => card.uid === uid)
+  if (clinkz) return { player: state.players[state.active]!, card: clinkz }
+  return null
+}
+
+export function teamsFor(
+  state: Game,
+  uid: string,
+  extras: string[] = [],
+): { id: string; label: string; ok: boolean; reason?: string }[] {
+  const held = heldForPlay(state, uid)
   if (!held) return []
   const actor = held.player.id
-  const token = held.card.kind === 'neutral' && held.card.defId !== 'tormentor'
-  const weight = held.card.defId === 'meepo' ? 2 : 1
+  // Traps plant face-down on any existing team (ally or enemy).
+  if (isTrapHero(held.card.defId)) {
+    const options: { id: string; label: string; ok: boolean; reason?: string }[] = []
+    for (const player of state.players) {
+      for (const [index, team] of player.teams.entries()) {
+        const scored = scoreTeam(state, team)
+        const whose = player.id === actor ? 'Your' : `${player.name}'s`
+        const letter = String.fromCharCode(65 + (index % 26))
+        const blocked = team.trap || team.mine
+        options.push({
+          id: team.id,
+          label: `${whose} Team ${letter} · ${scored.why} · ${scored.points}`,
+          ok: !blocked,
+          reason: blocked ? 'That team already has a trap.' : undefined,
+        })
+      }
+    }
+    return options
+  }
+  const token = held.card.kind === 'neutral'
+  const companions = extras.filter((extra) => extra !== uid && findHand(state, extra)?.card.kind === 'hero')
+  const weight = (held.card.kind === 'hero' || held.card.kind === 'neutral' ? 1 : 0) + companions.length
   const options: { id: string; label: string; ok: boolean; reason?: string }[] = []
-  for (const team of state.players[actor].teams) {
+  for (const [index, team] of state.players[actor].teams.entries()) {
     const reason = enterReason(state, team, weight, token)
     const scored = scoreTeam(state, team)
-    options.push({ id: team.id, label: `${scored.why} · ${scored.points}`, ok: !reason, reason: reason ?? undefined })
+    const letter = String.fromCharCode(65 + (index % 26))
+    options.push({
+      id: team.id,
+      label: `Team ${letter} · ${scored.why} · ${scored.points}`,
+      ok: !reason,
+      reason: reason ?? undefined,
+    })
   }
   const capped = state.players[actor].teams.length >= TEAM_CAP
   options.push({ id: 'new', label: 'New team', ok: !capped, reason: capped ? '12 teams is the limit.' : undefined })
@@ -805,7 +1271,7 @@ export function teamsFor(state: Game, uid: string): { id: string; label: string;
 }
 
 export function comboPlans(state: Game): { uids: string[]; label: string; detail: string }[] {
-  const hand = state.players[state.active].hand.filter((card) => card.kind === 'setting')
+  const hand = state.players[state.active].hand.filter((card) => card.kind === 'terrain')
   const plans: { uids: string[]; label: string; detail: string }[] = []
   const rules = getScoreRules()
   for (const kind of ['river', 'jungle', 'lane'] as const) {
@@ -833,38 +1299,19 @@ export function emberMoves(state: Game): { uid: string; name: string }[] {
     .map((loc) => ({ uid: loc.hero.uid, name: 'Ember Spirit' }))
 }
 
-export function morphCasts(state: Game): { uid: string; label: string }[] {
-  if (state.silence) return []
-  return allLocs(state)
-    .filter((loc) => loc.hero.controller === state.active && !loc.hero.muted && loc.hero.castTurn !== state.turn)
-    .filter((loc) => loc.hero.held?.mode === 'morph' && loc.hero.held.takenTurn === state.turn)
-    .filter((loc) => HEROES.some((hero) => hero.id === loc.hero.held?.card.defId && hero.timing !== 'aura'))
-    .map((loc) => ({ uid: loc.hero.uid, label: `Cast ${display(loc.hero.held?.card.defId ?? '').name}` }))
+/** Undying in grave + 2 cards in hand → can discard 2 to seat him. */
+export function undyingRevive(state: Game): { ok: boolean; card: CardInst | null } {
+  const actor = state.active
+  if (state.pending) return { ok: false, card: null }
+  const card = state.grave.find((entry) => entry.defId === 'undying') ?? null
+  if (!card) return { ok: false, card: null }
+  if ((state.players[actor]?.hand.length ?? 0) < 2) return { ok: false, card: null }
+  return { ok: true, card }
 }
 
-function autoIds(state: Game): string[] {
-  const pending = state.pending
-  if (!pending) return []
-  if (pending.mode === 'split') {
-    return pending.choices.map((choice, index) => `${index % 2 === 0 ? 'a' : 'b'}:${choice.id}`)
-  }
-  if (pending.mode === 'assign') {
-    const seats = Math.max(2, state.players.length)
-    return pending.choices.map((choice, index) => `${index % seats}:${choice.id}`)
-  }
-  if (pending.mode === 'groups') {
-    return pending.choices.map((choice, index) => `${index % 3}:${choice.id}`)
-  }
-  const nyx = pending.choices.find((choice) => choice.id.startsWith('nyx:'))
-  if (nyx) return [nyx.id]
-  const torment = pending.choices.find((choice) => choice.id.startsWith('torment:'))
-  if (torment) return [torment.id]
-  const save = pending.choices.find((choice) => choice.id.startsWith('play:'))
-  if (save && pending.prompt.includes('destroyed')) return [save.id]
-  if (pending.choices.some((choice) => choice.id === 'pass')) return ['pass']
-  if (pending.choices.some((choice) => choice.id === 'no')) return ['no']
-  if (pending.min === 0) return []
-  return pending.choices.slice(0, pending.max).map((choice) => choice.id)
+/** Morphling no longer grants a free held-ability cast — attribute switch only. */
+export function morphCasts(_state: Game): { uid: string; label: string }[] {
+  return []
 }
 
 export function needsTeam(defId: string, kind: CardKind): boolean {

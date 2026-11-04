@@ -46,7 +46,7 @@ export function ScoreRulesPanel({
           <input data-testid="score-mix-combo" type="number" min={0} max={99} value={draft.mixCombo} onChange={(event) => setNum('mixCombo', Number(event.target.value) || 0)} />
         </label>
       </div>
-      <p className="quiet debug-score-label">Core bonus · heroes 1–5</p>
+      <p className="quiet debug-score-label">Core bonus · heroes 1–5 (applies at 3+)</p>
       <div className="debug-score-row" data-testid="score-core-bonus">
         {draft.coreBonus.map((entry, index) => (
           <label key={`core-${index}`}>
@@ -55,7 +55,7 @@ export function ScoreRulesPanel({
           </label>
         ))}
       </div>
-      <p className="quiet debug-score-label">Mix bonus · attrs 1–4</p>
+      <p className="quiet debug-score-label">Mix bonus · attrs 1–4 (team needs 3+ heroes)</p>
       <div className="debug-score-row" data-testid="score-mix-bonus">
         {draft.mixBonus.map((entry, index) => (
           <label key={`mix-${index}`}>
@@ -90,6 +90,15 @@ export function ScoreRulesPanel({
           onChange={(event) => commit({ ...draft, attackOnMix: event.target.checked })}
         />
         Attack bonus on mixed teams
+      </label>
+      <label className="debug-check">
+        <input
+          data-testid="score-ancient-endgame"
+          type="checkbox"
+          checked={draft.ancientEndgame}
+          onChange={(event) => commit({ ...draft, ancientEndgame: event.target.checked })}
+        />
+        Ancient endgame (+10 on draw reveal, then one final turn each)
       </label>
       <div className="debug-speeds">
         <button type="button" data-testid="score-defaults" onClick={() => commit(DEFAULT_SCORE_RULES)}>

@@ -1,3 +1,4 @@
+import { useState, type ReactNode } from 'react'
 import { AI_STRATS, stratLabel } from '../game/ai.ts'
 import type { BalanceSummary, CardBalanceRow, MatchReport, StratFilter } from '../game/balance.ts'
 import type { AiStrat } from '../game/types.ts'
@@ -8,6 +9,8 @@ import type { Game } from '../game/types.ts'
 
 export type DebugSpeed = 0 | 0.5 | 1 | 2
 export type DebugView = 'watch' | 'stats'
+
+const MAX_QUEUE = 1024
 
 const SPEEDS: { value: DebugSpeed; label: string }[] = [
   { value: 0, label: 'Pause' },
@@ -23,10 +26,11 @@ export function DebugRail({
   speed,
   view,
   batchSize,
-  focus,
+  focus: _focus,
   runCount,
   finishedCount,
   runningBatch,
+  queueLeft = 0,
   summary,
   reports,
   stratFilter,
@@ -34,8 +38,9 @@ export function DebugRail({
   onStep,
   onView,
   onBatchSize,
-  onFocus,
+  onFocus: _onFocus,
   onRunBatch,
+  onPlayNext,
   onStratFilter,
   onReset,
 }: {
@@ -49,6 +54,7 @@ export function DebugRail({
   runCount: number
   finishedCount: number
   runningBatch: boolean
+  queueLeft?: number
   summary: BalanceSummary
   reports: MatchReport[]
   stratFilter: StratFilter
@@ -58,10 +64,13 @@ export function DebugRail({
   onBatchSize: (size: number) => void
   onFocus: (index: number) => void
   onRunBatch: () => void
+  onPlayNext?: () => void
   onStratFilter: (filter: StratFilter) => void
   onReset: () => void
 }) {
   const active = game?.players[game.active]
+  void _focus
+  void _onFocus
 
   return (
     <aside className="debug-rail" data-testid="debug-rail">
@@ -69,15 +78,17 @@ export function DebugRail({
         <p className="eyebrow">Debug balance</p>
         <h2>d{seed}</h2>
         <p className="quiet">
-          {runningBatch
-            ? `Batch running… ${finishedCount}/${runCount}`
-            : game?.over
-              ? 'Match over'
-              : stuck
-                ? 'AI stuck'
-                : game
-                  ? `${active?.name ?? '—'} · T${game.turn}`
-                  : 'Stats only'}
+          {runningBatch && view === 'stats'
+            ? `Fast sim… ${finishedCount} done · ${queueLeft} left`
+            : queueLeft > 0 && view === 'watch'
+              ? `${queueLeft} queued · ${finishedCount} done`
+              : game?.over
+                ? 'Match over'
+                : stuck
+                  ? 'AI stuck'
+                  : game
+                    ? `${active?.name ?? '—'} · T${game.turn}`
+                    : 'Stats only'}
         </p>
       </div>
 
@@ -102,40 +113,38 @@ export function DebugRail({
         <button type="button" data-testid="debug-step" disabled={!game || !!game.over || speed !== 0 || view === 'stats'} onClick={onStep}>
           Step
         </button>
-        <button type="button" data-testid="debug-reset" disabled={runningBatch} onClick={onReset}>
+        <button type="button" data-testid="debug-reset" onClick={onReset}>
           Reset
         </button>
       </div>
 
       <div className="debug-block">
-        <h3>Parallel runs</h3>
+        <h3>Sequential queue</h3>
         <div className="debug-batch">
           <label>
-            Games
+            Add
             <input
               data-testid="debug-batch-size"
               type="number"
               min={1}
-              max={1024}
+              max={MAX_QUEUE}
               value={batchSize}
-              onChange={(event) => onBatchSize(Math.max(1, Math.min(1024, Number(event.target.value) || 1)))}
+              onChange={(event) => onBatchSize(Math.max(1, Math.min(MAX_QUEUE, Number(event.target.value) || 1)))}
             />
           </label>
-          <button type="button" className="primary" data-testid="debug-run-batch" disabled={runningBatch} onClick={onRunBatch}>
-            {runningBatch ? 'Running…' : `Run ${batchSize} in background`}
+          <button type="button" className="primary" data-testid="debug-run-batch" disabled={runningBatch && view === 'stats'} onClick={onRunBatch}>
+            {view === 'stats' ? `Sim ${batchSize} fast` : `Queue ${batchSize}`}
           </button>
+          {onPlayNext ? (
+            <button type="button" data-testid="debug-play-next" onClick={onPlayNext}>
+              Next game
+            </button>
+          ) : null}
         </div>
-        {runCount > 1 && !runningBatch && game ? (
-          <div className="debug-focus">
-            <span className="quiet">Watching</span>
-            <select data-testid="debug-focus" value={focus} onChange={(event) => onFocus(Number(event.target.value))}>
-              {Array.from({ length: Math.min(runCount, 8) }, (_, index) => (
-                <option key={index} value={index}>Game {index + 1} · seed {seed + index}</option>
-              ))}
-            </select>
-          </div>
-        ) : null}
-        <p className="quiet">{finishedCount} finished · {summary.matches} traced · max 1024</p>
+        <p className="quiet">
+          Stats runs at max speed, one game at a time. Switch to Watch to slow the board. {queueLeft > 0 ? `${queueLeft} left. ` : ''}
+          {finishedCount} finished · {summary.matches} traced{runningBatch ? ' · running' : ''}
+        </p>
       </div>
 
       <div className="debug-block">
@@ -185,12 +194,13 @@ export function DebugRail({
 
       <div className="debug-block">
         <h3>By strat</h3>
+        <p className="quiet debug-legend">Place = average finish (1 is first).</p>
         {summary.byStrat.length === 0 ? (
           <p className="quiet">No strat samples yet.</p>
         ) : (
           <table className="debug-table">
             <thead>
-              <tr><th>Strat</th><th>W</th><th>Avg</th><th>Self</th><th>Rel</th></tr>
+              <tr><th>Strat</th><th>W</th><th>Avg</th><th>Place</th><th>Self</th><th>Rel</th></tr>
             </thead>
             <tbody>
               {summary.byStrat.map((row) => (
@@ -198,6 +208,7 @@ export function DebugRail({
                   <td><strong>{stratLabel(row.strat)}</strong><small>{row.plays} plays</small></td>
                   <td>{row.wins}/{row.finishes}</td>
                   <td>{fmt(row.avgScore)}</td>
+                  <td>{fmt(row.avgStanding)}</td>
                   <td>{signed(row.avgSelfSwing)}</td>
                   <td>{signed(row.avgRelSwing)}</td>
                 </tr>
@@ -219,92 +230,120 @@ export function DebugRail({
 
       <div className="debug-block">
         <h3>Shape compare</h3>
-        <p className="quiet debug-legend">Core = mono-attribute team / three-of-a-kind settings. Mixed = multi-attribute team / mixed path. Core ×3/×4/×5 = hero count. Mixed · 3/4 attrs = attribute count (floors ~6 / ~8 with attack).</p>
-        <table className="debug-table">
-          <thead>
-            <tr><th>Shape</th><th>n</th><th>/match</th><th>Avg pts</th></tr>
-          </thead>
-          <tbody>
-            {summary.shapeCompare.map((row) => (
-              <tr key={row.id}>
-                <td>{row.label}</td>
-                <td>{row.count}</td>
-                <td>{fmt(row.avgCount)}</td>
-                <td>{fmt(row.avgPoints)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        <p className="quiet debug-legend">
+          Core ×3/×4/×5 are exclusive: 3+ heroes and a same-attr stack of exactly 3 / 4 / 5+ (mixed boards count in n).
+          Core team /match = ×3+×4+×5. Mixed · 3 attrs = 3+ heroes with exactly 3 attributes (not 4).
+          Pure / avg pts use mono-core (or matching mix) scores only.
+        </p>
+        <SortableTable
+          empty="No shape samples yet."
+          columns={[
+            { key: 'label', label: 'Shape', get: (row) => row.label, sortValue: (row) => row.label },
+            { key: 'count', label: 'n', get: (row) => String(row.count), sortValue: (row) => row.count },
+            { key: 'pure', label: 'Pure', get: (row) => String(row.pureCount), sortValue: (row) => row.pureCount },
+            { key: 'avg', label: '/match', get: (row) => fmt(row.avgCount), sortValue: (row) => row.avgCount },
+            { key: 'pts', label: 'Avg pts', get: (row) => fmt(row.avgPoints), sortValue: (row) => row.avgPoints },
+            { key: 'ppc', label: 'Pts/card', get: (row) => fmt(row.avgPtsPerCard), sortValue: (row) => row.avgPtsPerCard },
+          ]}
+          rows={summary.shapeCompare}
+          rowKey={(row) => row.id}
+        />
       </div>
 
       <div className="debug-block">
         <h3>Event counts</h3>
-        <table className="debug-table">
-          <thead>
-            <tr><th>Event</th><th>Total</th><th>/match</th></tr>
-          </thead>
-          <tbody>
-            {summary.eventStats.map((row) => (
-              <tr key={row.id}>
-                <td>{row.label}</td>
-                <td>{row.total}</td>
-                <td>{fmt(row.perMatch)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        <SortableTable
+          empty="No events yet."
+          columns={[
+            { key: 'label', label: 'Event', get: (row) => row.label, sortValue: (row) => row.label },
+            { key: 'total', label: 'Total', get: (row) => String(row.total), sortValue: (row) => row.total },
+            { key: 'per', label: '/match', get: (row) => fmt(row.perMatch), sortValue: (row) => row.perMatch },
+          ]}
+          rows={summary.eventStats}
+          rowKey={(row) => row.id}
+        />
       </div>
 
       <div className="debug-block">
         <h3>Heroes by attribute</h3>
-        {summary.byAttr.length === 0 ? (
-          <p className="quiet">No hero plays yet.</p>
-        ) : (
-          <table className="debug-table">
-            <thead>
-              <tr><th>Attr</th><th>n</th><th>Self</th><th>Rel</th></tr>
-            </thead>
-            <tbody>
-              {summary.byAttr.map((row) => (
-                <tr key={row.attr}>
-                  <td>{attrLabel(row.attr)}</td>
-                  <td>{row.plays}</td>
-                  <td>{signed(row.avgActorSwing)}</td>
-                  <td>{signed(row.avgRelativeSwing)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
+        <SortableTable
+          empty="No hero plays yet."
+          columns={[
+            { key: 'attr', label: 'Attr', get: (row) => attrLabel(row.attr), sortValue: (row) => row.attr },
+            { key: 'n', label: 'n', get: (row) => String(row.plays), sortValue: (row) => row.plays },
+            { key: 'self', label: 'Self', get: (row) => signed(row.avgActorSwing), sortValue: (row) => row.avgActorSwing },
+            { key: 'rel', label: 'Rel', get: (row) => signed(row.avgRelativeSwing), sortValue: (row) => row.avgRelativeSwing },
+          ]}
+          rows={summary.byAttr}
+          rowKey={(row) => row.attr}
+          defaultSort={{ key: 'n', dir: 'desc' }}
+        />
       </div>
 
       <div className="debug-block">
         <h3>Swing by kind</h3>
-        <p className="quiet debug-legend">Self = your score change. Rel = Self minus average opponent score change.</p>
-        <table className="debug-table">
-          <thead>
-            <tr><th>Kind</th><th>Plays</th><th>Self</th><th>Rel</th></tr>
-          </thead>
-          <tbody>
-            {summary.kindSwing.map((row) => (
-              <tr key={row.kind}>
-                <td>{row.kind}</td>
-                <td>{row.plays}</td>
-                <td>{signed(row.avgActorSwing)}</td>
-                <td>{signed(row.avgRelativeSwing)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        <p className="quiet debug-legend">Self = your score change. Rel = Self minus average opponent score change. Ability = on-play cast effect after the body is seated.</p>
+        <SortableTable
+          empty="No swings yet."
+          columns={[
+            { key: 'kind', label: 'Kind', get: (row) => row.kind, sortValue: (row) => row.kind },
+            { key: 'plays', label: 'Plays', get: (row) => String(row.plays), sortValue: (row) => row.plays },
+            { key: 'self', label: 'Self', get: (row) => signed(row.avgActorSwing), sortValue: (row) => row.avgActorSwing },
+            { key: 'rel', label: 'Rel', get: (row) => signed(row.avgRelativeSwing), sortValue: (row) => row.avgRelativeSwing },
+          ]}
+          rows={summary.kindSwing}
+          rowKey={(row) => row.kind}
+          defaultSort={{ key: 'rel', dir: 'desc' }}
+        />
       </div>
 
-      <RelPair title="Heroes" high={summary.heroHigh} low={summary.heroLow} />
-      <RelPair title="Settings" high={summary.settingHigh} low={summary.settingLow} />
-      <RelPair title="Items / runes / neutrals / towers" high={summary.lootHigh} low={summary.lootLow} />
+      <div className="debug-block">
+        <h3>Ability types</h3>
+        <p className="quiet debug-legend">Primary effect family of activated abilities (n = activations). Win% = matches where a seat fired that type at least once.</p>
+        <SortableTable
+          empty="No ability activations yet."
+          columns={[
+            { key: 'type', label: 'Type', get: (row) => row.label, sortValue: (row) => row.label },
+            { key: 'n', label: 'n', get: (row) => String(row.plays), sortValue: (row) => row.plays },
+            { key: 'rel', label: 'Rel', get: (row) => signed(row.avgRelativeSwing), sortValue: (row) => row.avgRelativeSwing },
+            { key: 'self', label: 'Self', get: (row) => signed(row.avgActorSwing), sortValue: (row) => row.avgActorSwing },
+            {
+              key: 'win',
+              label: 'Win%',
+              get: (row) => (row.presence > 0 ? `${Math.round(row.winRate * 100)}%` : '—'),
+              sortValue: (row) => row.winRate,
+            },
+          ]}
+          rows={summary.byAbilityType}
+          rowKey={(row) => row.id}
+          defaultSort={{ key: 'n', dir: 'desc' }}
+        />
+      </div>
+
+      <p className="quiet debug-legend">
+        Body = score swing from seating the hero (before ability targets resolve). Ability = swing from the cast effect.
+        Rel = your Δ minus average opponent Δ. Click a column header to cycle desc → asc → off. Rank follows the active sort.
+      </p>
+      <div className="debug-block">
+        <h3>Heroes (body)</h3>
+        <CardSortTable rows={summary.heroes} empty="No hero placements yet." />
+      </div>
+      <div className="debug-block">
+        <h3>Abilities (effect)</h3>
+        <CardSortTable rows={summary.abilities} empty="No ability activations yet." />
+      </div>
+      <div className="debug-block">
+        <h3>Terrains</h3>
+        <CardSortTable rows={summary.terrains} empty="No terrain plays yet." />
+      </div>
+      <div className="debug-block">
+        <h3>Items / runes / neutrals / towers</h3>
+        <CardSortTable rows={summary.loot} empty="No loot plays yet." />
+      </div>
 
       <div className="debug-block">
-        <h3>Most contested</h3>
-        <CardTable rows={summary.contested} />
+        <h3>Highest impact</h3>
+        <CardSortTable rows={summary.contested} empty="No contested swings yet." defaultSort={{ key: 'abs', dir: 'desc' }} />
       </div>
 
       {game ? (
@@ -323,7 +362,7 @@ export function DebugRail({
                     </div>
                     <small>
                       {player.ai ? `${stratLabel(player.strat)} · ` : ''}
-                      {scored.teams}+{scored.settings} · hand {player.hand.length} · {shapes.core}c/{shapes.mix}m
+                      {scored.teams}+{scored.terrains} · hand {player.hand.length} · {shapes.core}c/{shapes.mix}m
                     </small>
                   </li>
                 )
@@ -370,49 +409,137 @@ export function DebugRail({
   )
 }
 
-function RelPair({ title, high, low }: { title: string; high: CardBalanceRow[]; low: CardBalanceRow[] }) {
+type SortDir = 'asc' | 'desc'
+
+type SortState = { key: string; dir: SortDir } | null
+
+type Column<T> = {
+  key: string
+  label: string
+  get: (row: T) => ReactNode
+  sortValue: (row: T) => string | number
+  className?: string
+}
+
+function cycleSort(current: SortState, key: string): SortState {
+  if (!current || current.key !== key) return { key, dir: 'desc' }
+  if (current.dir === 'desc') return { key, dir: 'asc' }
+  return null
+}
+
+function SortableTable<T>({
+  columns,
+  rows,
+  rowKey,
+  empty = 'Nothing yet.',
+  defaultSort = null,
+  limit,
+}: {
+  columns: Column<T>[]
+  rows: T[]
+  rowKey: (row: T) => string
+  empty?: string
+  defaultSort?: SortState
+  limit?: number
+}) {
+  const [sort, setSort] = useState<SortState>(defaultSort)
+  if (rows.length === 0) return <p className="quiet">{empty}</p>
+  const ordered = [...rows]
+  if (sort) {
+    const col = columns.find((entry) => entry.key === sort.key)
+    if (col) {
+      ordered.sort((a, b) => {
+        const av = col.sortValue(a)
+        const bv = col.sortValue(b)
+        const cmp = typeof av === 'number' && typeof bv === 'number'
+          ? av - bv
+          : String(av).localeCompare(String(bv))
+        return sort.dir === 'asc' ? cmp : -cmp
+      })
+    }
+  }
+  const shown = limit ? ordered.slice(0, limit) : ordered
   return (
-    <div className="debug-block">
-      <h3>{title}</h3>
-      <div className="debug-rel-grid">
-        <div>
-          <h4>Highest Rel</h4>
-          <CardTable rows={high} empty="No plays in this filter." />
-        </div>
-        <div>
-          <h4>Lowest Rel</h4>
-          <CardTable rows={low} empty="No plays in this filter." />
-        </div>
-      </div>
-    </div>
+    <table className="debug-table debug-table-sort">
+      <thead>
+        <tr>
+          <th className="debug-rank-col" title="Rank">#</th>
+          {columns.map((col) => {
+            const active = sort?.key === col.key
+            const mark = !active ? '' : sort.dir === 'desc' ? ' ↓' : ' ↑'
+            return (
+              <th key={col.key} className={col.className}>
+                <button
+                  type="button"
+                  className={`debug-sort${active ? ' on' : ''}`}
+                  aria-pressed={active}
+                  title={`Sort by ${col.label}`}
+                  onClick={() => setSort((current) => cycleSort(current, col.key))}
+                >
+                  {col.label}{mark}
+                </button>
+              </th>
+            )
+          })}
+        </tr>
+      </thead>
+      <tbody>
+        {shown.map((row, index) => (
+          <tr key={rowKey(row)}>
+            <td className="debug-rank-col">{index + 1}</td>
+            {columns.map((col) => (
+              <td key={col.key} className={col.className}>{col.get(row)}</td>
+            ))}
+          </tr>
+        ))}
+      </tbody>
+    </table>
   )
 }
 
-function CardTable({ rows, empty = 'No card plays yet.' }: { rows: CardBalanceRow[]; empty?: string }) {
-  if (rows.length === 0) return <p className="quiet">{empty}</p>
+function CardSortTable({
+  rows,
+  empty = 'No card plays yet.',
+  defaultSort = { key: 'rel', dir: 'desc' as const },
+}: {
+  rows: CardBalanceRow[]
+  empty?: string
+  defaultSort?: SortState
+}) {
   return (
-    <table className="debug-table">
-      <thead>
-        <tr><th>Card</th><th>n</th><th>Self</th><th>Rel</th></tr>
-      </thead>
-      <tbody>
-        {rows.slice(0, 12).map((row) => (
-          <tr key={`${row.kind}-${row.defId}-${row.plays}-${fmt(row.avgRelativeSwing)}`}>
-            <td>
+    <SortableTable
+      empty={empty}
+      defaultSort={defaultSort}
+      rows={rows}
+      rowKey={(row) => `${row.kind}-${row.defId}`}
+      columns={[
+        {
+          key: 'card',
+          label: 'Card',
+          get: (row) => (
+            <>
               <strong>{row.name}</strong>
               <small>
                 {row.kind}
                 {row.attr ? ` · ${attrLabel(row.attr)}` : ''}
                 {row.instant ? ' · instant' : ''}
               </small>
-            </td>
-            <td>{row.plays}</td>
-            <td>{signed(row.avgActorSwing)}</td>
-            <td>{signed(row.avgRelativeSwing)}</td>
-          </tr>
-        ))}
-      </tbody>
-    </table>
+            </>
+          ),
+          sortValue: (row) => row.name,
+        },
+        { key: 'n', label: 'n', get: (row) => String(row.plays), sortValue: (row) => row.plays },
+        { key: 'rel', label: 'Rel', get: (row) => signed(row.avgRelativeSwing), sortValue: (row) => row.avgRelativeSwing },
+        { key: 'abs', label: '|Rel|', get: (row) => fmt(row.avgAbsSwing), sortValue: (row) => row.avgAbsSwing },
+        { key: 'self', label: 'Self', get: (row) => signed(row.avgActorSwing), sortValue: (row) => row.avgActorSwing },
+        {
+          key: 'win',
+          label: 'Win%',
+          get: (row) => (row.presence > 0 ? `${Math.round(row.winRate * 100)}%` : '—'),
+          sortValue: (row) => row.winRate,
+        },
+      ]}
+    />
   )
 }
 

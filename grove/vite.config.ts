@@ -4,4 +4,16 @@ import { defineConfig } from 'vite'
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [react()],
+  server: {
+    host: true,
+    allowedHosts: ['grove-dota2.onrender.com', '.onrender.com'],
+    proxy: {
+      '/ws': { target: 'ws://127.0.0.1:8787', ws: true },
+      '/api': { target: 'http://127.0.0.1:8787' },
+    },
+  },
+  preview: {
+    host: true,
+    allowedHosts: ['grove-dota2.onrender.com', '.onrender.com'],
+  },
 })

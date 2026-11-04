@@ -6,16 +6,18 @@ export function Rules({ onClose }: { onClose: () => void }) {
         <h2 id="rules-title">Rules</h2>
         <section>
           <h3>The turn</h3>
-          <p>You have two actions. Draw one card for an action, or play a hero, item, or reward for an action. Instant cards are free. A setting combo is free and does not spend an action. There is no draw at the end of the turn. The match ends when the shared deck is empty.</p>
+          <p>Everyone is dealt 3 cards. The Ancient is then placed in the remaining deck by table size — around the middle for 2–4 players, deeper for 5–6, and last for 7–8. At the start of your turn you draw 2, then you have two actions — including the first seat on turn 1. Draw one more card for an action (even above 7), or play a hero, item, or reward for an action. Instant cards are free. A terrain combo is free and does not spend an action. If your hand is above 7, discard down to 7 when you end your turn.</p>
+          <p>When The Ancient is revealed by drawing, that player scores +10 and each seat gets one final turn, then the match ends. If it is revealed from the grave or exile instead, there is no +10 — still one final turn each. The match also ends if the shared deck empties first.</p>
+          <p>You may play several heroes into one team for a single action. Click the active hero, click companions to add them silently, then pick a team — only the active ability fires. If the play is countered, only the active hero is countered.</p>
         </section>
         <section>
-          <h3>Settings</h3>
-          <p>Play three settings at once — a single River, Jungle, or Lane cannot be played alone. Three of a kind score 5 and you take the top of the matching pile: River takes a rune, Jungle a neutral, Lane a tower. One of each also scores 5 and takes nothing. The piles are face down.</p>
+          <h3>Terrains</h3>
+          <p>Play three terrains at once — a single River, Jungle, or Lane cannot be played alone. Three of a kind score 5 and you take the top of the matching pile: River takes a rune, Jungle a neutral, Lane a tower. One of each also scores 5 and takes nothing. The piles are face down.</p>
         </section>
         <section>
           <h3>Teams</h3>
-          <p>Heroes score in teams of up to five. A player can field at most 12 teams. Meepo counts as two. One neutral may sit in a team. Neutrals have no ability and no attack type.</p>
-          <p>Each hero scores 1. A team earns either the same-attribute bonus or the attack bonus, not both. One attribute, Universal included, adds +0, +0, +3, +6, or +10 for one through five heroes, and that team does not take an attack bonus (max 15). Universal is its own attribute and does not fill in for another. A mixed team can also earn the different-attribute bonus: +0, +0, +2, or +4 for one through four different attributes. That bonus stacks with attack. Three, four, or five heroes of the same attack type add +1, +2, or +3 (mix max 12). Neutrals have no attack type and do not spoil that bonus. Meepo counts as two. Brewmaster is Strength, Agility, and Intelligence, so alone he scores 3. A hero with no attribute still scores 1.</p>
+          <p>Heroes score in teams of up to five. A player can field at most 12 teams. Meepo counts as two. One neutral may sit in a team. Neutrals have no ability, no attack type, and no flat points — they only help attribute and attack bonuses.</p>
+          <p>Each hero scores 1. Neutrals score 0 flat but still help attribute and attack bonuses. Core and mixed bonuses need at least three heroes on the team — one or two heroes are just flat points. A core team (one attribute, Universal included, three or more) adds +3, +6, or +10 for three through five and does not take an attack bonus by default (max 15). Universal is its own attribute and does not fill in for another. A mixed team of three or more with different attributes can earn +2 or +4 for three or four attributes; that stacks with attack. Three, four, or five heroes of the same attack type add +1, +2, or +3 (mix max 12). Neutrals have no attack type and do not spoil that bonus. Meepo counts as two. Brewmaster counts as one of Strength, Agility, or Intelligence — whichever scores highest for that team. A hero with no attribute still scores 1.</p>
         </section>
         <section>
           <h3>Zones</h3>
@@ -23,7 +25,7 @@ export function Rules({ onClose }: { onClose: () => void }) {
         </section>
         <section>
           <h3>Answers</h3>
-          <p>The hand limit is 7. Nyx Assassin can be discarded from hand to counter any card, and the countered card goes to the grave. Tormentor can destroy a hero that just entered, and a save can stop a destroy. Instants are free on your own turn.</p>
+          <p>The hand limit is 7. Instant cards are free and can be played on an opponent’s turn to interrupt — including before a hero ability fires. Nyx Assassin is an Instant that counters the ability and destroys that hero. Trap heroes plant face down on any team, including an enemy’s. Tormentor destroys a hero that just entered; saves stop a destroy. Troll Warlord’s Battle Trance stops opponents from playing Instant cards.</p>
         </section>
         <section>
           <h3>A few seats</h3>
@@ -31,11 +33,11 @@ export function Rules({ onClose }: { onClose: () => void }) {
             <li>Riki cannot be targeted by an enemy.</li>
             <li>Night Stalker steals two cards from the enemy.</li>
             <li>Lycan draws a card when an ally enters that team.</li>
-            <li>Medusa’s gaze strips attributes from her team. Range stays.</li>
+            <li>Medusa’s Stone Gaze exiles a target enemy team.</li>
             <li>Elder Titan strips attributes from enemy heroes. They keep 1 point each, and a shared attack type still scores.</li>
             <li>Tidehunter returns every other hero to its owner’s hand. His own team stays.</li>
             <li>Magnus gathers up to 5 enemy heroes into a new team. The rest stay.</li>
-            <li>Razor exiles an enemy hero while you control him. Morphling does the same, copies the attribute, and may cast the ability on the turn he takes it.</li>
+            <li>Razor and Morphling exile a target on play; the exile ends when they leave the board. Morphling may also fire the taken ability.</li>
             <li>Gate merges two teams you own. Overflow returns to hand and does not fire again.</li>
           </ul>
         </section>

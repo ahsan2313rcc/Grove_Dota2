@@ -1,0 +1,540 @@
+{
+  "denom": 199,
+  "summary": {
+    "freeDestroy": 11,
+    "condDestroy": 16,
+    "destroyAll": 27,
+    "freeExile": 6,
+    "condExile": 9,
+    "bounce": 10,
+    "protect": 19
+  },
+  "rows": [
+    {
+      "group": "Removal",
+      "label": "Hero destroy",
+      "tag": "hero_destroy",
+      "n": 8,
+      "pct": 4.0201005025125625,
+      "names": [
+        "Lina",
+        "Spectre",
+        "Shadow Shaman",
+        "Anti-Mage",
+        "Timbersaw",
+        "Dark Willow",
+        "Tiny",
+        "Dagon"
+      ]
+    },
+    {
+      "group": "Removal",
+      "label": "Hero destroy (condition)",
+      "tag": "hero_destroy_cond",
+      "n": 12,
+      "pct": 6.030150753768845,
+      "names": [
+        "Lich",
+        "Gyrocopter",
+        "Drow Ranger",
+        "Hoodwink",
+        "Visage",
+        "Nature's Prophet",
+        "Sand King",
+        "Witch Doctor",
+        "Nyx Assassin",
+        "Spirit Breaker",
+        "Winter Wyvern",
+        "Bloodseeker"
+      ]
+    },
+    {
+      "group": "Removal",
+      "label": "Team destroy",
+      "tag": "team_destroy",
+      "n": 3,
+      "pct": 1.5075376884422111,
+      "names": [
+        "Enigma",
+        "Techies",
+        "Divine Rapier"
+      ]
+    },
+    {
+      "group": "Removal",
+      "label": "Team destroy (condition)",
+      "tag": "team_destroy_cond",
+      "n": 4,
+      "pct": 2.0100502512562812,
+      "names": [
+        "Warlock",
+        "Earthshaker",
+        "Sven",
+        "Bristleback"
+      ]
+    },
+    {
+      "group": "Removal",
+      "label": "Swap hero / take control",
+      "tag": "swap_hero",
+      "n": 6,
+      "pct": 3.0150753768844223,
+      "names": [
+        "Vengeful Spirit",
+        "Lifestealer",
+        "Pudge",
+        "Enchantress",
+        "Dark Seer",
+        "Satanic"
+      ]
+    },
+    {
+      "group": "Removal",
+      "label": "Swap / take team",
+      "tag": "swap_team",
+      "n": 2,
+      "pct": 1.0050251256281406,
+      "names": [
+        "Terrorblade",
+        "Grimstroke"
+      ]
+    },
+    {
+      "group": "Removal",
+      "label": "Terrain destroy",
+      "tag": "terrain_destroy",
+      "n": 1,
+      "pct": 0.5025125628140703,
+      "names": [
+        "Hoodwink"
+      ]
+    },
+    {
+      "group": "Removal",
+      "label": "Hero exile",
+      "tag": "hero_exile",
+      "n": 5,
+      "pct": 2.512562814070352,
+      "names": [
+        "Morphling",
+        "Razor",
+        "Necrophos",
+        "Shadow Demon",
+        "Scythe of Vyse"
+      ]
+    },
+    {
+      "group": "Removal",
+      "label": "Hero exile (condition)",
+      "tag": "hero_exile_cond",
+      "n": 8,
+      "pct": 4.0201005025125625,
+      "names": [
+        "Lion",
+        "Oracle",
+        "Phantom Assassin",
+        "Ancient Apparition",
+        "Lifestealer",
+        "Phoenix",
+        "Eul's Scepter"
+      ]
+    },
+    {
+      "group": "Removal",
+      "label": "Team exile",
+      "tag": "team_exile",
+      "n": 1,
+      "pct": 0.5025125628140703,
+      "names": [
+        "Medusa"
+      ]
+    },
+    {
+      "group": "Removal",
+      "label": "Team exile (condition)",
+      "tag": "team_exile_cond",
+      "n": 1,
+      "pct": 0.5025125628140703,
+      "names": [
+        "Outworld Destroyer"
+      ]
+    },
+    {
+      "group": "Removal",
+      "label": "Hero → hand",
+      "tag": "hero_to_hand",
+      "n": 4,
+      "pct": 2.0100502512562812,
+      "names": [
+        "Tidehunter",
+        "Legion Commander",
+        "Phantom Lancer",
+        "Dawnbreaker"
+      ]
+    },
+    {
+      "group": "Removal",
+      "label": "Hero → deck",
+      "tag": "hero_to_deck",
+      "n": 6,
+      "pct": 3.0150753768844223,
+      "names": [
+        "Earth Spirit",
+        "Phoenix",
+        "Batrider",
+        "Disruptor",
+        "Abaddon",
+        "Abyssal Blade"
+      ]
+    },
+    {
+      "group": "Card flow",
+      "label": "Draw 1 (free)",
+      "tag": "draw_1",
+      "n": 7,
+      "pct": 3.5175879396984926,
+      "names": [
+        "Techies",
+        "Clockwerk",
+        "Lone Druid",
+        "Chen",
+        "Arc Warden",
+        "Dagon",
+        "Abyssal Blade"
+      ]
+    },
+    {
+      "group": "Card flow",
+      "label": "Draw 1 (condition)",
+      "tag": "draw_1_cond",
+      "n": 7,
+      "pct": 3.5175879396984926,
+      "names": [
+        "Alchemist",
+        "Lycan",
+        "Shadow Fiend",
+        "Largo",
+        "Slardar",
+        "Dragon Knight",
+        "Mirana"
+      ]
+    },
+    {
+      "group": "Card flow",
+      "label": "Draw 3+ (free)",
+      "tag": "draw_3plus",
+      "n": 4,
+      "pct": 2.0100502512562812,
+      "names": [
+        "Crystal Maiden",
+        "Weaver",
+        "Invoker",
+        "Greaves"
+      ]
+    },
+    {
+      "group": "Card flow",
+      "label": "Draw 3+ (condition)",
+      "tag": "draw_3plus_cond",
+      "n": 2,
+      "pct": 1.0050251256281406,
+      "names": [
+        "Io",
+        "Kunkka"
+      ]
+    },
+    {
+      "group": "Card flow",
+      "label": "Discard 1 (free)",
+      "tag": "discard_1",
+      "n": 3,
+      "pct": 1.5075376884422111,
+      "names": [
+        "Chaos Knight",
+        "Sniper",
+        "Pudge"
+      ]
+    },
+    {
+      "group": "Card flow",
+      "label": "Discard 1 (condition)",
+      "tag": "discard_1_cond",
+      "n": 8,
+      "pct": 4.0201005025125625,
+      "names": [
+        "Visage",
+        "Undying",
+        "Skywrath Mage",
+        "Storm Spirit",
+        "Centaur Warrunner",
+        "Pugna",
+        "Venomancer",
+        "Pangolier"
+      ]
+    },
+    {
+      "group": "Card flow",
+      "label": "Discard 3+ (free)",
+      "tag": "discard_3plus",
+      "n": 2,
+      "pct": 1.0050251256281406,
+      "names": [
+        "Outworld Destroyer",
+        "Tidehunter"
+      ]
+    },
+    {
+      "group": "Card flow",
+      "label": "Discard 3+ (condition)",
+      "tag": "discard_3plus_cond",
+      "n": 0,
+      "pct": 0,
+      "names": []
+    },
+    {
+      "group": "Card flow",
+      "label": "Discard hand",
+      "tag": "discard_hand",
+      "n": 5,
+      "pct": 2.512562814070352,
+      "names": [
+        "Queen of Pain",
+        "Slark",
+        "Weaver",
+        "Invoker",
+        "Greaves"
+      ]
+    },
+    {
+      "group": "Card flow",
+      "label": "Discard hand (condition)",
+      "tag": "discard_hand_cond",
+      "n": 0,
+      "pct": 0,
+      "names": []
+    },
+    {
+      "group": "Card flow",
+      "label": "Steal card",
+      "tag": "steal_card",
+      "n": 9,
+      "pct": 4.522613065326633,
+      "names": [
+        "Bounty Hunter",
+        "Night Stalker",
+        "Void Spirit",
+        "Windranger",
+        "Gloves",
+        "Gem"
+      ]
+    },
+    {
+      "group": "Card flow",
+      "label": "Reveal hand",
+      "tag": "reveal_hand",
+      "n": 9,
+      "pct": 4.522613065326633,
+      "names": [
+        "Lion",
+        "Sniper",
+        "Bounty Hunter",
+        "Ringmaster",
+        "Ward",
+        "Gem"
+      ]
+    },
+    {
+      "group": "Card flow",
+      "label": "Force discard (any)",
+      "tag": "force_discard",
+      "n": 11,
+      "pct": 5.527638190954774,
+      "names": [
+        "Sand King",
+        "Skywrath Mage",
+        "Chaos Knight",
+        "Centaur Warrunner",
+        "Queen of Pain",
+        "Slark",
+        "Sniper",
+        "Pugna",
+        "Venomancer",
+        "Pudge",
+        "Pangolier"
+      ]
+    },
+    {
+      "group": "Card flow",
+      "label": "Search (deck → hand)",
+      "tag": "search_deck",
+      "n": 8,
+      "pct": 4.0201005025125625,
+      "names": [
+        "Clockwerk",
+        "Dragon Knight",
+        "Broodmother",
+        "Luna",
+        "Leshrac",
+        "Clarity"
+      ]
+    },
+    {
+      "group": "Card flow",
+      "label": "Grave draw / interact",
+      "tag": "grave_draw",
+      "n": 4,
+      "pct": 2.0100502512562812,
+      "names": [
+        "Tinker",
+        "Death Prophet",
+        "Snapfire",
+        "Heart"
+      ]
+    },
+    {
+      "group": "Timing",
+      "label": "Trap",
+      "tag": "trap",
+      "n": 9,
+      "pct": 4.522613065326633,
+      "names": [
+        "Shadow Shaman",
+        "Techies",
+        "Slark",
+        "Bounty Hunter",
+        "Riki",
+        "Monkey King",
+        "Ogre Magi",
+        "Kez",
+        "Templar Assassin"
+      ]
+    },
+    {
+      "group": "Protect",
+      "label": "Hero immune (free)",
+      "tag": "hero_immune",
+      "n": 4,
+      "pct": 2.0100502512562812,
+      "names": [
+        "Ringmaster",
+        "Tusk",
+        "Dazzle",
+        "Naga Siren"
+      ]
+    },
+    {
+      "group": "Protect",
+      "label": "Hero immune (condition)",
+      "tag": "hero_immune_cond",
+      "n": 12,
+      "pct": 6.030150753768845,
+      "names": [
+        "Oracle",
+        "Abaddon",
+        "Phantom Lancer",
+        "Dawnbreaker",
+        "Wraith King",
+        "Undying",
+        "Ursa",
+        "Huskar",
+        "Eul's Scepter",
+        "Shadow Blade"
+      ]
+    },
+    {
+      "group": "Protect",
+      "label": "Team immune",
+      "tag": "team_immune",
+      "n": 3,
+      "pct": 1.5075376884422111,
+      "names": [
+        "Omniknight",
+        "Juggernaut",
+        "BKB"
+      ]
+    },
+    {
+      "group": "Protect",
+      "label": "Untargetable*",
+      "tag": "untargetable",
+      "n": 3,
+      "pct": 1.5075376884422111,
+      "names": [
+        "Mars",
+        "Shadow Blade"
+      ]
+    },
+    {
+      "group": "Lock",
+      "label": "Silence / nullify aura",
+      "tag": "silence",
+      "n": 6,
+      "pct": 3.0150753768844223,
+      "names": [
+        "Riki",
+        "Silencer",
+        "Viper",
+        "Orchid",
+        "Shiva's"
+      ]
+    },
+    {
+      "group": "Lock",
+      "label": "Block instant",
+      "tag": "block_instant",
+      "n": 1,
+      "pct": 0.5025125628140703,
+      "names": [
+        "Troll Warlord"
+      ]
+    },
+    {
+      "group": "Lock",
+      "label": "Block / tax ability",
+      "tag": "block_ability",
+      "n": 6,
+      "pct": 3.0150753768844223,
+      "names": [
+        "Riki",
+        "Silencer",
+        "Muerta",
+        "Orchid",
+        "Shiva's"
+      ]
+    },
+    {
+      "group": "Lock",
+      "label": "Block items",
+      "tag": "block_item",
+      "n": 1,
+      "pct": 0.5025125628140703,
+      "names": [
+        "Doom"
+      ]
+    },
+    {
+      "group": "Lock",
+      "label": "Block hero play",
+      "tag": "block_hero_play",
+      "n": 5,
+      "pct": 2.512562814070352,
+      "names": [
+        "Necrophos",
+        "Jakiro",
+        "Primal Beast",
+        "Shiva's",
+        "Heaven's Halberd"
+      ]
+    },
+    {
+      "group": "Lock",
+      "label": "Block deck draw",
+      "tag": "block_draw",
+      "n": 1,
+      "pct": 0.5025125628140703,
+      "names": [
+        "Axe"
+      ]
+    }
+  ]
+}
