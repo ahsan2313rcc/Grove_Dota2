@@ -446,18 +446,25 @@ export function canTargetHero(state: Game, actor: PlayerId, hero: BoardHero, sou
   ) {
     return false
   }
-  if (source === 'ability' && loc.team.heroes.some((mate) => mate.defId === 'mars' && mate.controller === hero.controller && mate.uid !== hero.uid)) {
+  // Mars Bulwark: other allies on his team are untargetable; Mars himself stays targetable.
+  // Unlike Omniknight, the team as a whole can still be targeted (see canTargetTeam).
+  if (
+    source === 'ability' &&
+    hero.defId !== 'mars' &&
+    loc.team.heroes.some(
+      (mate) => mate.defId === 'mars' && mate.controller === hero.controller && mate.uid !== hero.uid,
+    ) &&
+    !aurasSuppressed(state, hero.controller)
+  ) {
     return false
   }
   return true
 }
 
-export function canTargetTeam(_state: Game, actor: PlayerId, team: Team, owner: PlayerId, source: SourceKind): boolean {
+export function canTargetTeam(_state: Game, _actor: PlayerId, team: Team, _owner: PlayerId, source: SourceKind): boolean {
   if (team.glyph && source !== 'ability') return false
   if (team.glyph) return false
-  if (owner !== actor && source === 'ability' && team.heroes.some((hero) => hero.defId === 'mars' && hero.controller === owner)) {
-    return false
-  }
+  // Mars does not block team-wide targeting — only single-hero targeting of his allies.
   return true
 }
 
