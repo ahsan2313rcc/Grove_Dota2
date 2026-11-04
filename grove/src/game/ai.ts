@@ -14,10 +14,10 @@ import {
 import type { Action, AiStrat, CardInst, Game, PlayerId } from './types.ts'
 
 export const AI_STRATS: { id: AiStrat; label: string; blurb: string }[] = [
-  { id: 'balanced', label: 'Balanced', blurb: 'Scores first: core combos, multi-drops, traps, and Instant interrupts.' },
-  { id: 'tempo', label: 'Tempo', blurb: 'Floods heroes fast, spends every action, and cuts turns with Chronosphere / Silence.' },
-  { id: 'architect', label: 'Architect', blurb: 'Fills teams and terrain paths before cashing denial — patient but still spends actions.' },
-  { id: 'spite', label: 'Spite', blurb: 'Scores while hunting the seat ahead with traps, counters, and removal.' },
+  { id: 'balanced', label: 'Balanced', blurb: 'Scores first, holds answers, interrupts threats, and banks denial auras.' },
+  { id: 'tempo', label: 'Tempo', blurb: 'Floods heroes, spends actions, and gates Chronosphere / Silence on real board threats.' },
+  { id: 'architect', label: 'Architect', blurb: 'Builds cores and terrain paths, still removes filled enemy teams, ends only with empty denial.' },
+  { id: 'spite', label: 'Spite', blurb: 'Pressure-first: hunts the highest threat seat with traps, steals, and removal without breaking own cores.' },
 ]
 
 export const DEFAULT_STRAT: AiStrat = 'balanced'
@@ -94,8 +94,7 @@ export function chooseAiAction(state: Game): Action {
 
   const undying = undyingRevive(state)
   if (undying.ok) {
-    const hand = state.players[actor].hand
-    const discards = hand.slice(0, 2).map((card) => card.uid)
+    const discards = pickUndyingDiscards(state, actor)
     if (discards.length >= 2) {
       const action: Action = { type: 'undying', team: 'new', discards }
       const next = apply({ ...state, autoAll: true }, action)
@@ -220,18 +219,17 @@ export function chooseAiPending(state: Game): string[] {
   if (!pending) return []
   const actor = pending.actor
   const strat = state.players[actor]?.strat ?? DEFAULT_STRAT
-  const focus = preferredFoe(state, actor)
+  const focus = threatFocus(state, actor, strat)
   const scores = state.players.map((player) => scoreState(state, player.id).total)
 
   if (pending.mode === 'split') {
-    return pending.choices.map((choice, index) => `${index % 2 === 0 ? 'a' : 'b'}:${choice.id}`)
+    return smartSplit(pending.choices.map((choice) => choice.id))
   }
   if (pending.mode === 'assign') {
-    const seats = Math.max(2, state.players.length)
-    return pending.choices.map((choice, index) => `${index % seats}:${choice.id}`)
+    return smartAssign(state, pending.choices.map((choice) => choice.id), actor, focus, scores)
   }
   if (pending.mode === 'groups') {
-    return pending.choices.map((choice, index) => `${index % 3}:${choice.id}`)
+    return smartGroups(pending.choices.map((choice) => choice.id))
   }
 
   // Ability / card counters — take them.
@@ -314,25 +312,170 @@ function bestInterrupt(
   strat: AiStrat,
 ): string | null {
   let best: string | null = null
-  let bestValue = strat === 'architect' ? 4.2 : 4.0
-  const focus = preferredFoe(state, actor)
+  let bestValue = interruptBar(state, actor, strat)
+  const focus = threatFocus(state, actor, strat)
   const scores = state.players.map((player) => scoreState(state, player.id).total)
   const behind = (scores[actor] ?? 0) + 2 < (scores[focus] ?? 0)
+  const threat = threatScore(state, actor)
+  const castValue = pendingCastThreat(state)
   for (const id of choiceIds) {
     if (id === 'pass') continue
     const uid = id.startsWith('instant:') ? id.slice(8) : id
     const card = state.players[actor]?.hand.find((entry) => entry.uid === uid)
     if (!card) continue
     let value = INTERRUPT_VALUE[card.defId] ?? (display(card.defId).instant ? 3 : 0)
-    if (strat === 'spite') value += 1.6
-    if (strat === 'tempo' && (card.defId === 'faceless_void' || card.defId === 'silencer')) value += 2.2
-    if (behind) value += 0.8
+    value += castValue * 0.35
+    if (strat === 'spite') value += 1.8
+    if (strat === 'tempo' && (card.defId === 'faceless_void' || card.defId === 'silencer')) {
+      value += castValue >= 3 || threat >= 5 ? 2.6 : -1.2
+    }
+    if (strat === 'balanced' && !behind && threat < 4 && value >= 9) value -= 1.4
+    if (behind) value += 1.1
+    if (threat >= 7) value += 0.9
     if (value > bestValue) {
       bestValue = value
       best = id
     }
   }
   return best
+}
+
+function interruptBar(state: Game, actor: PlayerId, strat: AiStrat): number {
+  const threat = threatScore(state, actor)
+  const mine = scoreState(state, actor).total
+  const foe = rivalPts(state, actor)
+  const ahead = mine >= foe + 4
+  if (strat === 'architect') return ahead ? 5.4 : threat >= 6 ? 3.6 : 4.4
+  if (strat === 'tempo') return threat >= 5 || pendingCastThreat(state) >= 4 ? 3.4 : 4.8
+  if (strat === 'spite') return 3.2
+  // balanced: raise the bar when ahead so answers stay in hand
+  return ahead ? 5.2 : threat >= 6 ? 3.5 : 4.0
+}
+
+/** Board + pending cast heat used to hold Instant answers. */
+export function threatScore(state: Game, actor: PlayerId): number {
+  let threat = 0
+  for (const player of state.players) {
+    if (player.id === actor) continue
+    for (const team of player.teams) {
+      const pts = scoreTeam(state, team).points
+      if (team.heroes.length >= 3) threat += 1.6 + pts * 0.12
+      else if (team.heroes.length === 2) threat += 0.45
+      for (const hero of team.heroes) {
+        const timing = HERO_BY_ID[hero.defId]?.timing
+        if (timing === 'cast') threat += 2.1
+        if (timing === 'instant') threat += 1.3
+        if (HIGH_THREAT_HEROES.has(hero.defId)) threat += 2.2
+      }
+    }
+    threat += Math.min(3, player.hand.filter((card) => display(card.defId).instant).length) * 0.35
+  }
+  threat += pendingCastThreat(state)
+  return threat
+}
+
+const HIGH_THREAT_HEROES = new Set([
+  'enigma',
+  'tidehunter',
+  'medusa',
+  'axe',
+  'troll_warlord',
+  'doom',
+  'razor',
+  'morphling',
+  'puck',
+  'magnus',
+  'earthshaker',
+  'sven',
+  'anti_mage',
+  'death_prophet',
+  'outworld_destroyer',
+  'sand_king',
+])
+
+function pendingCastThreat(state: Game): number {
+  const resume = state.pending?.resume
+  if (!resume) return 0
+  const defId =
+    resume.kind === 'instant-window'
+      ? resume.cast.defId
+      : resume.kind === 'cast'
+        ? resume.defId
+        : resume.kind === 'pugna'
+          ? resume.cast.defId
+          : null
+  if (!defId) return 0
+  if (HIGH_THREAT_HEROES.has(defId)) return 6
+  const timing = HERO_BY_ID[defId]?.timing
+  if (timing === 'cast') return 4
+  if (timing === 'instant') return 3
+  return 2
+}
+
+/** Spite hunts the hottest board; others still climb the score ladder. */
+function threatFocus(state: Game, actor: PlayerId, strat: AiStrat): PlayerId {
+  if (strat !== 'spite') return preferredFoe(state, actor)
+  let best = preferredFoe(state, actor)
+  let bestHeat = -Infinity
+  for (const player of state.players) {
+    if (player.id === actor) continue
+    let heat = scoreState(state, player.id).total
+    for (const team of player.teams) {
+      if (team.heroes.length >= 3) heat += 4 + scoreTeam(state, team).points * 0.2
+      for (const hero of team.heroes) {
+        if (HIGH_THREAT_HEROES.has(hero.defId)) heat += 5
+        if (HERO_BY_ID[hero.defId]?.timing === 'cast') heat += 2
+      }
+    }
+    if (heat > bestHeat) {
+      bestHeat = heat
+      best = player.id
+    }
+  }
+  return best
+}
+
+function smartSplit(ids: string[]): string[] {
+  // Keep teams as even as possible rather than a/b striping blindly.
+  return ids.map((id, index) => `${index < Math.ceil(ids.length / 2) ? 'a' : 'b'}:${id}`)
+}
+
+function smartAssign(
+  state: Game,
+  ids: string[],
+  actor: PlayerId,
+  focus: PlayerId,
+  scores: number[],
+): string[] {
+  const seats = Math.max(2, state.players.length)
+  // Dump the densest piles onto the focus foe first, then other rivals.
+  const order = [...Array(seats).keys()]
+    .filter((seat) => seat !== actor)
+    .sort((a, b) => (b === focus ? 1 : 0) - (a === focus ? 1 : 0) || (scores[b] ?? 0) - (scores[a] ?? 0))
+  if (order.length === 0) return ids.map((id, index) => `${index % seats}:${id}`)
+  return ids.map((id, index) => `${order[index % order.length]}:${id}`)
+}
+
+function smartGroups(ids: string[]): string[] {
+  const size = Math.max(1, Math.ceil(ids.length / 3))
+  return ids.map((id, index) => `${Math.min(2, Math.floor(index / size))}:${id}`)
+}
+
+/** Prefer pitching terrains / dead weight over Instant answers for Flesh Golem. */
+function pickUndyingDiscards(state: Game, actor: PlayerId): string[] {
+  const hand = state.players[actor]?.hand ?? []
+  const ranked = [...hand].sort((a, b) => undyingCost(a) - undyingCost(b))
+  return ranked.slice(0, 2).map((card) => card.uid)
+}
+
+function undyingCost(card: CardInst): number {
+  if (card.kind === 'terrain') return 0
+  if (isTrapHero(card.defId)) return 1
+  if (card.kind === 'item' && !display(card.defId).instant) return 2
+  if (card.kind === 'hero' && HERO_BY_ID[card.defId]?.timing === 'aura') return 3
+  if (display(card.defId).instant || INTERRUPT_VALUE[card.defId]) return 9
+  if (HERO_BY_ID[card.defId]?.timing === 'cast') return 7
+  return 4
 }
 
 function pendingChoiceWeight(
@@ -347,9 +490,17 @@ function pendingChoiceWeight(
   const prompt = state.pending?.prompt ?? ''
   const friendly = isFriendlyPrompt(prompt)
   const owner = choiceOwner(state, choiceId)
+  const hunt = threatFocus(state, actor, strat)
 
   if (owner === actor) {
-    if (!friendly) return -8
+    if (!friendly) {
+      // Spite / tempo still refuse to snip their own filled cores.
+      if (choiceId.startsWith('team:') || choiceId.startsWith('hero:')) {
+        const pts = ownChoicePoints(state, choiceId)
+        if (pts >= 6) return -18
+      }
+      return -8
+    }
     let weight = 55
     if (choiceId.startsWith('hero:')) {
       const loc = findHero(state, choiceId.slice(5))
@@ -363,40 +514,56 @@ function pendingChoiceWeight(
   }
 
   let weight = 0
-  if (owner === focus) weight += 120 + (scores[owner] ?? 0)
+  if (owner === hunt) weight += 130 + (scores[owner] ?? 0)
+  else if (owner === focus) weight += 110 + (scores[owner] ?? 0)
   else if (owner !== null) weight += 40 + (scores[owner] ?? 0)
 
   if (choiceId.startsWith('hero:')) {
     const loc = findHero(state, choiceId.slice(5))
     if (loc) {
       const pts = scoreTeam(state, loc.team).points
-      weight += pts * 0.45
-      if (['enigma', 'tidehunter', 'medusa', 'axe', 'troll_warlord', 'doom', 'razor', 'morphling', 'puck'].includes(loc.hero.defId)) {
-        weight += 10
-      }
-      if (firesAbilityTarget(loc.hero.defId)) weight += 4
+      weight += pts * 0.5
+      if (HIGH_THREAT_HEROES.has(loc.hero.defId)) weight += 12
+      if (firesAbilityTarget(loc.hero.defId)) weight += 5
+      if (loc.team.heroes.length >= 3) weight += 6
     }
   }
   if (choiceId.startsWith('team:')) {
     const found = teamById(state, choiceId.slice(5))
-    if (found) weight += scoreTeam(state, found.team).points * 0.55
+    if (found) {
+      weight += scoreTeam(state, found.team).points * 0.6
+      if (found.team.heroes.length >= 3) weight += 8
+    }
   }
   if (choiceId.startsWith('attr:')) {
     const attr = choiceId.slice(5)
     let count = 0
     for (const loc of allLocs(state)) {
-      if (loc.hero.controller === focus && HERO_BY_ID[loc.hero.defId]?.attr === attr) count += 1
+      if (loc.hero.controller === hunt && HERO_BY_ID[loc.hero.defId]?.attr === attr) count += 1
     }
     weight += count * 6
   }
   if (choiceId.startsWith('mode:immune') || choiceId === 'yes') {
     if (friendly || /immune|fire that ability|play it|for free/i.test(prompt)) weight += 80
   }
-  if (strat === 'spite') weight *= 1.18
+  if (strat === 'spite') weight *= 1.22
   if (strat === 'architect' && friendly) weight *= 1.12
-  if (strat === 'architect' && !friendly) weight *= 1.06
-  if (strat === 'tempo' && /lose their|discard|destroy|exile/i.test(prompt)) weight *= 1.12
+  if (strat === 'architect' && !friendly) weight *= 1.1
+  if (strat === 'tempo' && /lose their|discard|destroy|exile|control/i.test(prompt)) weight *= 1.15
+  if (strat === 'balanced' && /destroy|exile|discard|control|steal/i.test(prompt)) weight *= 1.08
   return weight
+}
+
+function ownChoicePoints(state: Game, choiceId: string): number {
+  if (choiceId.startsWith('hero:')) {
+    const loc = findHero(state, choiceId.slice(5))
+    return loc ? scoreTeam(state, loc.team).points : 0
+  }
+  if (choiceId.startsWith('team:')) {
+    const found = teamById(state, choiceId.slice(5))
+    return found ? scoreTeam(state, found.team).points : 0
+  }
+  return 0
 }
 
 function isFriendlyPrompt(prompt: string): boolean {
@@ -459,26 +626,35 @@ function stuckDiscardUid(state: Game, actor: PlayerId): string | null {
 function endBias(state: Game, actor: PlayerId, strat: AiStrat): number {
   const actions = state.players[actor].actions
   if (actions < 1) return 0
+  const hand = state.players[actor].hand
+  const denialHand = hand.filter((card) => (INTERRUPT_VALUE[card.defId] ?? 0) >= 6).length
+  const threat = threatScore(state, actor)
   // Keep spending actions — ending with spare actions is how seats fall behind.
-  if (strat === 'tempo') return -2.15
-  if (strat === 'architect') return -1.9
-  if (strat === 'spite') return -1.95
-  return -2.0
+  let bias = -2.05
+  if (strat === 'tempo') bias = -2.35
+  if (strat === 'architect') bias = denialHand === 0 ? -2.15 : -1.55
+  if (strat === 'spite') bias = -2.2
+  // Holding a premium Instant while threat is low: slightly prefer to end rather than burn it.
+  if (denialHand >= 1 && threat < 4) bias += strat === 'tempo' ? 0.55 : 0.35
+  if (threat >= 7 && denialHand === 0) bias -= 0.35
+  return bias
 }
 
 function drawBias(state: Game, actor: PlayerId, strat: AiStrat): number {
   const hand = state.players[actor].hand
   const playable = hand.filter((card) => card.kind !== 'terrain').length
   const terrains = hand.filter((card) => card.kind === 'terrain').length
+  const denial = hand.filter((card) => (INTERRUPT_VALUE[card.defId] ?? 0) >= 7).length
   const base =
     0.5 +
     (playable <= 1 ? 0.65 : 0) +
     (terrains >= 2 ? 0.3 : 0) +
     (hand.length <= 3 ? 0.28 : 0) +
-    (hand.length >= 6 && playable >= 2 ? -0.45 : 0)
-  if (strat === 'tempo') return playable === 0 ? 1.35 : base - (playable >= 3 ? 0.2 : 0)
-  if (strat === 'architect') return base + (terrains >= 2 ? 0.2 : 0) - (playable >= 3 ? 0.15 : 0)
-  if (strat === 'spite') return playable === 0 ? 1.15 : base
+    (hand.length >= 6 && playable >= 2 ? -0.45 : 0) +
+    (denial === 0 && threatScore(state, actor) >= 6 ? 0.35 : 0)
+  if (strat === 'tempo') return playable === 0 ? 1.45 : base - (playable >= 3 ? 0.25 : 0)
+  if (strat === 'architect') return base + (terrains >= 2 ? 0.28 : 0) - (playable >= 3 ? 0.12 : 0)
+  if (strat === 'spite') return playable === 0 ? 1.25 : base + 0.08
   return base
 }
 
@@ -506,10 +682,15 @@ function playBias(
   })()
   const instant = display(card.defId).instant
   const denial = INTERRUPT_VALUE[card.defId] ?? 0
+  const threat = threatScore(before, actor)
+  const behind = beforePts + 3 < rivalPts(before, actor)
+  const oppDelta = beforeOppDelta(before, after, actor)
+  const pressure = pressureDelta(before, after, actor)
 
-  let bonus = ptsGain * 0.78
-  bonus += extras * 0.48
-  bonus += beforeOppDelta(before, after, actor) * 0.24
+  let bonus = ptsGain * 0.82
+  bonus += extras * 0.42
+  bonus += oppDelta * 0.32
+  bonus += pressure * 0.55
 
   const timing = HERO_BY_ID[card.defId]?.timing
   if ((timing === 'cast' || timing === 'instant') && !trap) {
@@ -517,27 +698,36 @@ function playBias(
   }
 
   if (trap && trapOnEnemy) {
-    bonus += strat === 'spite' ? 1.95 : 1.55
+    bonus += strat === 'spite' ? 2.25 : 1.7
   } else if (trap) {
-    bonus += strat === 'spite' ? 0.45 : 0.3
+    bonus += strat === 'spite' ? 0.35 : 0.25
   }
 
-  if (instant && denial >= 6) {
+  // Hold premium Instant answers unless the board is hot or we are behind.
+  if (instant && denial >= 7) {
+    const burnOk = threat >= 5.5 || behind || oppDelta >= 2 || pressure >= 1
     if (card.defId === 'faceless_void' || card.defId === 'silencer') {
-      bonus += strat === 'tempo' ? 1.4 : 1.15
-    } else if (card.defId === 'nyx_assassin') {
-      bonus -= 0.75 // keep for counters
+      bonus += burnOk ? (strat === 'tempo' ? 1.7 : 1.25) : strat === 'tempo' ? -1.6 : -1.9
+    } else if (card.defId === 'nyx_assassin' || card.defId === 'rubick') {
+      bonus += burnOk ? 0.4 : -2.1
     } else {
-      bonus += 0.35
+      bonus += burnOk ? 0.55 : -1.35
     }
+  } else if (instant && denial >= 5) {
+    bonus += threat >= 4 || behind ? 0.45 : -0.55
   }
 
   if (kind === 'hero' && !trap) {
     bonus += 0.78
-    if (teamId !== 'new') bonus += 0.92
+    if (teamId !== 'new') bonus += 0.95
     else bonus -= 0.12
     if (afterHeroes > beforeHeroes) bonus += 0.4
-    if (afterFilled > beforeFilled) bonus += 1.12
+    if (afterFilled > beforeFilled) bonus += 1.2
+    // Tempo: multi-drop only when the destination is safe / filling.
+    if (strat === 'tempo' && extras > 0) {
+      const dest = teamId !== 'new' ? teamById(after, teamId)?.team : null
+      bonus += dest && dest.heroes.length >= 3 ? 0.55 : -0.35
+    }
   }
   if (kind === 'item') bonus += 0.45
   if (kind === 'rune' || kind === 'tower' || kind === 'neutral') bonus += 0.5
@@ -545,11 +735,62 @@ function playBias(
   if (strat === 'architect') {
     const beforeCombos = before.players[actor].combos.length
     const afterCombos = after.players[actor].combos.length
-    if (afterCombos > beforeCombos) bonus += 0.65
+    if (afterCombos > beforeCombos) bonus += 0.85
+    // Still remove when a foe has a filled team.
+    if (enemyFilled(before, actor) >= 1 && (oppDelta > 0 || pressure > 0)) bonus += 0.9
   }
-  if (strat === 'spite' && denial >= 5) bonus += 0.5
-  if (strat === 'tempo' && kind === 'hero' && !trap) bonus += 0.18
+  if (strat === 'spite') {
+    bonus += pressure * 0.45
+    if (denial >= 5 && (threat >= 4 || behind)) bonus += 0.65
+    // Don't spite-break own cores: punish plays that shrink our filled count.
+    if (afterFilled < beforeFilled) bonus -= 2.4
+  }
+  if (strat === 'tempo' && kind === 'hero' && !trap) bonus += 0.22
+  if (strat === 'balanced') {
+    if (denial >= 7 && threat < 4 && !behind) bonus -= 0.4
+    if (oppDelta >= 2 || pressure >= 1) bonus += 0.35
+  }
   return bonus
+}
+
+function pressureDelta(before: Game, after: Game, actor: PlayerId): number {
+  let delta = 0
+  const beforeBoard = heroControllerMap(before)
+  const afterBoard = heroControllerMap(after)
+  const afterGrave = new Set(after.grave.map((card) => card.uid))
+  const beforeGrave = new Set(before.grave.map((card) => card.uid))
+  for (const [uid, controller] of beforeBoard) {
+    if (!afterBoard.has(uid) && afterGrave.has(uid) && controller !== actor) delta += 1
+    const next = afterBoard.get(uid)
+    if (next != null && controller !== actor && next === actor) delta += 1.2
+  }
+  for (const player of before.players) {
+    if (player.id === actor) continue
+    for (const card of player.hand) {
+      const still = after.players[player.id]?.hand.some((entry) => entry.uid === card.uid)
+      if (!still && afterGrave.has(card.uid) && !beforeGrave.has(card.uid)) delta += 0.5
+    }
+  }
+  return delta
+}
+
+function heroControllerMap(state: Game): Map<string, PlayerId> {
+  const map = new Map<string, PlayerId>()
+  for (const player of state.players) {
+    for (const team of player.teams) {
+      for (const hero of team.heroes) map.set(hero.uid, hero.controller)
+    }
+  }
+  return map
+}
+
+function enemyFilled(state: Game, actor: PlayerId): number {
+  let n = 0
+  for (const player of state.players) {
+    if (player.id === actor) continue
+    n += player.teams.filter((team) => team.heroes.length >= 3).length
+  }
+  return n
 }
 
 function evaluate(state: Game, actor: PlayerId, strat: AiStrat): number {
@@ -561,10 +802,12 @@ function evaluate(state: Game, actor: PlayerId, strat: AiStrat): number {
   }
 
   const mine = scoreState(state, actor).total
-  const foe = rivalPts(state, actor)
+  const foeSeat = threatFocus(state, actor, strat)
+  const foe = scoreState(state, foeSeat).total
   const hand = state.players[actor].hand
   const terrains = hand.filter((card) => card.kind === 'terrain').length
   const instants = hand.filter((card) => display(card.defId).instant).length
+  const denial = hand.filter((card) => (INTERRUPT_VALUE[card.defId] ?? 0) >= 7).length
   const traps = hand.filter((card) => isTrapHero(card.defId)).length
   const teams = state.players[actor].teams
   const heroes = teams.reduce((sum, team) => sum + team.heroes.length, 0)
@@ -576,27 +819,46 @@ function evaluate(state: Game, actor: PlayerId, strat: AiStrat): number {
     if (player.id === actor) return sum
     return sum + player.teams.filter((team) => team.trap?.owner === actor).length
   }, 0)
+  const foeFilled = enemyFilled(state, actor)
   const actions = state.players[actor].actions
   const behind = mine + 3 < foe
+  const threat = threatScore(state, actor)
 
-  // Shared chassis; tiny personality tilts so flavors stay distinct without runaway win rates.
+  // Shared chassis with clearer personality gaps so flavors stay competitive and distinct.
   let score =
-    mine * 1.55 -
-    foe * 1.08 +
-    boardShape * 0.4 +
-    filled * 1.08 +
-    nearly * 0.45 +
-    comboPts * 0.72 +
-    terrains * 0.4 +
-    instants * 0.32 +
-    traps * 0.35 +
-    enemyTraps * 0.85 +
+    mine * 1.62 -
+    foe * 1.15 +
+    boardShape * 0.42 +
+    filled * 1.15 +
+    nearly * 0.5 +
+    comboPts * 0.78 +
+    terrains * 0.42 +
+    instants * 0.38 +
+    denial * 0.55 +
+    traps * 0.4 +
+    enemyTraps * 0.95 +
     hand.length * 0.12 +
-    heroes * 0.34 +
-    actions * 0.2
-  if (strat === 'tempo') score += heroes * 0.05 + actions * 0.04
-  if (strat === 'architect') score += filled * 0.04 + terrains * 0.03
-  if (strat === 'spite') score += traps * 0.1 + enemyTraps * 0.12 + (behind ? 0.55 : 0) - foe * 0.05
+    heroes * 0.36 +
+    actions * 0.22 -
+    foeFilled * 0.55
+
+  if (strat === 'tempo') {
+    score += heroes * 0.12 + actions * 0.1 + nearly * 0.15
+    score -= denial * 0.15
+    if (threat >= 6) score += denial * 0.35
+  }
+  if (strat === 'architect') {
+    score += filled * 0.22 + terrains * 0.18 + comboPts * 0.2 + nearly * 0.12
+    if (foeFilled >= 1) score += 0.8
+  }
+  if (strat === 'spite') {
+    score += traps * 0.28 + enemyTraps * 0.35 + (behind ? 1.1 : 0) - foe * 0.12
+    score += foeFilled * 0.4 + threat * 0.08
+  }
+  if (strat === 'balanced') {
+    score += denial * 0.25 + (behind ? 0.4 : 0)
+    if (!behind) score += denial * 0.2
+  }
   return score
 }
 

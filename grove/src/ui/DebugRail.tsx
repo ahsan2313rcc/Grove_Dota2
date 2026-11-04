@@ -213,6 +213,9 @@ export function DebugRail({
         <p className="quiet" data-testid="debug-summary-line">
           {summary.finished}/{summary.matches} done · avg T{fmt(summary.avgTurns)} · spread {fmt(summary.avgFinalSpread)} · win {fmt(summary.avgWinnerScore)}
         </p>
+        <p className="quiet debug-legend">
+          Rel = score vs opponents · Self = own score Δ · Pressure = weighted destroy/exile/discard/steal/bounce · Win% = presence correlation (not causality)
+        </p>
       </div>
 
       <div className="debug-block">
@@ -325,19 +328,71 @@ export function DebugRail({
         open={summary.heroPlaysOpen}
       />
 
-      <div className="debug-block">
-        <h3>Terrains</h3>
-        <CardSortTable rows={summary.terrains} empty="No terrain plays yet." />
+      <div className="debug-rel-grid">
+        <div className="debug-block">
+          <h3>Abilities</h3>
+          <p className="quiet debug-legend">On-play / reactivate swings only (not body placement).</p>
+          <CardSortTable rows={summary.abilities} empty="No ability activations yet." />
+        </div>
+        <div className="debug-block">
+          <h3>By ability type</h3>
+          <p className="quiet debug-legend">Primary effect family per hero ability.</p>
+          <SortableTable
+            empty="No ability types yet."
+            defaultSort={{ key: 'plays', dir: 'desc' }}
+            columns={[
+              { key: 'label', label: 'Type', get: (row) => <strong>{row.label}</strong>, sortValue: (row) => row.label },
+              { key: 'plays', label: 'n', get: (row) => String(row.plays), sortValue: (row) => row.plays, className: 'debug-num' },
+              { key: 'rel', label: 'Rel', get: (row) => signed(row.avgRelativeSwing), sortValue: (row) => row.avgRelativeSwing, className: 'debug-num' },
+              { key: 'self', label: 'Self', get: (row) => signed(row.avgActorSwing), sortValue: (row) => row.avgActorSwing, className: 'debug-num' },
+              {
+                key: 'win',
+                label: 'Win%',
+                get: (row) => (row.presence > 0 ? `${Math.round(row.winRate * 100)}%` : '—'),
+                sortValue: (row) => row.winRate,
+                className: 'debug-num',
+              },
+            ]}
+            rows={summary.byAbilityType}
+            rowKey={(row) => row.id}
+          />
+        </div>
       </div>
-      <div className="debug-block">
-        <h3>Items / runes / neutrals / towers</h3>
-        <CardSortTable rows={summary.loot} empty="No loot plays yet." />
+
+      <div className="debug-rel-grid">
+        <div className="debug-block">
+          <h3>Terrains</h3>
+          <CardSortTable rows={summary.terrains} empty="No terrain plays yet." />
+        </div>
+        <div className="debug-block">
+          <h3>Items / runes / neutrals / towers</h3>
+          <CardSortTable rows={summary.loot} empty="No loot plays yet." />
+        </div>
       </div>
 
       <div className="debug-block">
-        <h3>Highest |Rel|</h3>
-        <CardSortTable rows={summary.contested} empty="No contested swings yet." defaultSort={{ key: 'abs', dir: 'desc' }} />
+        <h3>By attribute</h3>
+        <p className="quiet debug-legend">Hero body + ability swings rolled by attr.</p>
+        <SortableTable
+          empty="No attr samples yet."
+          defaultSort={{ key: 'plays', dir: 'desc' }}
+          columns={[
+            {
+              key: 'attr',
+              label: 'Attr',
+              get: (row) => <strong>{row.attr === 'none' ? '—' : attrLabel(row.attr)}</strong>,
+              sortValue: (row) => row.attr,
+            },
+            { key: 'plays', label: 'n', get: (row) => String(row.plays), sortValue: (row) => row.plays, className: 'debug-num' },
+            { key: 'rel', label: 'Rel', get: (row) => signed(row.avgRelativeSwing), sortValue: (row) => row.avgRelativeSwing, className: 'debug-num' },
+            { key: 'self', label: 'Self', get: (row) => signed(row.avgActorSwing), sortValue: (row) => row.avgActorSwing, className: 'debug-num' },
+          ]}
+          rows={summary.byAttr}
+          rowKey={(row) => String(row.attr)}
+        />
       </div>
+
+      <ContestedTable rows={summary.contested} />
 
       {game ? (
         <>
@@ -518,8 +573,37 @@ function HeroModeTable({
           {label}
         </button>
       </h3>
-      <p className="quiet debug-legend">Click the mode label to cycle total → silenced → not silenced.</p>
+      <p className="quiet debug-legend">
+        Body+ability per play. Cycle total → silenced → not silenced. Pres = matches that seat played the card.
+      </p>
       <CardSortTable rows={rows} empty="No hero plays yet for this mode." />
+    </div>
+  )
+}
+
+function ContestedTable({ rows }: { rows: CardBalanceRow[] }) {
+  const [showAll, setShowAll] = useState(false)
+  return (
+    <div className="debug-block">
+      <h3>
+        Highest |Rel|{' '}
+        <button
+          type="button"
+          className="debug-mode-cycle"
+          data-testid="contested-show-all"
+          onClick={() => setShowAll((value) => !value)}
+        >
+          {showAll ? 'Top 16' : 'Show all'}
+        </button>
+      </h3>
+      <p className="quiet debug-legend">
+        Ranked by |Rel| × √n so rare spikes don&apos;t dominate. Pressure shows disruption even when Rel≈0.
+      </p>
+      <CardSortTable
+        rows={showAll ? rows : rows.slice(0, 16)}
+        empty="No contested swings yet."
+        defaultSort={{ key: 'abs', dir: 'desc' }}
+      />
     </div>
   )
 }
@@ -613,9 +697,51 @@ function CardSortTable({
           sortValue: (row) => row.name,
         },
         { key: 'n', label: 'n', get: (row) => String(row.plays), sortValue: (row) => row.plays, className: 'debug-num' },
+        {
+          key: 'pres',
+          label: 'Pres',
+          get: (row) => (row.presence > 0 ? String(row.presence) : '—'),
+          sortValue: (row) => row.presence,
+          className: 'debug-num',
+        },
         { key: 'rel', label: 'Rel', get: (row) => signed(row.avgRelativeSwing), sortValue: (row) => row.avgRelativeSwing, className: 'debug-num' },
         { key: 'abs', label: '|Rel|', get: (row) => fmt(row.avgAbsSwing), sortValue: (row) => row.avgAbsSwing, className: 'debug-num' },
         { key: 'self', label: 'Self', get: (row) => signed(row.avgActorSwing), sortValue: (row) => row.avgActorSwing, className: 'debug-num' },
+        {
+          key: 'pressure',
+          label: 'Press',
+          get: (row) => fmt(row.avgPressure),
+          sortValue: (row) => row.avgPressure,
+          className: 'debug-num',
+        },
+        {
+          key: 'destroy',
+          label: 'D',
+          get: (row) => soft(row.avgDestroy),
+          sortValue: (row) => row.avgDestroy,
+          className: 'debug-num',
+        },
+        {
+          key: 'discard',
+          label: 'Disc',
+          get: (row) => soft(row.avgDiscard),
+          sortValue: (row) => row.avgDiscard,
+          className: 'debug-num',
+        },
+        {
+          key: 'exile',
+          label: 'Ex',
+          get: (row) => soft(row.avgExile),
+          sortValue: (row) => row.avgExile,
+          className: 'debug-num',
+        },
+        {
+          key: 'steal',
+          label: 'Stl',
+          get: (row) => soft(row.avgSteal),
+          sortValue: (row) => row.avgSteal,
+          className: 'debug-num',
+        },
         {
           key: 'win',
           label: 'Win%',
@@ -626,6 +752,12 @@ function CardSortTable({
       ]}
     />
   )
+}
+
+/** Compact avg for sparse effect columns — hide pure zeros. */
+function soft(value: number): string {
+  if (!value) return '·'
+  return value >= 10 ? String(Math.round(value)) : fmt(value)
 }
 
 function attrLabel(attr: string): string {

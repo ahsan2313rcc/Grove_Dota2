@@ -354,10 +354,19 @@ button.debug-mode-cycle:hover {
   font-variant-numeric: tabular-nums;
   text-align: right;
   white-space: nowrap;
+  font-size: 0.78rem;
 }
 .debug-table td.debug-num,
 .debug-table th:has(+ th) {
   font-variant-numeric: tabular-nums;
+}
+.debug-table-sort th .debug-sort {
+  font-size: 0.72rem;
+  letter-spacing: 0.02em;
+}
+.debug-legend {
+  line-height: 1.35;
+  margin: 0 0 8px;
 }
 .debug-table-sort tbody tr:nth-child(even),
 .debug-table-compact tbody tr:nth-child(even) {

@@ -62,6 +62,44 @@ export function allowsStrat(filter: StratFilter, strat: AiStrat): boolean {
   return filter.strats.length === 0 || filter.strats.includes(strat)
 }
 
+/** Per-play effect bag — pressure beyond score Rel (removal, steal, bounce). */
+export interface PlayEffects {
+  destroy: number
+  discard: number
+  exile: number
+  /** Net control gains toward the actor (steal / infest / reverse). */
+  control: number
+  /** Board → hand (bounce), not grave. */
+  bounce: number
+}
+
+export const EMPTY_EFFECTS = (): PlayEffects => ({
+  destroy: 0,
+  discard: 0,
+  exile: 0,
+  control: 0,
+  bounce: 0,
+})
+
+/** Weighted disruption score for tables: destroy + exile + discard + steal + bounce. */
+export function pressureOf(effects: PlayEffects): number {
+  return (
+    1.0 * effects.destroy +
+    0.7 * effects.exile +
+    0.5 * effects.discard +
+    1.2 * effects.control +
+    0.4 * effects.bounce
+  )
+}
+
+export function addEffects(target: PlayEffects, source: PlayEffects) {
+  target.destroy += source.destroy
+  target.discard += source.discard
+  target.exile += source.exile
+  target.control += source.control
+  target.bounce += source.bounce
+}
+
 export interface SwingEvent {
   seed: number
   turn: number
@@ -80,6 +118,12 @@ export interface SwingEvent {
   actorSwing: number
   relativeSwing: number
   fieldSwing: number
+  destroy: number
+  discard: number
+  exile: number
+  control: number
+  bounce: number
+  pressure: number
 }
 
 export interface RoundEvent {
@@ -98,6 +142,10 @@ export interface EventCounts {
   discard: number
   exile: number
   destroy: number
+  /** Board control flips toward the credited seat. */
+  steal: number
+  /** Heroes bounced from board to a hand. */
+  bounce: number
   playHero: number
   playItem: number
   playInstant: number
@@ -202,6 +250,13 @@ export interface CardBalanceRow {
   /** Wins among those presence matches. */
   wins: number
   winRate: number
+  /** Mean weighted disruption (destroy/exile/discard/steal/bounce). */
+  avgPressure: number
+  avgDestroy: number
+  avgDiscard: number
+  avgExile: number
+  avgSteal: number
+  avgBounce: number
 }
 
 export interface StratBalanceRow {
@@ -318,6 +373,8 @@ const EMPTY_EVENTS = (): EventCounts => ({
   discard: 0,
   exile: 0,
   destroy: 0,
+  steal: 0,
+  bounce: 0,
   playHero: 0,
   playItem: 0,
   playInstant: 0,
@@ -373,6 +430,7 @@ type ImpactFrame = {
   startTotals: number[]
   playId: number | null
   silenced: boolean
+  effects: PlayEffects
 }
 
 /** Hero play waiting to split body placement vs on-play ability. */
@@ -421,7 +479,11 @@ export class BalanceTracker {
   observe(before: Game, action: Action, after: Game) {
     if (!this.started) this.start(before)
     this.actions += 1
-    const actor = before.active
+    // Credit Instant / Illusion / save spends to the pending seat, not the turn owner.
+    const eventActor =
+      action.type === 'choose' && before.pending
+        ? before.pending.actor
+        : before.active
 
     if (after.turn !== this.turnNo || after.active !== this.turnActor) {
       this.flushRound(before)
@@ -431,7 +493,7 @@ export class BalanceTracker {
       this.turnStartScores = totals(after)
     }
 
-    this.tallyEvents(before, after, actor)
+    this.tallyEvents(before, after, eventActor)
 
     // Instant / Illusion spent from a prompt: close the interrupted card, open the interrupt card.
     if (action.type === 'choose' && before.pending) {
@@ -492,6 +554,10 @@ export class BalanceTracker {
       this.sealImpact(before)
       this.openImpact(before, before.active, 'ember_spirit', 'move')
     }
+
+    // Credit this step's disruption before any body→ability split so placement
+    // deltas land on the body frame; later choose steps feed the ability frame.
+    if (this.impact) this.creditEffects(before, after, this.impact)
 
     this.maybeSplitAbility(before, after)
 
@@ -564,8 +630,9 @@ export class BalanceTracker {
     const beforeDeck = cardMap(before.deck)
     const beforeExile = cardMap(before.exile)
     const afterExile = cardMap(after.exile)
-    const beforeBoard = boardMap(before)
-    const afterBoard = boardMap(after)
+    const beforeBoard = boardHeroMap(before)
+    const afterBoard = boardHeroMap(after)
+    const afterHands = allHandsMap(after)
 
     for (const [uid] of afterHand) {
       if (beforeHand.has(uid)) continue
@@ -573,16 +640,27 @@ export class BalanceTracker {
       else if (beforeGrave.has(uid)) this.bumpEvent(actor, 'drawGrave')
     }
 
-    for (const [uid] of beforeHand) {
-      if (afterHand.has(uid)) continue
-      if (afterGrave.has(uid)) this.bumpEvent(actor, 'discard')
-      if (afterExile.has(uid) && !beforeExile.has(uid)) this.bumpEvent(actor, 'exile')
+    // Discard / exile from any seat's hand — credit the acting seat (often forced by an opponent).
+    for (const player of before.players) {
+      const prior = cardMap(player.hand)
+      const next = cardMap(after.players[player.id]?.hand ?? [])
+      for (const [uid] of prior) {
+        if (next.has(uid)) continue
+        if (afterGrave.has(uid)) this.bumpEvent(actor, 'discard')
+        if (afterExile.has(uid) && !beforeExile.has(uid)) this.bumpEvent(actor, 'exile')
+      }
     }
 
-    for (const [uid] of beforeBoard) {
-      if (afterBoard.has(uid)) continue
-      if (afterGrave.has(uid)) this.bumpEvent(actor, 'destroy')
-      if (afterExile.has(uid) && !beforeExile.has(uid)) this.bumpEvent(actor, 'exile')
+    for (const [uid, prior] of beforeBoard) {
+      const next = afterBoard.get(uid)
+      if (!next) {
+        if (afterGrave.has(uid)) this.bumpEvent(actor, 'destroy')
+        else if (afterExile.has(uid) && !beforeExile.has(uid)) this.bumpEvent(actor, 'exile')
+        else if (afterHands.has(uid)) this.bumpEvent(actor, 'bounce')
+        continue
+      }
+      // Control flip toward the credited seat.
+      if (prior.controller !== actor && next.controller === actor) this.bumpEvent(actor, 'steal')
     }
 
     for (const [uid] of afterExile) {
@@ -592,6 +670,12 @@ export class BalanceTracker {
 
     const gainedImmune = countImmune(after) - countImmune(before)
     if (gainedImmune > 0) this.bumpEvent(actor, 'immune', gainedImmune)
+  }
+
+  /** Fold board/hand pile deltas into the open impact's effect bag. */
+  private creditEffects(before: Game, after: Game, frame: ImpactFrame) {
+    const delta = diffPlayEffects(before, after, frame.actor)
+    addEffects(frame.effects, delta)
   }
 
   private report(game: Game, includeOpenRound: boolean): MatchReport {
@@ -676,6 +760,7 @@ export class BalanceTracker {
       startTotals: totals(at),
       playId,
       silenced: silencedPlay,
+      effects: EMPTY_EFFECTS(),
     }
     if (defId !== 'draw' && defId !== 'mixed_path' && defId !== 'ember_spirit') {
       const set = this.seatPlaySets[actor] ?? (this.seatPlaySets[actor] = new Set())
@@ -710,6 +795,7 @@ export class BalanceTracker {
     const instant =
       !!info?.instant
       || ((shownKind === 'hero' || shownKind === 'ability') && HERO_BY_ID[defId]?.timing === 'instant')
+    const effects = frame.effects
     this.swings.push({
       seed: this.seed,
       turn: frame.turn,
@@ -726,6 +812,12 @@ export class BalanceTracker {
       actorSwing,
       relativeSwing,
       fieldSwing,
+      destroy: effects.destroy,
+      discard: effects.discard,
+      exile: effects.exile,
+      control: effects.control,
+      bounce: effects.bounce,
+      pressure: pressureOf(effects),
     })
   }
 }
@@ -772,6 +864,12 @@ export function summarizeReports(reports: MatchReport[], filter: StratFilter = A
     abs: number
     presence: number
     wins: number
+    destroy: number
+    discard: number
+    exile: number
+    control: number
+    bounce: number
+    pressure: number
   }
   const cardMap = new Map<string, CardAgg>()
   const presenceMap = new Map<string, { presence: number; wins: number }>()
@@ -837,11 +935,23 @@ export function summarizeReports(reports: MatchReport[], filter: StratFilter = A
         abs: 0,
         presence: 0,
         wins: 0,
+        destroy: 0,
+        discard: 0,
+        exile: 0,
+        control: 0,
+        bounce: 0,
+        pressure: 0,
       }
       row.plays += 1
       row.actor += swing.actorSwing
       row.relative += swing.relativeSwing
       row.abs += Math.abs(swing.relativeSwing)
+      row.destroy += swing.destroy
+      row.discard += swing.discard
+      row.exile += swing.exile
+      row.control += swing.control
+      row.bounce += swing.bounce
+      row.pressure += swing.pressure
       cardMap.set(key, row)
 
       const kind = kindMap.get(swing.kind) ?? { plays: 0, actor: 0, relative: 0 }
@@ -917,6 +1027,12 @@ export function summarizeReports(reports: MatchReport[], filter: StratFilter = A
       presence: presence.presence,
       wins: presence.wins,
       winRate: presence.presence ? presence.wins / presence.presence : 0,
+      avgPressure: row.pressure / row.plays,
+      avgDestroy: row.destroy / row.plays,
+      avgDiscard: row.discard / row.plays,
+      avgExile: row.exile / row.plays,
+      avgSteal: row.control / row.plays,
+      avgBounce: row.bounce / row.plays,
     }
   })
 
@@ -976,7 +1092,7 @@ export function summarizeReports(reports: MatchReport[], filter: StratFilter = A
     lootLow: rankLow(lootRows),
     contested: [...ranked]
       .sort((a, b) => b.avgAbsSwing * Math.sqrt(b.plays) - a.avgAbsSwing * Math.sqrt(a.plays) || b.plays - a.plays)
-      .slice(0, 16),
+      .slice(0, 48),
     avgPtsByTurn: turnSeries.pts,
     avgCardsByTurn: turnSeries.cards,
     turnLabels: turnSeries.labels,
@@ -1021,6 +1137,8 @@ export function summarizeReports(reports: MatchReport[], filter: StratFilter = A
       eventRow('discard', 'Discard', eventTotals.discard, matchCount),
       eventRow('destroy', 'Destroy', eventTotals.destroy, matchCount),
       eventRow('exile', 'Exile', eventTotals.exile, matchCount),
+      eventRow('steal', 'Control steal', eventTotals.steal, matchCount),
+      eventRow('bounce', 'Bounce to hand', eventTotals.bounce, matchCount),
       eventRow('playHero', 'Hero plays', eventTotals.playHero, matchCount),
       eventRow('playItem', 'Item plays', eventTotals.playItem, matchCount),
       eventRow('playInstant', 'Instant plays', eventTotals.playInstant, matchCount),
@@ -1558,6 +1676,12 @@ function buildHeroPlayModes(
     silenced: boolean
     actor: number
     relative: number
+    destroy: number
+    discard: number
+    exile: number
+    control: number
+    bounce: number
+    pressure: number
   }
   const plays: PlayAgg[] = []
   for (const report of reports) {
@@ -1581,12 +1705,36 @@ function buildHeroPlayModes(
         silenced: group.some((swing) => swing.silenced),
         actor: group.reduce((sum, swing) => sum + swing.actorSwing, 0),
         relative: group.reduce((sum, swing) => sum + swing.relativeSwing, 0),
+        destroy: group.reduce((sum, swing) => sum + swing.destroy, 0),
+        discard: group.reduce((sum, swing) => sum + swing.discard, 0),
+        exile: group.reduce((sum, swing) => sum + swing.exile, 0),
+        control: group.reduce((sum, swing) => sum + swing.control, 0),
+        bounce: group.reduce((sum, swing) => sum + swing.bounce, 0),
+        pressure: group.reduce((sum, swing) => sum + swing.pressure, 0),
       })
     }
   }
 
   const toRows = (subset: PlayAgg[]): CardBalanceRow[] => {
-    const map = new Map<string, { defId: string; name: string; attr: Attr | null; instant: boolean; plays: number; actor: number; relative: number; abs: number }>()
+    const map = new Map<
+      string,
+      {
+        defId: string
+        name: string
+        attr: Attr | null
+        instant: boolean
+        plays: number
+        actor: number
+        relative: number
+        abs: number
+        destroy: number
+        discard: number
+        exile: number
+        control: number
+        bounce: number
+        pressure: number
+      }
+    >()
     for (const play of subset) {
       const row = map.get(play.defId) ?? {
         defId: play.defId,
@@ -1597,11 +1745,23 @@ function buildHeroPlayModes(
         actor: 0,
         relative: 0,
         abs: 0,
+        destroy: 0,
+        discard: 0,
+        exile: 0,
+        control: 0,
+        bounce: 0,
+        pressure: 0,
       }
       row.plays += 1
       row.actor += play.actor
       row.relative += play.relative
       row.abs += Math.abs(play.relative)
+      row.destroy += play.destroy
+      row.discard += play.discard
+      row.exile += play.exile
+      row.control += play.control
+      row.bounce += play.bounce
+      row.pressure += play.pressure
       map.set(play.defId, row)
     }
     return [...map.values()].map((row) => {
@@ -1621,6 +1781,12 @@ function buildHeroPlayModes(
         presence: presence.presence,
         wins: presence.wins,
         winRate: presence.presence ? presence.wins / presence.presence : 0,
+        avgPressure: row.plays ? row.pressure / row.plays : 0,
+        avgDestroy: row.plays ? row.destroy / row.plays : 0,
+        avgDiscard: row.plays ? row.discard / row.plays : 0,
+        avgExile: row.plays ? row.exile / row.plays : 0,
+        avgSteal: row.plays ? row.control / row.plays : 0,
+        avgBounce: row.plays ? row.bounce / row.plays : 0,
       }
     })
   }
@@ -1636,14 +1802,67 @@ function cardMap(cards: CardInst[]): Map<string, CardInst> {
   return new Map(cards.map((card) => [card.uid, card]))
 }
 
-function boardMap(game: Game): Map<string, string> {
-  const map = new Map<string, string>()
+function allHandsMap(game: Game): Map<string, CardInst> {
+  const map = new Map<string, CardInst>()
+  for (const player of game.players) {
+    for (const card of player.hand) map.set(card.uid, card)
+  }
+  return map
+}
+
+function boardHeroMap(game: Game): Map<string, { defId: string; controller: number }> {
+  const map = new Map<string, { defId: string; controller: number }>()
   for (const player of game.players) {
     for (const team of player.teams) {
-      for (const hero of team.heroes) map.set(hero.uid, hero.defId)
+      for (const hero of team.heroes) {
+        map.set(hero.uid, { defId: hero.defId, controller: hero.controller })
+      }
     }
   }
   return map
+}
+
+/** Diff board/hand/exile piles into a PlayEffects bag credited to `actor`. */
+export function diffPlayEffects(before: Game, after: Game, actor: number): PlayEffects {
+  const effects = EMPTY_EFFECTS()
+  const beforeGrave = cardMap(before.grave)
+  const afterGrave = cardMap(after.grave)
+  const beforeExile = cardMap(before.exile)
+  const afterExile = cardMap(after.exile)
+  const beforeBoard = boardHeroMap(before)
+  const afterBoard = boardHeroMap(after)
+  const afterHands = allHandsMap(after)
+
+  // Opponent hand loss only — own Instant/play spends are not "pressure".
+  for (const player of before.players) {
+    if (player.id === actor) continue
+    const prior = cardMap(player.hand)
+    const next = cardMap(after.players[player.id]?.hand ?? [])
+    for (const [uid] of prior) {
+      if (next.has(uid)) continue
+      if (afterGrave.has(uid)) effects.discard += 1
+      if (afterExile.has(uid) && !beforeExile.has(uid)) effects.exile += 1
+    }
+  }
+
+  for (const [uid, prior] of beforeBoard) {
+    const next = afterBoard.get(uid)
+    if (!next) {
+      if (afterGrave.has(uid)) effects.destroy += 1
+      else if (afterExile.has(uid) && !beforeExile.has(uid)) effects.exile += 1
+      else if (afterHands.has(uid)) effects.bounce += 1
+      continue
+    }
+    if (prior.controller !== actor && next.controller === actor) effects.control += 1
+    else if (prior.controller === actor && next.controller !== actor) effects.control -= 1
+  }
+
+  for (const [uid] of afterExile) {
+    if (beforeExile.has(uid)) continue
+    if (beforeGrave.has(uid) && !afterGrave.has(uid)) effects.exile += 1
+  }
+
+  return effects
 }
 
 /** Count active immunity stamps / auras for event deltas. */

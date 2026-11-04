@@ -154,6 +154,43 @@ describe('balance', () => {
     expect(Array.isArray(rel)).toBe(true)
   })
 
+  it('attributes destroy / discard pressure onto the resolving swing', () => {
+    let game = apply(createGame({ seed: 17, mode: 'hotseat', names: ['A', 'B'] }), { type: 'ready' })
+    // Seat a 3-INT team for Anti-Mage to wipe.
+    game = seatDefs(game, 1, [['crystal_maiden', 'lion', 'lina']])
+    game = only(game, 0, ['anti_mage'])
+    const tracker = new BalanceTracker(17)
+    tracker.start(game)
+    const before = game
+    game = apply(game, { type: 'play', uid: uid(game, 0, 'anti_mage'), team: 'new' })
+    tracker.observe(before, { type: 'play', uid: uid(before, 0, 'anti_mage'), team: 'new' }, game)
+    game = passTracked(game, tracker)
+    // Resolve Mana Void against the INT team.
+    let guard = 0
+    while (game.pending && guard++ < 20) {
+      const prior = game
+      const team = game.pending.choices.find((choice) => choice.id.startsWith('team:'))
+      const hero = game.pending.choices.find((choice) => choice.id.startsWith('hero:'))
+      const pick = team?.id ?? hero?.id ?? game.pending.choices.find((choice) => choice.id !== 'pass')?.id ?? 'pass'
+      game = apply(game, { type: 'choose', ids: [pick] })
+      tracker.observe(prior, { type: 'choose', ids: [pick] }, game)
+    }
+    const report = tracker.finish(game)
+    const swings = report.swings.filter((swing) => swing.defId === 'anti_mage')
+    const destroys = swings.reduce((sum, swing) => sum + swing.destroy, 0)
+    const swingPressure = swings.reduce((sum, swing) => sum + swing.pressure, 0)
+    expect(destroys).toBeGreaterThanOrEqual(1)
+    expect(swingPressure).toBeGreaterThanOrEqual(1)
+    expect(report.events.destroy).toBeGreaterThanOrEqual(1)
+    const summary = summarizeReports([report])
+    const ability = summary.abilities.find((entry) => entry.defId === 'anti_mage')
+    const heroPlay = summary.heroPlaysTotal.find((entry) => entry.defId === 'anti_mage')
+    expect(ability || heroPlay).toBeTruthy()
+    const rowPressure = (ability?.avgPressure ?? 0) + (heroPlay?.avgPressure ?? 0)
+    const rowDestroy = (ability?.avgDestroy ?? 0) + (heroPlay?.avgDestroy ?? 0)
+    expect(rowPressure + rowDestroy).toBeGreaterThan(0)
+  })
+
   it('splits body placement vs ability swing when a cast prompt opens', () => {
     let game = apply(createGame({ seed: 9, mode: 'hotseat', names: ['A', 'B'] }), { type: 'ready' })
     game = only(game, 0, ['earth_spirit'])
