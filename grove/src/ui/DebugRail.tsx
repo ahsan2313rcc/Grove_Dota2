@@ -220,7 +220,10 @@ export function DebugRail({
 
       <div className="debug-block">
         <h3>By strat</h3>
-        <p className="quiet debug-legend">Place = average finish (1 is first). Self/Rel = mean swing for that strat’s plays.</p>
+        <p className="quiet debug-legend">
+          Place = average finish (1 is first). Self/Rel = mean swing for that strat’s plays.
+          Win rate baselines: 50% in 2p, ~33% in 3p, 25% in 4p — raw 4p % looks lower than 2p even when equally strong.
+        </p>
         {summary.byStrat.length === 0 ? (
           <p className="quiet">No strat samples yet.</p>
         ) : (
@@ -557,9 +560,33 @@ function HeroModeTable({
   open: CardBalanceRow[]
 }) {
   const [mode, setMode] = useState<HeroSwingMode>('total')
-  const rows = mode === 'total' ? total : mode === 'silenced' ? silenced : open
+  const swingRows = mode === 'total' ? total : mode === 'silenced' ? silenced : open
+  // Rel/Press/n follow the cycle; Win%/Abil%/Sil% always use the full play partition from `total`.
+  const winById = useMemo(() => new Map(total.map((row) => [row.defId, row])), [total])
+  const rows = useMemo(
+    () =>
+      swingRows.map((row) => {
+        const wins = winById.get(row.defId)
+        if (!wins) return row
+        return {
+          ...row,
+          presence: wins.presence,
+          wins: wins.wins,
+          winRate: wins.winRate,
+          playWins: wins.playWins,
+          playWinRate: wins.playWinRate,
+          abilityPlays: wins.abilityPlays,
+          abilityWins: wins.abilityWins,
+          abilityWinRate: wins.abilityWinRate,
+          silencedPlays: wins.silencedPlays,
+          silencedWins: wins.silencedWins,
+          silencedWinRate: wins.silencedWinRate,
+        }
+      }),
+    [swingRows, winById],
+  )
   const label =
-    mode === 'total' ? 'Total (body+ability)' : mode === 'silenced' ? 'Silenced' : 'Not silenced'
+    mode === 'total' ? 'Total (body+ability)' : mode === 'silenced' ? 'Silenced' : 'Ability fired'
   return (
     <div className="debug-block">
       <h3>
@@ -574,8 +601,8 @@ function HeroModeTable({
         </button>
       </h3>
       <p className="quiet debug-legend">
-        Body+ability per play. Cycle total → silenced → not silenced. Pres = matches with the card.
-        Win% / Abil% / Sil% = play-weighted seat wins (e.g. 200 plays, 150 ability, 50 silenced).
+        Cycle filters Rel/Press/n (total → silenced → ability fired). Win% / Abil% / Sil% always
+        use the full play split (e.g. 200 plays → Win% 60%, Abil% 80% on 150, Sil% 40% on 50).
       </p>
       <CardSortTable rows={rows} empty="No hero plays yet for this mode." heroWins />
     </div>
@@ -683,7 +710,10 @@ function CardSortTable({
         {
           key: 'win',
           label: 'Win%',
-          get: (row) => pctCell(row.playWinRate, row.playWins, row.plays),
+          get: (row) => {
+            const samples = row.abilityPlays + row.silencedPlays
+            return pctCell(row.playWinRate, row.playWins, samples > 0 ? samples : row.plays)
+          },
           sortValue: (row) => row.playWinRate,
           className: 'debug-num',
         },
