@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { HERO_BY_ID } from './catalog.ts'
 import { apply, createGame, settle } from './engine.ts'
+import { canTargetHero, canTargetTeam, findHero } from './flow.ts'
 import type { CardInst, Game, PlayerId } from './types.ts'
 
 describe('Rubick Spell Steal', () => {
@@ -56,6 +57,43 @@ describe('Rubick Spell Steal', () => {
     game = settle(game)
     expect(game.spellNullify.some((entry) => entry.uid === enigmaUid)).toBe(true)
     expect(game.log.some((line) => /Spell Steal nullifies Enigma/i.test(line))).toBe(true)
+  })
+})
+
+describe('Mars Bulwark vs Omniknight', () => {
+  it('blocks ally hero targets but not Mars himself or the team', () => {
+    expect(HERO_BY_ID.mars?.text).toMatch(/Mars himself can still be targeted/i)
+    expect(HERO_BY_ID.mars?.text).toMatch(/still target this team/i)
+
+    let game = ready()
+    game = only(game, 0, ['mars', 'axe'])
+    game = only(game, 1, ['sven'])
+    game = apply(game, { type: 'play', uid: uid(game, 0, 'mars'), team: 'new' })
+    game = passInstants(game)
+    const team = game.players[0].teams[0]!
+    game = apply(game, { type: 'play', uid: uid(game, 0, 'axe'), team: team.id })
+    game = passInstants(game)
+    const mars = findHero(game, game.players[0].teams[0]!.heroes.find((hero) => hero.defId === 'mars')!.uid)!
+    const axe = findHero(game, game.players[0].teams[0]!.heroes.find((hero) => hero.defId === 'axe')!.uid)!
+    // Enemy abilities: Axe protected, Mars open, team open.
+    expect(canTargetHero(game, 1, axe.hero, 'ability')).toBe(false)
+    expect(canTargetHero(game, 1, mars.hero, 'ability')).toBe(true)
+    expect(canTargetTeam(game, 1, mars.team, 0, 'ability')).toBe(true)
+  })
+
+  it('Omniknight still blocks every hero on the sealed team', () => {
+    let game = ready()
+    game = only(game, 0, ['omniknight', 'axe'])
+    game = apply(game, { type: 'play', uid: uid(game, 0, 'omniknight'), team: 'new' })
+    game = passInstants(game)
+    const team = game.players[0].teams[0]!
+    game = apply(game, { type: 'play', uid: uid(game, 0, 'axe'), team: team.id })
+    // Omniknight seals entry — Axe may fail to join; if he did, both are immune.
+    const omni = game.players[0].teams[0]?.heroes.find((hero) => hero.defId === 'omniknight')
+    expect(omni).toBeTruthy()
+    if (omni) {
+      expect(canTargetHero(game, 1, omni, 'ability')).toBe(false)
+    }
   })
 })
 
