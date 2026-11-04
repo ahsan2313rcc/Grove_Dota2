@@ -147,6 +147,13 @@ export interface ShapeCounts {
   mixTerrainPoints: number
 }
 
+/** Board shape + seat scores captured at the end of a turn. */
+export interface ShapeSnapshot {
+  turn: number
+  scores: number[]
+  seatShapes: ShapeCounts[]
+}
+
 export interface MatchReport {
   seed: number
   seats: number
@@ -161,11 +168,21 @@ export interface MatchReport {
   /** Unique card defIds each seat resolved (for presence / win-rate). */
   seatPlays: string[][]
   rounds: RoundEvent[]
+  /** Per-turn shape/score snapshots (end of each seat's turn). */
+  shapeHistory: ShapeSnapshot[]
   events: EventCounts
   seatEvents: EventCounts[]
   shapes: ShapeCounts
   seatShapes: ShapeCounts[]
   over: boolean
+}
+
+export type TurnGraphMetric = 'rel' | 'self' | 'seatScore' | 'cards' | 'pointsDelta'
+
+export interface TurnGraphPoint {
+  turn: number
+  value: number
+  samples: number
 }
 
 export interface CardBalanceRow {
@@ -289,6 +306,10 @@ export interface BalanceSummary {
   shapeCompare: ShapeCompareRow[]
   eventStats: EventStatRow[]
   byAttr: AttrStatRow[]
+  /** Max turn index across traced matches (for scrubber). */
+  maxTurn: number
+  /** Available hero defIds that appear in swings (for graph picker). */
+  graphHeroes: { defId: string; name: string }[]
 }
 
 const EMPTY_EVENTS = (): EventCounts => ({
@@ -380,6 +401,7 @@ export class BalanceTracker {
   private impact: ImpactFrame | null = null
   private abilitySplit: AbilitySplit | null = null
   private playSeq = 0
+  private shapeHistory: ShapeSnapshot[] = []
 
   constructor(seed: number) {
     this.seed = seed
@@ -393,6 +415,7 @@ export class BalanceTracker {
     this.turnStartScores = totals(game)
     this.seatEvents = game.players.map(() => EMPTY_EVENTS())
     this.seatPlaySets = game.players.map(() => new Set())
+    this.shapeHistory = []
   }
 
   observe(before: Game, action: Action, after: Game) {
@@ -604,6 +627,7 @@ export class BalanceTracker {
       swings: this.swings.slice(),
       seatPlays: game.players.map((_, index) => [...(this.seatPlaySets[index] ?? [])]),
       rounds,
+      shapeHistory: this.shapeHistory.slice(),
       events: { ...this.events },
       seatEvents: game.players.map((_, index) => ({ ...(this.seatEvents[index] ?? EMPTY_EVENTS()) })),
       shapes: shapeCounts(game),
@@ -625,6 +649,11 @@ export class BalanceTracker {
       cardsPlayed: this.turnCards,
       pointsDelta: end - start,
       endScore: end,
+    })
+    this.shapeHistory.push({
+      turn: this.turnNo,
+      scores: endScores.slice(),
+      seatShapes: game.players.map((player) => shapeCountsFor(game, player.id)),
     })
     this.turnCards = 0
     this.turnStartScores = endScores
@@ -895,7 +924,6 @@ export function summarizeReports(reports: MatchReport[], filter: StratFilter = A
   const minPlays = Math.max(1, Math.min(6, Math.floor(Math.max(1, finished.length) / 8)))
   const ranked = cards.filter((row) => row.kind !== 'draw' && row.plays >= minPlays)
   const heroRows = ranked.filter((row) => row.bucket === 'hero')
-  const abilityRows = ranked.filter((row) => row.bucket === 'ability')
   const terrainRows = ranked.filter((row) => row.bucket === 'terrain')
   const lootRows = ranked.filter((row) => row.bucket === 'loot')
   // Include low-sample rows in full tables so sorting can surface rare cards.
@@ -911,8 +939,17 @@ export function summarizeReports(reports: MatchReport[], filter: StratFilter = A
   const winnerScores = finished.map((report) => Math.max(...report.finalScores))
   const turnSeries = seriesFromTurnBuckets(ptsByTurn, cardsByTurn, filteringPlays)
   const matchCount = Math.max(1, scoped.length)
-  const coreStackN = shapeTotals.coreTeams3 + shapeTotals.coreTeams4 + shapeTotals.coreTeams5
-  const pureCoreN = shapeTotals.pureCore3 + shapeTotals.pureCore4 + shapeTotals.pureCore5
+  const maxTurn = Math.max(
+    1,
+    ...scoped.map((report) => report.turns),
+    ...scoped.flatMap((report) => (report.shapeHistory ?? []).map((snap) => snap.turn)),
+  )
+  const heroNameMap = new Map<string, string>()
+  for (const report of scoped) {
+    for (const swing of report.swings) {
+      if (swing.bucket === 'hero' || swing.bucket === 'ability') heroNameMap.set(swing.defId, swing.name)
+    }
+  }
 
   return {
     matches: scoped.length,
@@ -976,28 +1013,7 @@ export function summarizeReports(reports: MatchReport[], filter: StratFilter = A
         plays: row.plays,
       }))
       .sort((a, b) => b.wins - a.wins || a.avgStanding - b.avgStanding || b.avgScore - a.avgScore),
-    shapeCompare: [
-      // Core /match = ×3+×4+×5 stacks. Avg pts = mean team score; pts/card = points / heroes.
-      shapeRow(
-        'core_team',
-        'Core team',
-        coreStackN,
-        shapeTotals.coreTeamPoints,
-        shapeTotals.coreTeamHeroes,
-        pureCoreN,
-        matchCount,
-        coreStackN,
-      ),
-      // Stack buckets: size≥3 and same-attr stack exactly N (5+ for ×5). Dual-count with mix when attrs ≥3.
-      shapeRow('core_team_3', 'Core ×3 same attr', shapeTotals.coreTeams3, shapeTotals.coreTeamPoints3, shapeTotals.coreTeamHeroes3, shapeTotals.pureCore3, matchCount, shapeTotals.coreTeams3),
-      shapeRow('core_team_4', 'Core ×4 same attr', shapeTotals.coreTeams4, shapeTotals.coreTeamPoints4, shapeTotals.coreTeamHeroes4, shapeTotals.pureCore4, matchCount, shapeTotals.coreTeams4),
-      shapeRow('core_team_5', 'Core ×5 same attr', shapeTotals.coreTeams5, shapeTotals.coreTeamPoints5, shapeTotals.coreTeamHeroes5, shapeTotals.pureCore5, matchCount, shapeTotals.coreTeams5),
-      shapeRow('mix_team', 'Mixed team', shapeTotals.mixTeams, shapeTotals.mixTeamPoints, shapeTotals.mixTeamHeroes, shapeTotals.pureMix3 + shapeTotals.pureMix4, matchCount, shapeTotals.mixTeams),
-      shapeRow('mix_team_3', 'Mixed · 3 attrs', shapeTotals.mixTeams3, shapeTotals.mixTeamPoints3, shapeTotals.mixTeamHeroes3, shapeTotals.pureMix3, matchCount, shapeTotals.mixTeams3),
-      shapeRow('mix_team_4', 'Mixed · 4 attrs', shapeTotals.mixTeams4, shapeTotals.mixTeamPoints4, shapeTotals.mixTeamHeroes4, shapeTotals.pureMix4, matchCount, shapeTotals.mixTeams4),
-      shapeRow('core_terrain', 'Core terrain', shapeTotals.coreTerrains, shapeTotals.coreTerrainPoints, shapeTotals.coreTerrains * 3, shapeTotals.coreTerrains, matchCount),
-      shapeRow('mix_terrain', 'Mixed terrain', shapeTotals.mixTerrains, shapeTotals.mixTerrainPoints, shapeTotals.mixTerrains * 3, shapeTotals.mixTerrains, matchCount),
-    ],
+    shapeCompare: buildShapeCompareRows(shapeTotals, matchCount),
     eventStats: [
       eventRow('drawDeck', 'Draw from deck', eventTotals.drawDeck, matchCount),
       eventRow('drawGrave', 'Draw from grave', eventTotals.drawGrave, matchCount),
@@ -1023,7 +1039,136 @@ export function summarizeReports(reports: MatchReport[], filter: StratFilter = A
         avgRelativeSwing: row.relative / row.plays,
       }))
       .sort((a, b) => b.plays - a.plays || Math.abs(b.avgRelativeSwing) - Math.abs(a.avgRelativeSwing)),
+    maxTurn,
+    graphHeroes: [...heroNameMap.entries()]
+      .map(([defId, name]) => ({ defId, name }))
+      .sort((a, b) => a.name.localeCompare(b.name)),
   }
+}
+
+/** Shape compare rows for a scrubber turn (`null` = final board). */
+export function summarizeShapesAtTurn(
+  reports: MatchReport[],
+  filter: StratFilter,
+  turn: number | null,
+): ShapeCompareRow[] {
+  const scoped = reports.filter((report) => {
+    if (filter.mixOnly && !report.mixture) return false
+    if (filter.strats.length === 0) return true
+    return filter.strats.some((strat) => report.seatStrats.includes(strat))
+  })
+  const shapeTotals = EMPTY_SHAPES()
+  let matchCount = 0
+  for (const report of scoped) {
+    matchCount += 1
+    const snap =
+      turn == null
+        ? null
+        : [...report.shapeHistory].reverse().find((entry) => entry.turn <= turn) ?? report.shapeHistory[0] ?? null
+    const seats = snap ? snap.seatShapes : report.seatShapes
+    for (let seat = 0; seat < report.seatStrats.length; seat += 1) {
+      if (!allowsStrat(filter, report.seatStrats[seat]!)) continue
+      addShapes(shapeTotals, seats[seat] ?? EMPTY_SHAPES())
+    }
+  }
+  return buildShapeCompareRows(shapeTotals, Math.max(1, matchCount))
+}
+
+/** Average Y value by turn for the scrubber graph. */
+export function buildTurnGraph(
+  reports: MatchReport[],
+  filter: StratFilter,
+  metric: TurnGraphMetric,
+  heroDefId: string | null = null,
+): TurnGraphPoint[] {
+  const scoped = reports.filter((report) => {
+    if (filter.mixOnly && !report.mixture) return false
+    if (filter.strats.length === 0) return true
+    return filter.strats.some((strat) => report.seatStrats.includes(strat))
+  })
+  const buckets = new Map<number, number[]>()
+  const push = (turn: number, value: number) => {
+    const list = buckets.get(turn) ?? []
+    list.push(value)
+    buckets.set(turn, list)
+  }
+
+  if (metric === 'rel' || metric === 'self') {
+    for (const report of scoped) {
+      const byPlay = new Map<number, SwingEvent[]>()
+      for (const swing of report.swings) {
+        if (!allowsStrat(filter, swing.actorStrat)) continue
+        if (heroDefId && swing.defId !== heroDefId) continue
+        if (swing.bucket !== 'hero' && swing.bucket !== 'ability') continue
+        if (swing.playId == null) {
+          push(swing.turn, metric === 'rel' ? swing.relativeSwing : swing.actorSwing)
+          continue
+        }
+        const list = byPlay.get(swing.playId) ?? []
+        list.push(swing)
+        byPlay.set(swing.playId, list)
+      }
+      for (const group of byPlay.values()) {
+        const turn = group[0]!.turn
+        const value = group.reduce(
+          (sum, swing) => sum + (metric === 'rel' ? swing.relativeSwing : swing.actorSwing),
+          0,
+        )
+        push(turn, value)
+      }
+    }
+  } else if (metric === 'seatScore') {
+    for (const report of scoped) {
+      for (const snap of report.shapeHistory) {
+        for (let seat = 0; seat < report.seatStrats.length; seat += 1) {
+          if (!allowsStrat(filter, report.seatStrats[seat]!)) continue
+          push(snap.turn, snap.scores[seat] ?? 0)
+        }
+      }
+    }
+  } else {
+    for (const report of scoped) {
+      for (const round of report.rounds) {
+        if (!allowsStrat(filter, round.actorStrat)) continue
+        push(round.turn, metric === 'cards' ? round.cardsPlayed : round.pointsDelta)
+      }
+    }
+  }
+
+  return [...buckets.entries()]
+    .sort((a, b) => a[0] - b[0])
+    .map(([turn, values]) => ({
+      turn,
+      value: values.reduce((sum, n) => sum + n, 0) / values.length,
+      samples: values.length,
+    }))
+}
+
+function maxCoreTeamPoints(): number {
+  const rules = getScoreRules()
+  return rules.heroPoints * 5 + (rules.coreBonus[4] ?? 0)
+}
+
+function maxMixTeamPoints(): number {
+  const rules = getScoreRules()
+  const atk = rules.attackOnMix ? (rules.attackBonus[4] ?? 0) : 0
+  return rules.heroPoints * 5 + (rules.mixBonus[3] ?? 0) + atk
+}
+
+function buildShapeCompareRows(shapeTotals: ShapeCounts, matchCount: number): ShapeCompareRow[] {
+  const coreStackN = shapeTotals.coreTeams3 + shapeTotals.coreTeams4 + shapeTotals.coreTeams5
+  const pureCoreN = shapeTotals.pureCore3 + shapeTotals.pureCore4 + shapeTotals.pureCore5
+  return [
+    shapeRow('core_team', 'Core team', coreStackN, shapeTotals.coreTeamPoints, shapeTotals.coreTeamHeroes, pureCoreN, matchCount, coreStackN, maxCoreTeamPoints()),
+    shapeRow('core_team_3', 'Core ×3 same attr', shapeTotals.coreTeams3, shapeTotals.coreTeamPoints3, shapeTotals.coreTeamHeroes3, shapeTotals.pureCore3, matchCount, shapeTotals.coreTeams3, maxCoreTeamPoints()),
+    shapeRow('core_team_4', 'Core ×4 same attr', shapeTotals.coreTeams4, shapeTotals.coreTeamPoints4, shapeTotals.coreTeamHeroes4, shapeTotals.pureCore4, matchCount, shapeTotals.coreTeams4, maxCoreTeamPoints()),
+    shapeRow('core_team_5', 'Core ×5 same attr', shapeTotals.coreTeams5, shapeTotals.coreTeamPoints5, shapeTotals.coreTeamHeroes5, shapeTotals.pureCore5, matchCount, shapeTotals.coreTeams5, maxCoreTeamPoints()),
+    shapeRow('mix_team', 'Mixed team', shapeTotals.mixTeams, shapeTotals.mixTeamPoints, shapeTotals.mixTeamHeroes, shapeTotals.pureMix3 + shapeTotals.pureMix4, matchCount, shapeTotals.mixTeams, maxMixTeamPoints()),
+    shapeRow('mix_team_3', 'Mixed · 3 attrs', shapeTotals.mixTeams3, shapeTotals.mixTeamPoints3, shapeTotals.mixTeamHeroes3, shapeTotals.pureMix3, matchCount, shapeTotals.mixTeams3, maxMixTeamPoints()),
+    shapeRow('mix_team_4', 'Mixed · 4 attrs', shapeTotals.mixTeams4, shapeTotals.mixTeamPoints4, shapeTotals.mixTeamHeroes4, shapeTotals.pureMix4, matchCount, shapeTotals.mixTeams4, maxMixTeamPoints()),
+    shapeRow('core_terrain', 'Core terrain', shapeTotals.coreTerrains, shapeTotals.coreTerrainPoints, shapeTotals.coreTerrains * 3, shapeTotals.coreTerrains, matchCount),
+    shapeRow('mix_terrain', 'Mixed terrain', shapeTotals.mixTerrains, shapeTotals.mixTerrainPoints, shapeTotals.mixTerrains * 3, shapeTotals.mixTerrains, matchCount),
+  ]
 }
 
 function rankHigh(rows: CardBalanceRow[]): CardBalanceRow[] {
@@ -1046,17 +1191,22 @@ function shapeRow(
   cards: number,
   pureCount: number,
   matches: number,
-  /** Denominator for avg pts (defaults to `count`). Use pure mono-core count for Core ×N rows. */
+  /** Denominator for avg pts (defaults to `count`). */
   pointsDenom: number = count,
+  /** Sanity cap for a single team score under current rules (core ≤15, mix ≤12 by default). */
+  maxTeamPoints?: number,
 ): ShapeCompareRow {
   const denom = pointsDenom > 0 ? pointsDenom : 0
+  const rawAvg = denom ? points / denom : 0
+  // Cap protects balancing UI if a stale sample slips in; raw still visible via totalPoints/count.
+  const avgPoints = maxTeamPoints != null ? Math.min(rawAvg, maxTeamPoints) : rawAvg
   return {
     id,
     label,
     count,
     avgCount: count / matches,
     totalPoints: points,
-    avgPoints: denom ? points / denom : 0,
+    avgPoints,
     pureCount,
     avgPtsPerCard: cards ? points / cards : 0,
   }
@@ -1298,7 +1448,7 @@ export function abilityEffectType(defId: string): AbilityEffectType {
   return 'other'
 }
 
-/** Largest mono-attribute stack on the team (Meepo counts as 2). Multi-attr heroes do not pad a stack. */
+/** Largest mono-attribute stack on the team. Multi-attr heroes do not pad a stack. */
 function maxSameAttrStackFor(game: Game, team: Team): number {
   const tallies: Record<string, number> = { STR: 0, AGI: 0, INT: 0, UNI: 0 }
   for (const hero of team.heroes) {

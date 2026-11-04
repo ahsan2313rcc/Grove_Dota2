@@ -21,7 +21,7 @@ export function isCombo(cards: CardInst[]): boolean {
 
 export function heroMarks(hero: BoardHero, team: Team): string[] {
   const marks: string[] = []
-  if (hero.defId === 'meepo') marks.push('Counts as 2')
+  if (hero.defId === 'meepo') marks.push('+1 / combo')
   if (hero.token) marks.push('Neutral')
   if (hero.roshan) marks.push('Roshan')
   if (hero.shield) marks.push('Shield')

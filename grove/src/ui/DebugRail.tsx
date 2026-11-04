@@ -1,6 +1,15 @@
-import { useState, type ReactNode } from 'react'
+import { useMemo, useState, type ReactNode } from 'react'
 import { AI_STRATS, stratLabel } from '../game/ai.ts'
-import type { BalanceSummary, CardBalanceRow, MatchReport, StratFilter } from '../game/balance.ts'
+import {
+  buildTurnGraph,
+  summarizeShapesAtTurn,
+  type BalanceSummary,
+  type CardBalanceRow,
+  type MatchReport,
+  type ShapeCompareRow,
+  type StratFilter,
+  type TurnGraphMetric,
+} from '../game/balance.ts'
 import type { AiStrat } from '../game/types.ts'
 import { display } from '../game/catalog.ts'
 import { scoreState, scoreTeam } from '../game/flow.ts'
@@ -71,6 +80,20 @@ export function DebugRail({
   const active = game?.players[game.active]
   void _focus
   void _onFocus
+  const [scrubTurn, setScrubTurn] = useState<number | null>(null)
+  const [graphMetric, setGraphMetric] = useState<TurnGraphMetric>('rel')
+  const [graphHero, setGraphHero] = useState<string>('')
+
+  const maxTurn = Math.max(1, summary.maxTurn || 1)
+  const effectiveTurn = scrubTurn == null ? null : Math.min(scrubTurn, maxTurn)
+  const shapeRows = useMemo(
+    () => (effectiveTurn == null ? summary.shapeCompare : summarizeShapesAtTurn(reports, stratFilter, effectiveTurn)),
+    [effectiveTurn, reports, stratFilter, summary.shapeCompare],
+  )
+  const graphPoints = useMemo(
+    () => buildTurnGraph(reports, stratFilter, graphMetric, graphHero || null),
+    [reports, stratFilter, graphMetric, graphHero],
+  )
 
   return (
     <aside className="debug-rail" data-testid="debug-rail">
@@ -194,11 +217,11 @@ export function DebugRail({
 
       <div className="debug-block">
         <h3>By strat</h3>
-        <p className="quiet debug-legend">Place = average finish (1 is first).</p>
+        <p className="quiet debug-legend">Place = average finish (1 is first). Self/Rel = mean swing for that strat’s plays.</p>
         {summary.byStrat.length === 0 ? (
           <p className="quiet">No strat samples yet.</p>
         ) : (
-          <table className="debug-table">
+          <table className="debug-table debug-table-compact">
             <thead>
               <tr><th>Strat</th><th>W</th><th>Avg</th><th>Place</th><th>Self</th><th>Rel</th></tr>
             </thead>
@@ -206,11 +229,11 @@ export function DebugRail({
               {summary.byStrat.map((row) => (
                 <tr key={row.strat}>
                   <td><strong>{stratLabel(row.strat)}</strong><small>{row.plays} plays</small></td>
-                  <td>{row.wins}/{row.finishes}</td>
-                  <td>{fmt(row.avgScore)}</td>
-                  <td>{fmt(row.avgStanding)}</td>
-                  <td>{signed(row.avgSelfSwing)}</td>
-                  <td>{signed(row.avgRelSwing)}</td>
+                  <td className="debug-num">{row.wins}/{row.finishes}</td>
+                  <td className="debug-num">{fmt(row.avgScore)}</td>
+                  <td className="debug-num">{fmt(row.avgStanding)}</td>
+                  <td className="debug-num">{signed(row.avgSelfSwing)}</td>
+                  <td className="debug-num">{signed(row.avgRelSwing)}</td>
                 </tr>
               ))}
             </tbody>
@@ -219,36 +242,67 @@ export function DebugRail({
       </div>
 
       <div className="debug-block">
-        <h3>Avg points / turn</h3>
-        <Sparkline values={summary.avgPtsByTurn} labels={summary.turnLabels} testId="graph-pts" yLabel="pts" />
-      </div>
-
-      <div className="debug-block">
-        <h3>Avg cards / turn</h3>
-        <Sparkline values={summary.avgCardsByTurn} labels={summary.turnLabels} testId="graph-cards" yLabel="cards" baselineZero />
-      </div>
-
-      <div className="debug-block">
-        <h3>Shape compare</h3>
+        <h3>Turn scrubber</h3>
         <p className="quiet debug-legend">
-          Core ×3/×4/×5: 3+ heroes with a same-attr stack of exactly 3 / 4 / 5+. Mixed · 3/4: 3+ distinct attributes.
-          A team can count in both (e.g. 3× STR + 3 attrs). Avg pts = mean team score; pts/card = points ÷ heroes.
-          When a core stack is active, attack bonus is excluded from these points.
-          Pure = mono-attribute cores only.
+          Shape table below uses the board at this turn (or Final). Snapshots are taken at the end of each seat’s turn.
         </p>
-        <SortableTable
-          empty="No shape samples yet."
-          columns={[
-            { key: 'label', label: 'Shape', get: (row) => row.label, sortValue: (row) => row.label },
-            { key: 'count', label: 'n', get: (row) => String(row.count), sortValue: (row) => row.count },
-            { key: 'pure', label: 'Pure', get: (row) => String(row.pureCount), sortValue: (row) => row.pureCount },
-            { key: 'avg', label: '/match', get: (row) => fmt(row.avgCount), sortValue: (row) => row.avgCount },
-            { key: 'pts', label: 'Avg pts', get: (row) => fmt(row.avgPoints), sortValue: (row) => row.avgPoints },
-            { key: 'ppc', label: 'Pts/card', get: (row) => fmt(row.avgPtsPerCard), sortValue: (row) => row.avgPtsPerCard },
-          ]}
-          rows={summary.shapeCompare}
-          rowKey={(row) => row.id}
-        />
+        <div className="debug-scrub">
+          <label>
+            Turn
+            <input
+              data-testid="debug-turn-scrub"
+              type="range"
+              min={1}
+              max={maxTurn}
+              value={effectiveTurn ?? maxTurn}
+              onChange={(event) => setScrubTurn(Number(event.target.value))}
+            />
+          </label>
+          <strong>{effectiveTurn == null ? `Final (T${maxTurn})` : `T${effectiveTurn}`}</strong>
+          <button type="button" className="debug-mode-cycle" onClick={() => setScrubTurn(null)}>Final</button>
+        </div>
+      </div>
+
+      <div className="debug-block">
+        <h3>Turn graph</h3>
+        <div className="debug-graph-controls">
+          <label>
+            Y
+            <select data-testid="debug-graph-metric" value={graphMetric} onChange={(event) => setGraphMetric(event.target.value as TurnGraphMetric)}>
+              <option value="rel">Hero Rel</option>
+              <option value="self">Hero Self</option>
+              <option value="seatScore">Seat score</option>
+              <option value="pointsDelta">Turn Δ pts</option>
+              <option value="cards">Cards / turn</option>
+            </select>
+          </label>
+          <label>
+            Hero
+            <select
+              data-testid="debug-graph-hero"
+              value={graphHero}
+              onChange={(event) => setGraphHero(event.target.value)}
+              disabled={graphMetric !== 'rel' && graphMetric !== 'self'}
+            >
+              <option value="">All heroes</option>
+              {summary.graphHeroes.map((hero) => (
+                <option key={hero.defId} value={hero.defId}>{hero.name}</option>
+              ))}
+            </select>
+          </label>
+        </div>
+        <p className="quiet debug-legend">X = turn. Hero Rel/Self combine body+ability per play. Seat score averages filtered seats.</p>
+        <TurnGraph points={graphPoints} testId="graph-turn-metric" />
+      </div>
+
+      <div className="debug-block">
+        <h3>Shape compare {effectiveTurn == null ? '(final)' : `(T${effectiveTurn})`}</h3>
+        <p className="quiet debug-legend">
+          Core ×N = same-attr stack N (5+ → ×5). Mix · M = M distinct attrs. Dual-count allowed.
+          Avg pts = mean team score (core ≤15 / mix ≤12 under default rules, attack stripped when core active).
+          Pts/card = points ÷ heroes on those teams. Pure = mono cores only.
+        </p>
+        <ShapeTable rows={shapeRows} />
       </div>
 
       <div className="debug-block">
@@ -265,75 +319,12 @@ export function DebugRail({
         />
       </div>
 
-      <div className="debug-block">
-        <h3>Heroes by attribute</h3>
-        <SortableTable
-          empty="No hero plays yet."
-          columns={[
-            { key: 'attr', label: 'Attr', get: (row) => attrLabel(row.attr), sortValue: (row) => row.attr },
-            { key: 'n', label: 'n', get: (row) => String(row.plays), sortValue: (row) => row.plays },
-            { key: 'self', label: 'Self', get: (row) => signed(row.avgActorSwing), sortValue: (row) => row.avgActorSwing },
-            { key: 'rel', label: 'Rel', get: (row) => signed(row.avgRelativeSwing), sortValue: (row) => row.avgRelativeSwing },
-          ]}
-          rows={summary.byAttr}
-          rowKey={(row) => row.attr}
-          defaultSort={{ key: 'n', dir: 'desc' }}
-        />
-      </div>
-
-      <div className="debug-block">
-        <h3>Swing by kind</h3>
-        <p className="quiet debug-legend">Self = your score change. Rel = Self minus average opponent score change. Ability = on-play cast effect after the body is seated.</p>
-        <SortableTable
-          empty="No swings yet."
-          columns={[
-            { key: 'kind', label: 'Kind', get: (row) => row.kind, sortValue: (row) => row.kind },
-            { key: 'plays', label: 'Plays', get: (row) => String(row.plays), sortValue: (row) => row.plays },
-            { key: 'self', label: 'Self', get: (row) => signed(row.avgActorSwing), sortValue: (row) => row.avgActorSwing },
-            { key: 'rel', label: 'Rel', get: (row) => signed(row.avgRelativeSwing), sortValue: (row) => row.avgRelativeSwing },
-          ]}
-          rows={summary.kindSwing}
-          rowKey={(row) => row.kind}
-          defaultSort={{ key: 'rel', dir: 'desc' }}
-        />
-      </div>
-
-      <div className="debug-block">
-        <h3>Ability types</h3>
-        <p className="quiet debug-legend">Primary effect family of activated abilities (n = activations). Win% = matches where a seat fired that type at least once.</p>
-        <SortableTable
-          empty="No ability activations yet."
-          columns={[
-            { key: 'type', label: 'Type', get: (row) => row.label, sortValue: (row) => row.label },
-            { key: 'n', label: 'n', get: (row) => String(row.plays), sortValue: (row) => row.plays },
-            { key: 'rel', label: 'Rel', get: (row) => signed(row.avgRelativeSwing), sortValue: (row) => row.avgRelativeSwing },
-            { key: 'self', label: 'Self', get: (row) => signed(row.avgActorSwing), sortValue: (row) => row.avgActorSwing },
-            {
-              key: 'win',
-              label: 'Win%',
-              get: (row) => (row.presence > 0 ? `${Math.round(row.winRate * 100)}%` : '—'),
-              sortValue: (row) => row.winRate,
-            },
-          ]}
-          rows={summary.byAbilityType}
-          rowKey={(row) => row.id}
-          defaultSort={{ key: 'n', dir: 'desc' }}
-        />
-      </div>
-
-      <p className="quiet debug-legend">
-        Heroes table cycles total / silenced / not silenced (body + ability combined per play).
-        Abilities table is cast-effect only. Rel = your Δ minus average opponent Δ.
-      </p>
       <HeroModeTable
         total={summary.heroPlaysTotal}
         silenced={summary.heroPlaysSilenced}
         open={summary.heroPlaysOpen}
       />
-      <div className="debug-block">
-        <h3>Abilities (effect)</h3>
-        <CardSortTable rows={summary.abilities} empty="No ability activations yet." />
-      </div>
+
       <div className="debug-block">
         <h3>Terrains</h3>
         <CardSortTable rows={summary.terrains} empty="No terrain plays yet." />
@@ -344,7 +335,7 @@ export function DebugRail({
       </div>
 
       <div className="debug-block">
-        <h3>Highest impact</h3>
+        <h3>Highest |Rel|</h3>
         <CardSortTable rows={summary.contested} empty="No contested swings yet." defaultSort={{ key: 'abs', dir: 'desc' }} />
       </div>
 
@@ -533,6 +524,63 @@ function HeroModeTable({
   )
 }
 
+function ShapeTable({ rows }: { rows: ShapeCompareRow[] }) {
+  if (rows.length === 0) return <p className="quiet">No shape samples yet.</p>
+  return (
+    <table className="debug-table debug-table-compact debug-table-shape" data-testid="debug-shape-table">
+      <thead>
+        <tr>
+          <th>Shape</th>
+          <th title="Teams counted (dual-count allowed)">n</th>
+          <th title="Mean count per match">/match</th>
+          <th title="Mean team score in bucket (core ≤15 / mix ≤12)">Avg pts</th>
+          <th title="Points ÷ heroes on those teams">Pts/card</th>
+          <th title="Mono cores, or mix with matching hero count">Pure</th>
+        </tr>
+      </thead>
+      <tbody>
+        {rows.map((row) => (
+          <tr key={row.id} data-shape={row.id}>
+            <td>
+              <strong>{row.label}</strong>
+              <small>{row.id.replaceAll('_', ' ')}</small>
+            </td>
+            <td className="debug-num">{row.count}</td>
+            <td className="debug-num">{fmt(row.avgCount)}</td>
+            <td className="debug-num">{fmt(row.avgPoints)}</td>
+            <td className="debug-num">{fmt(row.avgPtsPerCard)}</td>
+            <td className="debug-num">{row.pureCount}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  )
+}
+
+function TurnGraph({
+  points,
+  testId,
+}: {
+  points: { turn: number; value: number; samples: number }[]
+  testId: string
+}) {
+  const values = points.map((point) => point.value)
+  const labels = points.map((point) => point.turn)
+  const samples = points.reduce((sum, point) => sum + point.samples, 0)
+  if (values.length === 0) {
+    return <p className="quiet" data-testid={testId}>No turn samples yet.</p>
+  }
+  return (
+    <Sparkline
+      values={values}
+      labels={labels}
+      testId={testId}
+      yLabel={`${samples} samples`}
+      baselineZero
+    />
+  )
+}
+
 function CardSortTable({
   rows,
   empty = 'No card plays yet.',
@@ -564,15 +612,16 @@ function CardSortTable({
           ),
           sortValue: (row) => row.name,
         },
-        { key: 'n', label: 'n', get: (row) => String(row.plays), sortValue: (row) => row.plays },
-        { key: 'rel', label: 'Rel', get: (row) => signed(row.avgRelativeSwing), sortValue: (row) => row.avgRelativeSwing },
-        { key: 'abs', label: '|Rel|', get: (row) => fmt(row.avgAbsSwing), sortValue: (row) => row.avgAbsSwing },
-        { key: 'self', label: 'Self', get: (row) => signed(row.avgActorSwing), sortValue: (row) => row.avgActorSwing },
+        { key: 'n', label: 'n', get: (row) => String(row.plays), sortValue: (row) => row.plays, className: 'debug-num' },
+        { key: 'rel', label: 'Rel', get: (row) => signed(row.avgRelativeSwing), sortValue: (row) => row.avgRelativeSwing, className: 'debug-num' },
+        { key: 'abs', label: '|Rel|', get: (row) => fmt(row.avgAbsSwing), sortValue: (row) => row.avgAbsSwing, className: 'debug-num' },
+        { key: 'self', label: 'Self', get: (row) => signed(row.avgActorSwing), sortValue: (row) => row.avgActorSwing, className: 'debug-num' },
         {
           key: 'win',
           label: 'Win%',
           get: (row) => (row.presence > 0 ? `${Math.round(row.winRate * 100)}%` : '—'),
           sortValue: (row) => row.winRate,
+          className: 'debug-num',
         },
       ]}
     />

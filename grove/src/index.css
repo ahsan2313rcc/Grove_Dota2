@@ -313,6 +313,60 @@ button.debug-mode-cycle:hover {
   font-size: 0.72rem;
   line-height: 1.35;
 }
+.debug-scrub,
+.debug-graph-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+.debug-scrub label,
+.debug-graph-controls label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.72rem;
+  color: var(--cream-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.debug-scrub input[type='range'] {
+  width: min(100%, 180px);
+  accent-color: var(--gold);
+}
+.debug-graph-controls select {
+  min-width: 8.5rem;
+  padding: 0.3rem 0.45rem;
+  border: 1px solid var(--line);
+  background: rgba(0, 0, 0, 0.25);
+  color: var(--cream);
+  border-radius: 4px;
+}
+.debug-table-compact td,
+.debug-table-compact th {
+  padding: 3px 5px;
+}
+.debug-table-shape td strong {
+  font-size: 0.8rem;
+}
+.debug-num {
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  white-space: nowrap;
+}
+.debug-table td.debug-num,
+.debug-table th:has(+ th) {
+  font-variant-numeric: tabular-nums;
+}
+.debug-table-sort tbody tr:nth-child(even),
+.debug-table-compact tbody tr:nth-child(even) {
+  background: rgba(255, 255, 255, 0.03);
+}
+.debug-table-sort tbody tr:hover,
+.debug-table-compact tbody tr:hover {
+  background: rgba(212, 175, 106, 0.08);
+}
 .debug-rel-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

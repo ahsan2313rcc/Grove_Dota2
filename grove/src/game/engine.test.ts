@@ -39,11 +39,11 @@ describe('scoring', () => {
       { attrs: ['UNI'], range: 'Melee', count: 1 },
     ])
     expect(fullMix.points).toBe(12)
-    // 4 STR + 1 UNI: core ×4 (+6) wins over mix×2 (+0); attack on mix (+3) → 5+6+3=14
+    // 4 STR + 1 UNI: core ×4 (+6) wins; attack follows attackOnCore (off) → 5+6=11 (not mix attack)
     expect(scoreBodies([
       { attrs: ['STR'], range: 'Melee', count: 4 },
       { attrs: ['UNI'], range: 'Melee', count: 1 },
-    ]).points).toBe(14)
+    ]).points).toBe(11)
     expect(scoreBodies([
       { attrs: ['STR'], range: 'Melee', count: 4 },
       { attrs: ['AGI'], range: 'Melee', count: 1 },

@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest'
 import { AI_STRATS } from './ai.ts'
-import { ALL_STRAT_FILTER, BalanceTracker, runMatchFast, summarizeReports } from './balance.ts'
+import {
+  ALL_STRAT_FILTER,
+  BalanceTracker,
+  buildTurnGraph,
+  runMatchFast,
+  summarizeReports,
+  summarizeShapesAtTurn,
+} from './balance.ts'
 import { apply, createGame } from './engine.ts'
 import { blankTeam, makeCard, makeHero, setPlayer } from './flow.ts'
 import type { CardInst, Game, PlayerId } from './types.ts'
@@ -124,6 +131,27 @@ describe('balance', () => {
     const core3 = summary.shapeCompare.find((row) => row.id === 'core_team_3')!
     expect(core3.count).toBe(3)
     expect(core3.avgPtsPerCard).toBeGreaterThan(0)
+  })
+
+  it('records shapeHistory and caps core avg pts at team max', () => {
+    const report = runMatchFast(21, 2)
+    expect(report.shapeHistory.length).toBeGreaterThan(0)
+    expect(report.shapeHistory.every((snap) => snap.turn >= 1 && snap.scores.length === 2)).toBe(true)
+    const summary = summarizeReports([report])
+    expect(summary.maxTurn).toBeGreaterThanOrEqual(1)
+    expect(summary.graphHeroes.length).toBeGreaterThan(0)
+    for (const row of summary.shapeCompare) {
+      if (row.id.startsWith('core_team')) expect(row.avgPoints).toBeLessThanOrEqual(15)
+      if (row.id.startsWith('mix_team')) expect(row.avgPoints).toBeLessThanOrEqual(15)
+    }
+    const mid = Math.max(1, Math.floor(summary.maxTurn / 2))
+    const atMid = summarizeShapesAtTurn([report], ALL_STRAT_FILTER, mid)
+    expect(atMid).toHaveLength(9)
+    const graph = buildTurnGraph([report], ALL_STRAT_FILTER, 'seatScore', null)
+    expect(graph.length).toBeGreaterThan(0)
+    expect(graph.every((point) => point.samples > 0)).toBe(true)
+    const rel = buildTurnGraph([report], ALL_STRAT_FILTER, 'rel', summary.graphHeroes[0]?.defId ?? null)
+    expect(Array.isArray(rel)).toBe(true)
   })
 
   it('splits body placement vs ability swing when a cast prompt opens', () => {
