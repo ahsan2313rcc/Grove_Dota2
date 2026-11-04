@@ -127,7 +127,7 @@ export interface CastResume {
 export type Resume =
   | CastResume
   | { kind: 'save'; uid: string; cause: string; force: boolean }
-  | { kind: 'counter'; uid: string; team: string; actor: PlayerId; extras?: string[] }
+  | { kind: 'counter'; uid: string; team: string; actor: PlayerId; extras?: string[]; fromGrave?: boolean }
   | { kind: 'pugna'; cast: CastResume }
   | { kind: 'venomancer'; cast: CastResume }
   /** Opponents may play an Instant before a hero ability fires. */
@@ -272,6 +272,11 @@ export interface Game {
   freePlay: string[]
   /** Most recently played hero card (for Spirit Breaker). */
   lastPlayedHero: { uid: string; defId: string; player: PlayerId; turn: number } | null
+  /**
+   * Controllers who had Death Prophet protection during the current destroy cascade.
+   * Cleared when the destroy queue drains so mid-queue DP deaths still exile teammates.
+   */
+  exorcismPulse: PlayerId[]
   /** Medusa: full exiled teams held until she leaves. */
   medusaHold: { medusaUid: string; owner: PlayerId; cards: CardInst[] }[]
   /** Lifestealer Infest: return LS when host is destroyed. */

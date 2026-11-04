@@ -236,6 +236,7 @@ function blank(seed: number, mode: 'hotseat' | 'ai' | 'online', seats: SeatSpec[
     primalItems: null,
     freePlay: [],
     lastPlayedHero: null,
+    exorcismPulse: [],
     medusaHold: [],
     infests: [],
     ancient: null,
@@ -287,6 +288,9 @@ export function settle(state: Game): Game {
       const [item, ...rest] = state.queue
       state = performDestroy({ ...state, queue: rest }, item!)
       continue
+    }
+    if (state.exorcismPulse.length > 0) {
+      state = { ...state, exorcismPulse: [] }
     }
     if (state.echoes.length > 0) {
       const [echo, ...rest] = state.echoes
@@ -432,19 +436,35 @@ function startTurn(state: Game, id: PlayerId): Game {
   return state
 }
 
+function resolveComboCard(state: Game, actor: PlayerId, uid: string): CardInst | null {
+  const hand = state.players[actor]?.hand.find((card) => card.uid === uid)
+  if (hand) return hand
+  const top = playableFromGrave(state, actor)
+  if (top && top.uid === uid && top.kind === 'terrain') return top
+  return null
+}
+
 function combo(state: Game, uids: string[]): Game {
   const actor = state.active
   if (cardsLocked(state, actor)) return log(state, 'Chronosphere stops you from playing cards.')
   if (uids.length !== 3) return state
-  const cards = uids.map((uid) => state.players[actor].hand.find((card) => card.uid === uid))
+  const cards = uids.map((uid) => resolveComboCard(state, actor, uid))
   if (cards.some((card) => !card || card.kind !== 'terrain')) return state
   const picked = cards as CardInst[]
   const same = picked.every((card) => card.defId === picked[0]?.defId)
   const rules = getScoreRules()
   const points = same ? rules.coreCombo : rules.mixCombo
   const kind = same ? (picked[0]?.defId as 'river' | 'jungle' | 'lane') : 'mixed'
+  const graveTop = playableFromGrave(state, actor)
+  const fromGraveUid = graveTop && uids.includes(graveTop.uid) ? graveTop.uid : null
   let next = state
-  for (const uid of uids) next = removeHand(next, actor, uid)
+  if (fromGraveUid) {
+    next = { ...next, grave: next.grave.filter((card) => card.uid !== fromGraveUid) }
+  }
+  for (const uid of uids) {
+    if (uid === fromGraveUid) continue
+    next = removeHand(next, actor, uid)
+  }
   let comboId = ''
   ;[next, comboId] = mint(next)
   next = setPlayer(next, actor, (player) => ({
@@ -495,7 +515,7 @@ function play(state: Game, uid: string, team: string, extras: string[] = []): Ga
   let held = findHand(state, uid)
   let actor = held?.player.id ?? state.active
 
-  // Death Prophet: play the top card of the grave (your turn only).
+  // Death Prophet: play the top card of the grave (your turn only). Terrains must combo — do not pull them here.
   const graveTop = state.grave[state.grave.length - 1]
   const fromGrave =
     !held &&
@@ -519,6 +539,9 @@ function play(state: Game, uid: string, team: string, extras: string[] = []): Ga
     held = findHand(state, uid)
   }
   if (fromGrave && graveTop) {
+    if (graveTop.kind === 'terrain') {
+      return log(state, 'Terrains are played three at a time — include the grave terrain in a combo.')
+    }
     state = { ...state, grave: state.grave.slice(0, -1) }
     state = addHand(state, actor, [graveTop])
     held = findHand(state, uid)
@@ -613,14 +636,21 @@ function play(state: Game, uid: string, team: string, extras: string[] = []): Ga
   }
   // Illusion counters on-turn hero/item plays; skip when reacting off-turn.
   if (!offTurn && (held.card.kind === 'hero' || held.card.kind === 'item')) {
-    return offerIllusion(state, actor, uid, team, companions)
+    return offerIllusion(state, actor, uid, team, companions, fromGrave)
   }
-  return resolvePlay(state, actor, uid, team, companions)
+  return resolvePlay(state, actor, uid, team, companions, fromGrave)
 }
 
-function offerIllusion(state: Game, actor: PlayerId, uid: string, team: string, extras: string[] = []): Game {
+function offerIllusion(
+  state: Game,
+  actor: PlayerId,
+  uid: string,
+  team: string,
+  extras: string[] = [],
+  fromGrave = false,
+): Game {
   const enemy = holderWith(state, actor, 'illusion')
-  if (enemy === null) return resolvePlay(state, actor, uid, team, extras)
+  if (enemy === null) return resolvePlay(state, actor, uid, team, extras, fromGrave)
   const cards = state.players[enemy]!.hand.filter((card) => card.defId === 'illusion')
   const played = findHand(state, uid)
   const name = played ? display(played.card.defId).name : 'that card'
@@ -635,18 +665,25 @@ function offerIllusion(state: Game, actor: PlayerId, uid: string, team: string, 
       { id: 'pass', label: 'Pass' },
       ...cards.map((card) => ({ id: `illu:${card.uid}`, label: 'Illusion Rune', defId: card.defId })),
     ],
-    resume: { kind: 'counter', uid, team, actor, extras },
+    resume: { kind: 'counter', uid, team, actor, extras, fromGrave },
   })
 }
 
-function resolvePlay(state: Game, actor: PlayerId, uid: string, team: string, extras: string[] = []): Game {
+function resolvePlay(
+  state: Game,
+  actor: PlayerId,
+  uid: string,
+  team: string,
+  extras: string[] = [],
+  fromGrave = false,
+): Game {
   const held = findHand(state, uid)
   if (!held) {
     return landSquad(state, actor, null, extras, team, false)
   }
   if (held.card.kind === 'hero') return landSquad(state, actor, held.card, extras, team, true)
   if (held.card.kind === 'neutral') return playToken(state, actor, held.card, team)
-  if (held.card.kind === 'item') return playItem(state, actor, held.card)
+  if (held.card.kind === 'item') return playItem(state, actor, held.card, fromGrave)
   return playReward(state, actor, held.card)
 }
 
@@ -722,7 +759,7 @@ function playToken(state: Game, actor: PlayerId, card: CardInst, team: string): 
   return log(arrived(placed, card.uid).state, `${pname(placed, actor)} calls ${display(card.defId).name}.`)
 }
 
-function playItem(state: Game, actor: PlayerId, card: CardInst): Game {
+function playItem(state: Game, actor: PlayerId, card: CardInst, fromGrave = false): Game {
   let next = removeHand(state, actor, card.uid)
   const stamp = { caster: actor, fromTurn: next.turn }
   next = allLocs(next).reduce((current, loc) => {
@@ -746,7 +783,8 @@ function playItem(state: Game, actor: PlayerId, card: CardInst): Game {
       next = queueDraw(next, actor, 1)
     }
   }
-  next = toGrave(next, card, { type: 'deck' })
+  // Exorcism: items played from the grave exile after use (runes/towers already exile).
+  next = fromGrave ? toExile(next, card) : toGrave(next, card, { type: 'deck' })
   next = log(next, `${pname(next, actor)} plays ${display(card.defId).name}.`)
   const resume = { kind: 'cast' as const, actor, sourceUid: card.uid, defId: card.defId, picked: [], steps: 0 }
   if (
@@ -874,13 +912,20 @@ function satisfy(state: Game, ids: string[]): Game {
   if (resume.kind === 'counter') {
     const choice = ids[0]
     const extras = resume.extras ?? []
-    if (!choice || choice === 'pass') return resolvePlay(next, resume.actor, resume.uid, resume.team, extras)
+    if (!choice || choice === 'pass') {
+      return resolvePlay(next, resume.actor, resume.uid, resume.team, extras, !!resume.fromGrave)
+    }
     const illuUid = choice.startsWith('illu:') ? choice.slice(5) : choice.slice(4)
     let dumped = next
     const rune = dumped.players[pending.actor]?.hand.find((entry) => entry.uid === illuUid)
     if (rune) dumped = toExile(removeHand(dumped, pending.actor, illuUid), rune)
     const card = dumped.players[resume.actor].hand.find((entry) => entry.uid === resume.uid)
-    if (card) dumped = toGrave(removeHand(dumped, resume.actor, card.uid), card, { type: 'hand', player: resume.actor })
+    // Exorcism items that get Illusion-countered still exile (already left the grave).
+    if (card) {
+      dumped = resume.fromGrave
+        ? toExile(removeHand(dumped, resume.actor, card.uid), card)
+        : toGrave(removeHand(dumped, resume.actor, card.uid), card, { type: 'hand', player: resume.actor })
+    }
     dumped = landCompanions(dumped, resume.actor, extras, resume.team)
     return log(dumped, `Illusion Rune counters ${card ? display(card.defId).name : 'the card'}.`)
   }
@@ -1198,24 +1243,34 @@ export function teamsFor(
 }
 
 export function comboPlans(state: Game): { uids: string[]; label: string; detail: string }[] {
-  const hand = state.players[state.active].hand.filter((card) => card.kind === 'terrain')
+  const actor = state.active
+  const hand = state.players[actor].hand.filter((card) => card.kind === 'terrain')
+  const graveTop = playableFromGrave(state, actor)
+  const pool = graveTop?.kind === 'terrain' ? [...hand, graveTop] : hand
   const plans: { uids: string[]; label: string; detail: string }[] = []
   const rules = getScoreRules()
+  const seen = new Set<string>()
+  const push = (uids: string[], label: string, detail: string) => {
+    const key = [...uids].sort().join('|')
+    if (seen.has(key)) return
+    seen.add(key)
+    plans.push({ uids, label, detail })
+  }
   for (const kind of ['river', 'jungle', 'lane'] as const) {
-    const matches = hand.filter((card) => card.defId === kind)
+    const matches = pool.filter((card) => card.defId === kind)
     if (matches.length >= 3) {
-      plans.push({
-        uids: matches.slice(0, 3).map((card) => card.uid),
-        label: `Three ${kind}s`,
-        detail: `core · ${rules.coreCombo} and a reward`,
-      })
+      push(
+        matches.slice(0, 3).map((card) => card.uid),
+        `Three ${kind}s`,
+        `core · ${rules.coreCombo} and a reward`,
+      )
     }
   }
-  const river = hand.find((card) => card.defId === 'river')
-  const jungle = hand.find((card) => card.defId === 'jungle')
-  const lane = hand.find((card) => card.defId === 'lane')
+  const river = pool.find((card) => card.defId === 'river')
+  const jungle = pool.find((card) => card.defId === 'jungle')
+  const lane = pool.find((card) => card.defId === 'lane')
   if (river && jungle && lane) {
-    plans.push({ uids: [river.uid, jungle.uid, lane.uid], label: 'River, Jungle, Lane', detail: `mixed · ${rules.mixCombo}` })
+    push([river.uid, jungle.uid, lane.uid], 'River, Jungle, Lane', `mixed · ${rules.mixCombo}`)
   }
   return plans
 }
