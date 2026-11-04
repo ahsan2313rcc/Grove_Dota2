@@ -280,10 +280,14 @@ export function bodiesOf(state: Game, team: Team): ScoreBody[] {
   })
 }
 
-export function scoreTeam(state: Game, team: Team): { points: number; why: string; brew?: Record<string, Attr> } {
+export function scoreTeam(
+  state: Game,
+  team: Team,
+  rules?: import('./scoring.ts').ScoreRules,
+): { points: number; why: string; brew?: Record<string, Attr> } {
   const flex = team.heroes.filter((hero) => isBrewFlex(state, hero))
   if (flex.length === 0) {
-    return scoreBodies(team.heroes.map((hero) => bodyFor(hero, fixedAttrsOf(state, hero))))
+    return scoreBodies(team.heroes.map((hero) => bodyFor(hero, fixedAttrsOf(state, hero))), rules)
   }
 
   let best: { points: number; why: string; brew: Record<string, Attr> } = {
@@ -304,7 +308,7 @@ export function scoreTeam(state: Game, team: Team): { points: number; why: strin
       if (brew[hero.uid]) return bodyFor(hero, [brew[hero.uid]!])
       return bodyFor(hero, fixedAttrsOf(state, hero))
     })
-    const scored = scoreBodies(bodies)
+    const scored = scoreBodies(bodies, rules)
     if (scored.points > best.points) best = { ...scored, brew }
   }
   return best

@@ -1,8 +1,20 @@
 import { chooseAiAction, chooseAiPending, cycleStrat, DEFAULT_STRAT } from './ai.ts'
 import { display, firesAbility, HERO_BY_ID } from './catalog.ts'
 import { apply, createGame, type SeatSpec } from './engine.ts'
-import { attrsOf, findHand, heroWeight, isTrapHero, scoreState, scoreTeam, standingOf } from './flow.ts'
-import { teamShape } from './scoring.ts'
+import {
+  abilitiesLocked,
+  attrsOf,
+  findHand,
+  findHero,
+  heroWeight,
+  isTrapHero,
+  orchidLocked,
+  scoreState,
+  scoreTeam,
+  silenced,
+  standingOf,
+} from './flow.ts'
+import { getScoreRules } from './scoring.ts'
 import type { Action, AiStrat, Attr, CardInst, CardKind, Game, Team } from './types.ts'
 
 export type PlayKind = CardKind | 'combo' | 'draw' | 'morph' | 'move' | 'ability' | 'other'
@@ -61,6 +73,10 @@ export interface SwingEvent {
   bucket: RelBucket
   attr: Attr | null
   instant: boolean
+  /** Links body + ability swings from one hero play. */
+  playId: number | null
+  /** True when the on-play ability was silenced / orchid-locked / frost-locked. */
+  silenced: boolean
   actorSwing: number
   relativeSwing: number
   fieldSwing: number
@@ -243,6 +259,13 @@ export interface BalanceSummary {
   cardsLow: CardBalanceRow[]
   /** All hero body plays (placement), sortable source for the Heroes table. */
   heroes: CardBalanceRow[]
+  /**
+   * Combined body+ability hero-play swings for the Heroes table mode cycle:
+   * total / silenced / not silenced.
+   */
+  heroPlaysTotal: CardBalanceRow[]
+  heroPlaysSilenced: CardBalanceRow[]
+  heroPlaysOpen: CardBalanceRow[]
   /** Ability activations (on-play cast / reactivate), separate from body placement. */
   abilities: CardBalanceRow[]
   /** @deprecated kept for older callers — same as rankHigh(heroes) */
@@ -327,6 +350,8 @@ type ImpactFrame = {
   kind: PlayKind
   turn: number
   startTotals: number[]
+  playId: number | null
+  silenced: boolean
 }
 
 /** Hero play waiting to split body placement vs on-play ability. */
@@ -334,6 +359,8 @@ type AbilitySplit = {
   defId: string
   sourceUid: string
   actor: number
+  playId: number
+  silenced: boolean
 }
 
 export class BalanceTracker {
@@ -352,6 +379,7 @@ export class BalanceTracker {
   /** Open card resolution — score delta is attributed when prompts / queues settle. */
   private impact: ImpactFrame | null = null
   private abilitySplit: AbilitySplit | null = null
+  private playSeq = 0
 
   constructor(seed: number) {
     this.seed = seed
@@ -403,11 +431,19 @@ export class BalanceTracker {
         this.sealImpact(before)
         this.abilitySplit = null
         const kind = held.card.kind
-        this.openImpact(before, held.player.id, held.card.defId, kind)
+        const playId = ++this.playSeq
+        const muted = abilitySuppressed(after, held.player.id, held.card.uid)
+        this.openImpact(before, held.player.id, held.card.defId, kind, playId, muted)
         this.tallyPlay(held.player.id, held.card.kind, display(held.card.defId).instant, held.card.defId)
         if (kind === 'hero' && firesAbility(held.card.defId)) {
-          // Split body vs ability when the cast prompt opens; auto-resolves still log a 0-swing ability row.
-          this.abilitySplit = { defId: held.card.defId, sourceUid: held.card.uid, actor: held.player.id }
+          // Split body vs ability when cast / Instant window opens; auto-resolves still log a 0-swing ability row.
+          this.abilitySplit = {
+            defId: held.card.defId,
+            sourceUid: held.card.uid,
+            actor: held.player.id,
+            playId,
+            silenced: muted,
+          }
         }
       }
     } else if (action.type === 'combo') {
@@ -443,23 +479,31 @@ export class BalanceTracker {
     }
   }
 
-  /** When on-play cast targeting begins, seal body swing and open an ability swing. */
+  /** When on-play cast / Instant interrupt begins, seal body swing and open an ability swing. */
   private maybeSplitAbility(_before: Game, after: Game) {
     const split = this.abilitySplit
     if (!split || !this.impact) return
     if (this.impact.defId !== split.defId || this.impact.kind !== 'hero') return
     const resume = after.pending?.resume
-    if (resume?.kind === 'cast' && resume.defId === split.defId && resume.sourceUid === split.sourceUid) {
+    const castStarting =
+      (resume?.kind === 'cast' && resume.defId === split.defId && resume.sourceUid === split.sourceUid) ||
+      (resume?.kind === 'instant-window' &&
+        resume.heroUid === split.sourceUid &&
+        resume.cast.defId === split.defId) ||
+      (resume?.kind === 'pugna' && resume.cast.defId === split.defId && resume.cast.sourceUid === split.sourceUid)
+    if (castStarting) {
+      // Split before Instant pass / resolve so the ability frame captures the cast delta.
+      const muted = split.silenced || abilitySuppressed(after, split.actor, split.sourceUid)
       this.sealImpact(after)
-      this.openImpact(after, split.actor, split.defId, 'ability')
+      this.openImpact(after, split.actor, split.defId, 'ability', split.playId, muted)
       this.abilitySplit = null
       return
     }
-    // Instant window / other prompts still open — wait for the cast (or cancel).
+    // Other prompts still open — wait for the cast (or cancel).
     if (resolving(after)) return
     // Settled without a cast prompt: keep body seating, then record a 0-swing ability activation.
     this.sealImpact(after)
-    this.openImpact(after, split.actor, split.defId, 'ability')
+    this.openImpact(after, split.actor, split.defId, 'ability', split.playId, split.silenced)
     this.sealImpact(after)
     this.abilitySplit = null
   }
@@ -586,7 +630,14 @@ export class BalanceTracker {
     this.turnStartScores = endScores
   }
 
-  private openImpact(at: Game, actor: number, defId: string, kind: PlayKind) {
+  private openImpact(
+    at: Game,
+    actor: number,
+    defId: string,
+    kind: PlayKind,
+    playId: number | null = null,
+    silencedPlay = false,
+  ) {
     this.impact = {
       actor,
       actorStrat: at.players[actor]?.strat ?? DEFAULT_STRAT,
@@ -594,6 +645,8 @@ export class BalanceTracker {
       kind,
       turn: at.turn,
       startTotals: totals(at),
+      playId,
+      silenced: silencedPlay,
     }
     if (defId !== 'draw' && defId !== 'mixed_path' && defId !== 'ember_spirit') {
       const set = this.seatPlaySets[actor] ?? (this.seatPlaySets[actor] = new Set())
@@ -639,11 +692,22 @@ export class BalanceTracker {
       bucket,
       attr,
       instant,
+      playId: frame.playId,
+      silenced: frame.silenced,
       actorSwing,
       relativeSwing,
       fieldSwing,
     })
   }
+}
+
+function abilitySuppressed(game: Game, actor: number, sourceUid?: string): boolean {
+  if (silenced(game) || orchidLocked(game, actor) || abilitiesLocked(game, actor)) return true
+  if (sourceUid) {
+    const loc = findHero(game, sourceUid)
+    if (loc?.hero.muted) return true
+  }
+  return false
 }
 
 function resolving(game: Game): boolean {
@@ -840,6 +904,9 @@ export function summarizeReports(reports: MatchReport[], filter: StratFilter = A
   const allTerrainRows = cards.filter((row) => row.bucket === 'terrain')
   const allLootRows = cards.filter((row) => row.bucket === 'loot')
 
+  // Combined body+ability swings per hero play (playId), for total / silenced / open modes.
+  const heroPlayModes = buildHeroPlayModes(scoped, filter, presenceMap)
+
   const spreads = finished.map((report) => Math.max(...report.finalScores) - Math.min(...report.finalScores))
   const winnerScores = finished.map((report) => Math.max(...report.finalScores))
   const turnSeries = seriesFromTurnBuckets(ptsByTurn, cardsByTurn, filteringPlays)
@@ -858,6 +925,9 @@ export function summarizeReports(reports: MatchReport[], filter: StratFilter = A
     cards: rankHigh(ranked),
     cardsLow: rankLow(ranked),
     heroes: allHeroRows,
+    heroPlaysTotal: heroPlayModes.total,
+    heroPlaysSilenced: heroPlayModes.silenced,
+    heroPlaysOpen: heroPlayModes.open,
     abilities: allAbilityRows,
     terrains: allTerrainRows,
     loot: allLootRows,
@@ -907,7 +977,7 @@ export function summarizeReports(reports: MatchReport[], filter: StratFilter = A
       }))
       .sort((a, b) => b.wins - a.wins || a.avgStanding - b.avgStanding || b.avgScore - a.avgScore),
     shapeCompare: [
-      // Core team /match = sum of exclusive ×3+×4+×5 stacks. Pure / avg pts from mono cores.
+      // Core /match = ×3+×4+×5 stacks. Avg pts = mean team score; pts/card = points / heroes.
       shapeRow(
         'core_team',
         'Core team',
@@ -916,15 +986,15 @@ export function summarizeReports(reports: MatchReport[], filter: StratFilter = A
         shapeTotals.coreTeamHeroes,
         pureCoreN,
         matchCount,
-        shapeTotals.coreTeams,
+        coreStackN,
       ),
-      // Exclusive: size≥3 and same-attr stack exactly N (5+ for ×5). Mixed boards count in n.
-      shapeRow('core_team_3', 'Core ×3 same attr', shapeTotals.coreTeams3, shapeTotals.coreTeamPoints3, shapeTotals.coreTeamHeroes3, shapeTotals.pureCore3, matchCount, shapeTotals.pureCore3),
-      shapeRow('core_team_4', 'Core ×4 same attr', shapeTotals.coreTeams4, shapeTotals.coreTeamPoints4, shapeTotals.coreTeamHeroes4, shapeTotals.pureCore4, matchCount, shapeTotals.pureCore4),
-      shapeRow('core_team_5', 'Core ×5 same attr', shapeTotals.coreTeams5, shapeTotals.coreTeamPoints5, shapeTotals.coreTeamHeroes5, shapeTotals.pureCore5, matchCount, shapeTotals.pureCore5),
-      shapeRow('mix_team', 'Mixed team', shapeTotals.mixTeams, shapeTotals.mixTeamPoints, shapeTotals.mixTeamHeroes, shapeTotals.pureMix3 + shapeTotals.pureMix4, matchCount),
-      shapeRow('mix_team_3', 'Mixed · 3 attrs', shapeTotals.mixTeams3, shapeTotals.mixTeamPoints3, shapeTotals.mixTeamHeroes3, shapeTotals.pureMix3, matchCount),
-      shapeRow('mix_team_4', 'Mixed · 4 attrs', shapeTotals.mixTeams4, shapeTotals.mixTeamPoints4, shapeTotals.mixTeamHeroes4, shapeTotals.pureMix4, matchCount),
+      // Stack buckets: size≥3 and same-attr stack exactly N (5+ for ×5). Dual-count with mix when attrs ≥3.
+      shapeRow('core_team_3', 'Core ×3 same attr', shapeTotals.coreTeams3, shapeTotals.coreTeamPoints3, shapeTotals.coreTeamHeroes3, shapeTotals.pureCore3, matchCount, shapeTotals.coreTeams3),
+      shapeRow('core_team_4', 'Core ×4 same attr', shapeTotals.coreTeams4, shapeTotals.coreTeamPoints4, shapeTotals.coreTeamHeroes4, shapeTotals.pureCore4, matchCount, shapeTotals.coreTeams4),
+      shapeRow('core_team_5', 'Core ×5 same attr', shapeTotals.coreTeams5, shapeTotals.coreTeamPoints5, shapeTotals.coreTeamHeroes5, shapeTotals.pureCore5, matchCount, shapeTotals.coreTeams5),
+      shapeRow('mix_team', 'Mixed team', shapeTotals.mixTeams, shapeTotals.mixTeamPoints, shapeTotals.mixTeamHeroes, shapeTotals.pureMix3 + shapeTotals.pureMix4, matchCount, shapeTotals.mixTeams),
+      shapeRow('mix_team_3', 'Mixed · 3 attrs', shapeTotals.mixTeams3, shapeTotals.mixTeamPoints3, shapeTotals.mixTeamHeroes3, shapeTotals.pureMix3, matchCount, shapeTotals.mixTeams3),
+      shapeRow('mix_team_4', 'Mixed · 4 attrs', shapeTotals.mixTeams4, shapeTotals.mixTeamPoints4, shapeTotals.mixTeamHeroes4, shapeTotals.pureMix4, matchCount, shapeTotals.mixTeams4),
       shapeRow('core_terrain', 'Core terrain', shapeTotals.coreTerrains, shapeTotals.coreTerrainPoints, shapeTotals.coreTerrains * 3, shapeTotals.coreTerrains, matchCount),
       shapeRow('mix_terrain', 'Mixed terrain', shapeTotals.mixTerrains, shapeTotals.mixTerrainPoints, shapeTotals.mixTerrains * 3, shapeTotals.mixTerrains, matchCount),
     ],
@@ -1228,13 +1298,6 @@ export function abilityEffectType(defId: string): AbilityEffectType {
   return 'other'
 }
 
-function mixAttrCount(why: string): number {
-  const match = why.match(/ATTR \+(\d+)/)
-  if (!match) return 0
-  const n = Number(match[1])
-  return n >= 2 && n <= 4 ? n : 0
-}
-
 /** Largest mono-attribute stack on the team (Meepo counts as 2). Multi-attr heroes do not pad a stack. */
 function maxSameAttrStackFor(game: Game, team: Team): number {
   const tallies: Record<string, number> = { STR: 0, AGI: 0, INT: 0, UNI: 0 }
@@ -1257,55 +1320,59 @@ function shapeCountsFor(game: Game, playerId: number): ShapeCounts {
   const shapes = EMPTY_SHAPES()
   const player = game.players[playerId]
   if (!player) return shapes
+  // When a core stack is active, strip attack bonus from reported shape points.
+  const noAtk = { ...getScoreRules(), attackOnCore: false, attackOnMix: false }
   for (const team of player.teams) {
     const scored = scoreTeam(game, team)
-    const shape = teamShape(scored.why)
     const size = team.heroes.length
-    const mixAttrs = mixAttrCount(scored.why)
     const sameAttr = maxSameAttrStackFor(game, team)
+    const distinctAttrs = distinctAttrCount(game, team)
+    const hasCore = size >= 3 && sameAttr >= 3
+    const hasMix = size >= 3 && distinctAttrs >= 3
+    const corePts = hasCore ? scoreTeam(game, team, noAtk).points : scored.points
+    const mixPts = hasCore ? corePts : scored.points
 
-    // Exclusive stack buckets: 3+ bodies and exactly N same-attr (5+ for ×5). Mixed boards count in n.
-    if (size >= 3 && sameAttr === 3) shapes.coreTeams3 += 1
-    if (size >= 3 && sameAttr === 4) shapes.coreTeams4 += 1
-    if (size >= 3 && sameAttr >= 5) shapes.coreTeams5 += 1
-
-    // Core / mix tallies require 3+ heroes (matches scoring SHAPE_MIN_HEROES).
-    if (shape === 'core' && size >= 3) {
+    if (hasCore) {
       shapes.coreTeams += 1
-      shapes.coreTeamPoints += scored.points
+      shapes.coreTeamPoints += corePts
       shapes.coreTeamHeroes += size
-      // Pure / avg pts for Core ×N: mono-core teams in that exclusive stack bucket.
       if (sameAttr === 3) {
-        shapes.pureCore3 += 1
-        shapes.coreTeamPoints3 += scored.points
+        shapes.coreTeams3 += 1
+        shapes.coreTeamPoints3 += corePts
         shapes.coreTeamHeroes3 += size
+        if (distinctAttrs === 1) shapes.pureCore3 += 1
       } else if (sameAttr === 4) {
-        shapes.pureCore4 += 1
-        shapes.coreTeamPoints4 += scored.points
+        shapes.coreTeams4 += 1
+        shapes.coreTeamPoints4 += corePts
         shapes.coreTeamHeroes4 += size
-      } else if (sameAttr >= 5) {
-        shapes.pureCore5 += 1
-        shapes.coreTeamPoints5 += scored.points
+        if (distinctAttrs === 1) shapes.pureCore4 += 1
+      } else {
+        shapes.coreTeams5 += 1
+        shapes.coreTeamPoints5 += corePts
         shapes.coreTeamHeroes5 += size
+        if (distinctAttrs === 1) shapes.pureCore5 += 1
       }
-    } else if (shape === 'mix' && size >= 3) {
+    }
+
+    // Dual-count: a 3× core with 3+ attrs also lands in mix ×attrs.
+    if (hasMix) {
       shapes.mixTeams += 1
-      shapes.mixTeamPoints += scored.points
+      shapes.mixTeamPoints += mixPts
       shapes.mixTeamHeroes += size
-      if (mixAttrs === 3) {
+      if (distinctAttrs === 3) {
         shapes.mixTeams3 += 1
-        shapes.mixTeamPoints3 += scored.points
+        shapes.mixTeamPoints3 += mixPts
         shapes.mixTeamHeroes3 += size
         shapes.pureMix3 += 1
-      } else if (mixAttrs >= 4) {
+      } else {
         shapes.mixTeams4 += 1
-        shapes.mixTeamPoints4 += scored.points
+        shapes.mixTeamPoints4 += mixPts
         shapes.mixTeamHeroes4 += size
         shapes.pureMix4 += 1
       }
-    } else {
-      shapes.openTeams += 1
     }
+
+    if (!hasCore && !hasMix) shapes.openTeams += 1
   }
   for (const combo of player.combos) {
     if (combo.kind === 'mixed') {
@@ -1317,6 +1384,102 @@ function shapeCountsFor(game: Game, playerId: number): ShapeCounts {
     }
   }
   return shapes
+}
+
+function distinctAttrCount(game: Game, team: Team): number {
+  const union = new Set<string>()
+  for (const hero of team.heroes) {
+    for (const attr of attrsOf(game, hero)) union.add(attr)
+  }
+  return union.size
+}
+
+function buildHeroPlayModes(
+  reports: MatchReport[],
+  filter: StratFilter,
+  presenceMap: Map<string, { presence: number; wins: number }>,
+): { total: CardBalanceRow[]; silenced: CardBalanceRow[]; open: CardBalanceRow[] } {
+  type PlayAgg = {
+    defId: string
+    name: string
+    attr: Attr | null
+    instant: boolean
+    actorStrat: AiStrat
+    silenced: boolean
+    actor: number
+    relative: number
+  }
+  const plays: PlayAgg[] = []
+  for (const report of reports) {
+    const byId = new Map<number, SwingEvent[]>()
+    for (const swing of report.swings) {
+      if (!allowsStrat(filter, swing.actorStrat)) continue
+      if (swing.bucket !== 'hero' && swing.bucket !== 'ability') continue
+      if (swing.playId == null) continue
+      const list = byId.get(swing.playId) ?? []
+      list.push(swing)
+      byId.set(swing.playId, list)
+    }
+    for (const group of byId.values()) {
+      const head = group[0]!
+      plays.push({
+        defId: head.defId,
+        name: head.name,
+        attr: head.attr,
+        instant: head.instant,
+        actorStrat: head.actorStrat,
+        silenced: group.some((swing) => swing.silenced),
+        actor: group.reduce((sum, swing) => sum + swing.actorSwing, 0),
+        relative: group.reduce((sum, swing) => sum + swing.relativeSwing, 0),
+      })
+    }
+  }
+
+  const toRows = (subset: PlayAgg[]): CardBalanceRow[] => {
+    const map = new Map<string, { defId: string; name: string; attr: Attr | null; instant: boolean; plays: number; actor: number; relative: number; abs: number }>()
+    for (const play of subset) {
+      const row = map.get(play.defId) ?? {
+        defId: play.defId,
+        name: play.name,
+        attr: play.attr,
+        instant: play.instant,
+        plays: 0,
+        actor: 0,
+        relative: 0,
+        abs: 0,
+      }
+      row.plays += 1
+      row.actor += play.actor
+      row.relative += play.relative
+      row.abs += Math.abs(play.relative)
+      map.set(play.defId, row)
+    }
+    return [...map.values()].map((row) => {
+      const presence = presenceMap.get(row.defId) ?? { presence: 0, wins: 0 }
+      return {
+        defId: row.defId,
+        name: row.name,
+        kind: 'hero' as PlayKind,
+        bucket: 'hero' as const,
+        attr: row.attr,
+        instant: row.instant,
+        plays: row.plays,
+        avgActorSwing: row.plays ? row.actor / row.plays : 0,
+        avgRelativeSwing: row.plays ? row.relative / row.plays : 0,
+        avgAbsSwing: row.plays ? row.abs / row.plays : 0,
+        totalActorSwing: row.actor,
+        presence: presence.presence,
+        wins: presence.wins,
+        winRate: presence.presence ? presence.wins / presence.presence : 0,
+      }
+    })
+  }
+
+  return {
+    total: toRows(plays),
+    silenced: toRows(plays.filter((play) => play.silenced)),
+    open: toRows(plays.filter((play) => !play.silenced)),
+  }
 }
 
 function cardMap(cards: CardInst[]): Map<string, CardInst> {

@@ -231,9 +231,10 @@ export function DebugRail({
       <div className="debug-block">
         <h3>Shape compare</h3>
         <p className="quiet debug-legend">
-          Core ×3/×4/×5 are exclusive: 3+ heroes and a same-attr stack of exactly 3 / 4 / 5+ (splash boards with a core stack still count as core).
-          Core team /match = ×3+×4+×5. Mixed = 3+ distinct attributes with no core stack (ATTR +3 / +4).
-          Pure / avg pts use mono-core (or matching mix) scores only.
+          Core ×3/×4/×5: 3+ heroes with a same-attr stack of exactly 3 / 4 / 5+. Mixed · 3/4: 3+ distinct attributes.
+          A team can count in both (e.g. 3× STR + 3 attrs). Avg pts = mean team score; pts/card = points ÷ heroes.
+          When a core stack is active, attack bonus is excluded from these points.
+          Pure = mono-attribute cores only.
         </p>
         <SortableTable
           empty="No shape samples yet."
@@ -321,13 +322,14 @@ export function DebugRail({
       </div>
 
       <p className="quiet debug-legend">
-        Body = score swing from seating the hero (before ability targets resolve). Ability = swing from the cast effect.
-        Rel = your Δ minus average opponent Δ. Click a column header to cycle desc → asc → off. Rank follows the active sort.
+        Heroes table cycles total / silenced / not silenced (body + ability combined per play).
+        Abilities table is cast-effect only. Rel = your Δ minus average opponent Δ.
       </p>
-      <div className="debug-block">
-        <h3>Heroes (body)</h3>
-        <CardSortTable rows={summary.heroes} empty="No hero placements yet." />
-      </div>
+      <HeroModeTable
+        total={summary.heroPlaysTotal}
+        silenced={summary.heroPlaysSilenced}
+        open={summary.heroPlaysOpen}
+      />
       <div className="debug-block">
         <h3>Abilities (effect)</h3>
         <CardSortTable rows={summary.abilities} empty="No ability activations yet." />
@@ -494,6 +496,40 @@ function SortableTable<T>({
         ))}
       </tbody>
     </table>
+  )
+}
+
+type HeroSwingMode = 'total' | 'silenced' | 'open'
+
+function HeroModeTable({
+  total,
+  silenced,
+  open,
+}: {
+  total: CardBalanceRow[]
+  silenced: CardBalanceRow[]
+  open: CardBalanceRow[]
+}) {
+  const [mode, setMode] = useState<HeroSwingMode>('total')
+  const rows = mode === 'total' ? total : mode === 'silenced' ? silenced : open
+  const label =
+    mode === 'total' ? 'Total (body+ability)' : mode === 'silenced' ? 'Silenced' : 'Not silenced'
+  return (
+    <div className="debug-block">
+      <h3>
+        Heroes{' '}
+        <button
+          type="button"
+          className="debug-mode-cycle"
+          data-testid="hero-swing-mode"
+          onClick={() => setMode((current) => (current === 'total' ? 'silenced' : current === 'silenced' ? 'open' : 'total'))}
+        >
+          {label}
+        </button>
+      </h3>
+      <p className="quiet debug-legend">Click the mode label to cycle total → silenced → not silenced.</p>
+      <CardSortTable rows={rows} empty="No hero plays yet for this mode." />
+    </div>
   )
 }
 

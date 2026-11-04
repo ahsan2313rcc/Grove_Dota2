@@ -255,6 +255,18 @@ button.debug-sort:hover,
 button.debug-sort.on {
   color: var(--gold);
 }
+button.debug-mode-cycle {
+  margin-left: 8px;
+  padding: 0.15rem 0.55rem;
+  font-size: 0.78rem;
+  border: 1px solid rgba(212, 175, 106, 0.45);
+  background: rgba(212, 175, 106, 0.12);
+  color: var(--gold);
+  cursor: pointer;
+}
+button.debug-mode-cycle:hover {
+  background: rgba(212, 175, 106, 0.22);
+}
 .debug-table td strong {
   display: block;
   font-size: 0.82rem;
