@@ -43,19 +43,19 @@ describe('balance', () => {
     expect(core5).toBeTruthy()
     expect(core5!.pureCount).toBeGreaterThanOrEqual(0)
     expect(core5!.avgPtsPerCard).toBeGreaterThanOrEqual(0)
-    // Avg pts only from mono cores — zero when pureCount is 0 even if stack n > 0.
-    if (core5!.pureCount > 0) {
-      expect(core5!.avgPoints).toBeGreaterThan(0)
+    // Avg pts = mean team score in the bucket; pts/card = points ÷ heroes.
+    if (core5!.count > 0) {
+      expect(core5!.avgPoints).toBeCloseTo(core5!.totalPoints / core5!.count, 5)
       expect(core5!.avgPtsPerCard).toBeGreaterThan(0)
     } else {
       expect(core5!.avgPoints).toBe(0)
     }
-    // Core team /match = exclusive ×3+×4+×5. Pure / avg pts from mono cores.
+    // Core team /match = ×3+×4+×5 stacks. Pure = mono-only.
     if (coreAll && core3 && core4 && core5) {
       expect(coreAll.count).toBe(core3.count + core4.count + core5.count)
       expect(coreAll.pureCount).toBe(core3.pureCount + core4.pureCount + core5.pureCount)
-      if (coreAll.pureCount > 0) {
-        expect(coreAll.avgPoints).toBeCloseTo(coreAll.totalPoints / coreAll.pureCount, 5)
+      if (coreAll.count > 0) {
+        expect(coreAll.avgPoints).toBeCloseTo(coreAll.totalPoints / coreAll.count, 5)
       } else {
         expect(coreAll.avgPoints).toBe(0)
       }
@@ -99,29 +99,31 @@ describe('balance', () => {
     expect(mixSeats.shapeCompare.some((row) => row.count >= 0)).toBe(true)
   })
 
-  it('counts exclusive core ×3/×4/×5 and mix · 3 attrs', () => {
+  it('counts core ×3/×4/×5 and dual-counts mix when attrs ≥ 3', () => {
     let game = apply(createGame({ seed: 3, mode: 'hotseat', names: ['A', 'B'] }), { type: 'ready' })
     game = seatDefs(game, 0, [
-      ['sven', 'axe', 'pudge'], // core ×3 STR
-      ['slardar', 'tidehunter', 'earthshaker', 'bristleback'], // core ×4 STR
-      ['juggernaut', 'phantom_assassin', 'anti_mage'], // core ×3 AGI
-      ['sven', 'juggernaut', 'crystal_maiden'], // mix · 3 attrs
-      ['sven', 'juggernaut', 'crystal_maiden', 'marci'], // mix · 4 attrs
+      ['sven', 'axe', 'pudge'], // core ×3 STR pure
+      ['slardar', 'tidehunter', 'earthshaker', 'bristleback'], // core ×4 STR pure
+      ['juggernaut', 'phantom_assassin', 'anti_mage'], // core ×3 AGI pure
+      ['sven', 'juggernaut', 'crystal_maiden'], // mix · 3 attrs (no core stack)
+      ['sven', 'axe', 'pudge', 'juggernaut', 'crystal_maiden'], // core ×3 STR + mix · 3 attrs (dual)
     ])
     const tracker = new BalanceTracker(3)
     tracker.start(game)
     const report = tracker.finish(game)
-    expect(report.shapes.coreTeams3).toBe(2) // STR×3 + AGI×3
+    expect(report.shapes.coreTeams3).toBe(3) // two pure ×3 + dual ×3
     expect(report.shapes.coreTeams4).toBe(1)
     expect(report.shapes.coreTeams5).toBe(0)
     expect(report.shapes.pureCore3).toBe(2)
     expect(report.shapes.pureCore4).toBe(1)
-    expect(report.shapes.mixTeams3).toBe(1)
-    expect(report.shapes.mixTeams4).toBe(1)
+    expect(report.shapes.mixTeams3).toBe(2) // pure mix + dual
+    expect(report.shapes.mixTeams4).toBe(0)
     const summary = summarizeReports([report])
     const coreAll = summary.shapeCompare.find((row) => row.id === 'core_team')!
-    expect(coreAll.count).toBe(3) // 2×3 + 1×4
-    expect(coreAll.avgCount).toBeCloseTo(3, 5)
+    expect(coreAll.count).toBe(4) // 3×3 + 1×4
+    const core3 = summary.shapeCompare.find((row) => row.id === 'core_team_3')!
+    expect(core3.count).toBe(3)
+    expect(core3.avgPtsPerCard).toBeGreaterThan(0)
   })
 
   it('splits body placement vs ability swing when a cast prompt opens', () => {

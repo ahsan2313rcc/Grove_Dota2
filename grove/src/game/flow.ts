@@ -280,10 +280,14 @@ export function bodiesOf(state: Game, team: Team): ScoreBody[] {
   })
 }
 
-export function scoreTeam(state: Game, team: Team): { points: number; why: string; brew?: Record<string, Attr> } {
+export function scoreTeam(
+  state: Game,
+  team: Team,
+  rules?: import('./scoring.ts').ScoreRules,
+): { points: number; why: string; brew?: Record<string, Attr> } {
   const flex = team.heroes.filter((hero) => isBrewFlex(state, hero))
   if (flex.length === 0) {
-    return scoreBodies(team.heroes.map((hero) => bodyFor(hero, fixedAttrsOf(state, hero))))
+    return scoreBodies(team.heroes.map((hero) => bodyFor(hero, fixedAttrsOf(state, hero))), rules)
   }
 
   let best: { points: number; why: string; brew: Record<string, Attr> } = {
@@ -304,7 +308,7 @@ export function scoreTeam(state: Game, team: Team): { points: number; why: strin
       if (brew[hero.uid]) return bodyFor(hero, [brew[hero.uid]!])
       return bodyFor(hero, fixedAttrsOf(state, hero))
     })
-    const scored = scoreBodies(bodies)
+    const scored = scoreBodies(bodies, rules)
     if (scored.points > best.points) best = { ...scored, brew }
   }
   return best
@@ -1342,15 +1346,19 @@ export function returnPhased(state: Game, dueTurn?: number): Game {
 }
 
 export function returnLassos(state: Game): Game {
-  const due = state.lassos.filter((entry) => entry.caster === state.active && entry.fromTurn < state.turn)
+  // Satanic / temporary control lasts until end of the caster's turn — return as soon as the turn counter advances.
+  const due = state.lassos.filter((entry) => entry.fromTurn < state.turn)
   if (due.length === 0) return state
   let next = { ...state, lassos: state.lassos.filter((entry) => !due.includes(entry)) }
   for (const entry of due) {
     const loc = findHero(next, entry.uid)
     if (!loc) continue
     let moved = next
-    let teamId = ''
-    ;[moved, teamId] = seatTeam(moved, entry.owner)
+    let teamId = entry.teamId
+    const home = teamById(moved, teamId)
+    if (!home || home.player.id !== entry.owner || enterReason(moved, home.team, heroWeight(loc.hero), loc.hero.token)) {
+      ;[moved, teamId] = seatTeam(moved, entry.owner)
+    }
     const removed = removeHero(moved, entry.uid)
     if (!removed.hero) continue
     moved = putOnTeam(removed.state, entry.owner, teamId, { ...removed.hero, controller: entry.owner })

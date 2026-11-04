@@ -106,12 +106,28 @@ export function playBlock(game: Game, viewer: PlayerId, card: CardInst): string 
   if (card.kind === 'terrain') return 'Play three terrains together.'
   if (card.kind === 'ancient' || card.defId === 'ancient') return 'The Ancient cannot be played.'
   if (game.lockPlay && game.lockPlay.caster !== viewer) return 'Chronosphere stops cards.'
-  const instant = display(card.defId).instant
+  const catalogInstant = display(card.defId).instant
+  const freeGrant = game.freePlay.includes(card.uid)
+  const freeItem =
+    card.kind === 'item' &&
+    (game.freeItems > 0 || game.clinkzExile.some((entry) => entry.uid === card.uid) || freeGrant)
+  const primalFree =
+    card.kind === 'item' && !!game.primalItems && game.primalItems.caster === viewer
+  const instant = catalogInstant || freeItem || primalFree || freeGrant
   const offTurn = game.active !== viewer
   if (offTurn && !instant) return "Only Instant cards play on an opponent's turn."
-  if (instant && instantsLocked(game, viewer)) return 'Battle Trance stops Instant cards.'
+  if (catalogInstant && instantsLocked(game, viewer)) return 'Battle Trance stops Instant cards.'
   if (card.kind === 'hero' && game.players[viewer].noHeroNow && !offTurn) return 'Doom stops heroes.'
   if (card.kind === 'item' && itemsLocked(game, viewer)) return 'Doom stops items.'
   if (!instant && game.players[viewer].actions < 1) return 'No actions left.'
   return null
+}
+
+/** True when this card plays as Instant (catalog, Clinkz/Amplify free item, or Primal Beast). */
+export function playsAsInstant(game: Game, viewer: PlayerId, card: CardInst): boolean {
+  if (display(card.defId).instant) return true
+  if (game.freePlay.includes(card.uid)) return true
+  if (card.kind === 'item' && (game.freeItems > 0 || game.clinkzExile.some((entry) => entry.uid === card.uid))) return true
+  if (card.kind === 'item' && game.primalItems?.caster === viewer) return true
+  return false
 }
