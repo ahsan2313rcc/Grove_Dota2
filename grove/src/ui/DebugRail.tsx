@@ -214,7 +214,7 @@ export function DebugRail({
           {summary.finished}/{summary.matches} done · avg T{fmt(summary.avgTurns)} · spread {fmt(summary.avgFinalSpread)} · win {fmt(summary.avgWinnerScore)}
         </p>
         <p className="quiet debug-legend">
-          Rel = score vs opponents · Self = own score Δ · Press = disruption · Win% = play-weighted seat wins (not causality). Heroes also show Abil% / Sil% when the ability fired vs was silenced.
+          Rel = score Δ vs opponents · Self = own score Δ · Press = full EV (destroy/exile kinds/bounce/deck/control/draw-dig-search/steal/trap/deny/combo, calibrated). Win% = play-weighted seat wins. Heroes: Abil% / Sil%.
         </p>
       </div>
 
@@ -789,6 +789,13 @@ function CardSortTable({
           label: 'Stl',
           get: (row) => soft(row.avgSteal),
           sortValue: (row) => row.avgSteal,
+          className: 'debug-num',
+        },
+        {
+          key: 'bounce',
+          label: 'Bnc',
+          get: (row) => soft(row.avgBounce),
+          sortValue: (row) => row.avgBounce,
           className: 'debug-num',
         },
         ...winCols,

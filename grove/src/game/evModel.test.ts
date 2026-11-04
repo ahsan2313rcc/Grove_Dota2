@@ -6,8 +6,14 @@ import {
   controlEv,
   effectEv,
   DEFAULT_CALIBRATION,
+  diffPlayEffects,
+  pressureOf,
   trapEv,
+  EMPTY_EFFECTS,
 } from './evModel.ts'
+import { apply, createGame } from './engine.ts'
+import { blankTeam, makeCard, makeHero, setPlayer } from './flow.ts'
+import type { CardInst, Game, PlayerId } from './types.ts'
 
 describe('evModel', () => {
   it('ranks permanent exile above destroy and hostage below', () => {
@@ -50,5 +56,86 @@ describe('evModel', () => {
     expect(effectEv('exileHostage', cal)).toBeCloseTo(2.1, 5)
     expect(effectEv('exileTempo', cal)).toBeCloseTo(2, 5)
     expect(effectEv('dig', cal)).toBeGreaterThan(effectEv('draw', cal))
+    expect(effectEv('search', cal)).toBeGreaterThan(effectEv('dig', cal))
+    expect(effectEv('stealCard', cal)).toBeGreaterThan(effectEv('draw', cal))
+  })
+
+  it('pressureOf prefers running ev on the bag', () => {
+    const bag = EMPTY_EFFECTS()
+    bag.destroy = 2
+    bag.ev = 12.5
+    expect(pressureOf(bag)).toBe(12.5)
+  })
+
+  it('diffPlayEffects values Anti-Mage destroys with full EV pressure', () => {
+    let game = apply(createGame({ seed: 17, mode: 'hotseat', names: ['A', 'B'] }), { type: 'ready' })
+    game = seatDefs(game, 1, [['crystal_maiden', 'lion', 'lina']])
+    game = only(game, 0, ['anti_mage'])
+    const before = game
+    game = apply(game, { type: 'play', uid: uid(game, 0, 'anti_mage'), team: 'new' })
+    game = passInstants(game)
+    let guard = 0
+    while (game.pending && guard++ < 20) {
+      const team = game.pending.choices.find((choice) => choice.id.startsWith('team:'))
+      const hero = game.pending.choices.find((choice) => choice.id.startsWith('hero:'))
+      const pick = team?.id ?? hero?.id ?? game.pending.choices.find((choice) => choice.id !== 'pass')?.id ?? 'pass'
+      game = apply(game, { type: 'choose', ids: [pick] })
+    }
+    const effects = diffPlayEffects(before, game, 0, 'anti_mage')
+    expect(effects.destroy).toBeGreaterThanOrEqual(1)
+    expect(effects.ev).toBeGreaterThan(effects.destroy) // EV uses V_body ≥ mean, not count
+    expect(pressureOf(effects)).toBeCloseTo(effects.ev, 5)
   })
 })
+
+function seatDefs(game: Game, player: PlayerId, teams: string[][]): Game {
+  let next = game
+  const built = []
+  for (const [index, defs] of teams.entries()) {
+    const heroes = []
+    for (const defId of defs) {
+      let card: CardInst
+      ;[next, card] = makeCard(next, defId, 'hero')
+      heroes.push(makeHero(card, player, player, next))
+    }
+    built.push({ ...blankTeam(`seat-${player}-${index}`), heroes })
+  }
+  return setPlayer(next, player, (seat) => ({ ...seat, teams: built }))
+}
+
+function only(game: Game, player: PlayerId, defIds: string[]): Game {
+  let next = game
+  const found: CardInst[] = []
+  for (const defId of defIds) {
+    const card =
+      next.deck.find((entry) => entry.defId === defId) ??
+      next.players.flatMap((seat) => seat.hand).find((entry) => entry.defId === defId)
+    if (!card) throw new Error(`missing ${defId}`)
+    found.push(card)
+    next = {
+      ...next,
+      deck: next.deck.filter((entry) => entry.uid !== card.uid),
+      players: next.players.map((seat) => ({
+        ...seat,
+        hand: seat.hand.filter((entry) => entry.uid !== card.uid),
+      })),
+    }
+  }
+  return {
+    ...next,
+    players: next.players.map((seat, index) => (index === player ? { ...seat, hand: found } : seat)),
+  }
+}
+
+function uid(game: Game, player: PlayerId, defId: string): string {
+  return game.players[player].hand.find((card) => card.defId === defId)?.uid ?? ''
+}
+
+function passInstants(game: Game): Game {
+  let next = game
+  let guard = 0
+  while (next.pending?.resume.kind === 'instant-window' && guard++ < 12) {
+    next = apply(next, { type: 'choose', ids: ['pass'] })
+  }
+  return next
+}

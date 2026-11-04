@@ -2,6 +2,14 @@ import { chooseAiAction, chooseAiPending, cycleStrat, DEFAULT_STRAT } from './ai
 import { display, firesAbility, HERO_BY_ID } from './catalog.ts'
 import { apply, createGame, type SeatSpec } from './engine.ts'
 import {
+  addEffects,
+  DEFAULT_CALIBRATION,
+  diffPlayEffects,
+  EMPTY_EFFECTS,
+  pressureOf,
+  type PlayEffects,
+} from './evModel.ts'
+import {
   abilitiesLocked,
   attrsOf,
   findHand,
@@ -16,6 +24,9 @@ import {
 } from './flow.ts'
 import { getScoreRules } from './scoring.ts'
 import type { Action, AiStrat, Attr, CardInst, CardKind, Game, Team } from './types.ts'
+
+export type { PlayEffects } from './evModel.ts'
+export { EMPTY_EFFECTS, pressureOf, diffPlayEffects, addEffects } from './evModel.ts'
 
 export type PlayKind = CardKind | 'combo' | 'draw' | 'morph' | 'move' | 'ability' | 'other'
 export type RelBucket = 'hero' | 'terrain' | 'loot' | 'ability' | 'other'
@@ -60,44 +71,6 @@ export const ALL_STRAT_FILTER: StratFilter = { strats: [], mixOnly: false }
 
 export function allowsStrat(filter: StratFilter, strat: AiStrat): boolean {
   return filter.strats.length === 0 || filter.strats.includes(strat)
-}
-
-/** Per-play effect bag — pressure beyond score Rel (removal, steal, bounce). */
-export interface PlayEffects {
-  destroy: number
-  discard: number
-  exile: number
-  /** Net control gains toward the actor (steal / infest / reverse). */
-  control: number
-  /** Board → hand (bounce), not grave. */
-  bounce: number
-}
-
-export const EMPTY_EFFECTS = (): PlayEffects => ({
-  destroy: 0,
-  discard: 0,
-  exile: 0,
-  control: 0,
-  bounce: 0,
-})
-
-/** Weighted disruption score for tables: destroy + exile + discard + steal + bounce. */
-export function pressureOf(effects: PlayEffects): number {
-  return (
-    1.0 * effects.destroy +
-    0.7 * effects.exile +
-    0.5 * effects.discard +
-    1.2 * effects.control +
-    0.4 * effects.bounce
-  )
-}
-
-export function addEffects(target: PlayEffects, source: PlayEffects) {
-  target.destroy += source.destroy
-  target.discard += source.discard
-  target.exile += source.exile
-  target.control += source.control
-  target.bounce += source.bounce
 }
 
 export interface SwingEvent {
@@ -688,9 +661,9 @@ export class BalanceTracker {
     if (gainedImmune > 0) this.bumpEvent(actor, 'immune', gainedImmune)
   }
 
-  /** Fold board/hand pile deltas into the open impact's effect bag. */
+  /** Fold board/hand pile deltas into the open impact's effect bag (full EV). */
   private creditEffects(before: Game, after: Game, frame: ImpactFrame) {
-    const delta = diffPlayEffects(before, after, frame.actor)
+    const delta = diffPlayEffects(before, after, frame.actor, frame.defId, DEFAULT_CALIBRATION)
     addEffects(frame.effects, delta)
   }
 
@@ -833,7 +806,7 @@ export class BalanceTracker {
       exile: effects.exile,
       control: effects.control,
       bounce: effects.bounce,
-      pressure: pressureOf(effects),
+      pressure: pressureOf(effects, DEFAULT_CALIBRATION),
     })
   }
 }
@@ -1940,49 +1913,6 @@ function boardHeroMap(game: Game): Map<string, { defId: string; controller: numb
     }
   }
   return map
-}
-
-/** Diff board/hand/exile piles into a PlayEffects bag credited to `actor`. */
-export function diffPlayEffects(before: Game, after: Game, actor: number): PlayEffects {
-  const effects = EMPTY_EFFECTS()
-  const beforeGrave = cardMap(before.grave)
-  const afterGrave = cardMap(after.grave)
-  const beforeExile = cardMap(before.exile)
-  const afterExile = cardMap(after.exile)
-  const beforeBoard = boardHeroMap(before)
-  const afterBoard = boardHeroMap(after)
-  const afterHands = allHandsMap(after)
-
-  // Opponent hand loss only — own Instant/play spends are not "pressure".
-  for (const player of before.players) {
-    if (player.id === actor) continue
-    const prior = cardMap(player.hand)
-    const next = cardMap(after.players[player.id]?.hand ?? [])
-    for (const [uid] of prior) {
-      if (next.has(uid)) continue
-      if (afterGrave.has(uid)) effects.discard += 1
-      if (afterExile.has(uid) && !beforeExile.has(uid)) effects.exile += 1
-    }
-  }
-
-  for (const [uid, prior] of beforeBoard) {
-    const next = afterBoard.get(uid)
-    if (!next) {
-      if (afterGrave.has(uid)) effects.destroy += 1
-      else if (afterExile.has(uid) && !beforeExile.has(uid)) effects.exile += 1
-      else if (afterHands.has(uid)) effects.bounce += 1
-      continue
-    }
-    if (prior.controller !== actor && next.controller === actor) effects.control += 1
-    else if (prior.controller === actor && next.controller !== actor) effects.control -= 1
-  }
-
-  for (const [uid] of afterExile) {
-    if (beforeExile.has(uid)) continue
-    if (beforeGrave.has(uid) && !afterGrave.has(uid)) effects.exile += 1
-  }
-
-  return effects
 }
 
 /** Count active immunity stamps / auras for event deltas. */
