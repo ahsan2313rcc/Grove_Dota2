@@ -106,6 +106,9 @@ export function Table({
     cards: [],
     cardsLow: [],
     heroes: [],
+    heroPlaysTotal: [],
+    heroPlaysSilenced: [],
+    heroPlaysOpen: [],
     abilities: [],
     heroHigh: [],
     heroLow: [],
@@ -125,6 +128,8 @@ export function Table({
     shapeCompare: [],
     eventStats: [],
     byAttr: [],
+    maxTurn: 1,
+    graphHeroes: [],
   }
 
   const teamCount = game?.players[game.active]?.teams.length ?? 0

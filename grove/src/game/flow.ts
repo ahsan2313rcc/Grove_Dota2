@@ -189,6 +189,7 @@ export function strip(state: Game): Game {
   return { ...state, players }
 }
 
+/** Body weight for capacity / scoring. Meepo is a normal 1-body hero (+1 per terrain combo is player-level). */
 export function heroWeight(_hero: BoardHero): number {
   return 1
 }

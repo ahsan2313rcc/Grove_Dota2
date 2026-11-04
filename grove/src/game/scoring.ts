@@ -10,7 +10,7 @@ export interface ScoreBody {
 
 /** Tunable scoring used by the table and debug rail. Indices are 1-based sizes (slot 0 unused). */
 export interface ScoreRules {
-  /** Points per hero body (Meepo counts as 2). */
+  /** Points per hero body. */
   heroPoints: number
   /** Core mono bonus by hero count 1..5. */
   coreBonus: [number, number, number, number, number]
@@ -128,20 +128,23 @@ export function scoreBodies(bodies: ScoreBody[], rules: ScoreRules = current): {
   // Mixed boards (size ≥ 3, 2+ attrs): better of core-stack bonus vs mix-attr bonus.
   // So 4 STR + 1 AGI still earns the ×4 core bonus instead of flat-only.
   // Naming: `STR x4 ATTR +2` (core stack) or `ATTR +3` (mix). Shape prefers core when stack ≥ 3.
+  // When the core stack wins, attack follows attackOnCore (default off → max 15), not attackOnMix.
   if (size >= SHAPE_MIN_HEROES && mixed) {
     const corePts = stack.count >= SHAPE_MIN_HEROES ? (rules.coreBonus[Math.min(stack.count, 5) - 1] ?? 0) : 0
     const mix = mixBonus(union.size, rules)
     const bonus = Math.max(corePts, mix.points)
     const useCore = stack.count >= SHAPE_MIN_HEROES && corePts >= mix.points && corePts > 0
-    const atk = rules.attackOnMix ? attack.points : 0
-    const whyAtk = rules.attackOnMix ? attack.why : ''
     if (useCore) {
+      const atk = rules.attackOnCore ? attack.points : 0
+      const whyAtk = rules.attackOnCore ? attack.why : ''
       const attrPart = union.size >= 2 ? ` ${mix.why}` : ''
       return {
         points: base + bonus + atk,
         why: `${label(stack.attr)} x${Math.min(stack.count, 5)}${attrPart}${whyAtk}`,
       }
     }
+    const atk = rules.attackOnMix ? attack.points : 0
+    const whyAtk = rules.attackOnMix ? attack.why : ''
     return { points: base + bonus + atk, why: `${mix.why}${whyAtk}` }
   }
 
