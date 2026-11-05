@@ -127,7 +127,7 @@ describe('scoring', () => {
       { attrs: ['STR'], range: null, count: 1, scoresFlat: false },
     ])
     expect(mixNeutral.why).toContain('(M4)')
-    expect(mixNeutral.points).toBe(8) // 3 flat + mix +2 + atk +2 (count 4)
+    expect(mixNeutral.points).toBe(7) // 3 flat + mix +2 + atk +2 (count 4)
   })
 
   it('Brewmaster picks the single attr that maximizes the team', () => {
