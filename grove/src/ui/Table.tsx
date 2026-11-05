@@ -28,7 +28,7 @@ export function Table({
   debug = false,
   debugSpeed = 1,
   debugView = 'watch',
-  debugBatchSize = 4,
+  debugBatchSize = 100,
   debugFocus = 0,
   debugRunCount = 1,
   debugFinished = 0,

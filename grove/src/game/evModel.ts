@@ -2,7 +2,7 @@
  * Grove full EV valuation — every mechanical family maps to expected points.
  *
  * Unit: expected points (same scale as scoreState totals).
- * Pressure in debug tables = sum of typed effect EVs (not provisional weights).
+ * Impact (avg pressure) in debug tables = sum of typed effect EVs (not provisional weights).
  *
  * Building blocks
  * ───────────────
@@ -125,7 +125,7 @@ export interface PlayEffects {
   denyActions: number
   combo: number
   silenceLock: number
-  /** Running full-EV total (source of truth for Press). */
+  /** Running full-EV total (source of truth for Impact). */
   ev: number
 }
 
@@ -245,7 +245,7 @@ export function effectEv(
   }
 }
 
-/** Full EV for a typed effect bag (Press column). */
+/** Full EV for a typed effect bag (Impact column). */
 export function pressureOf(effects: PlayEffects, cal: EvCalibration = DEFAULT_CALIBRATION): number {
   if (effects.ev) return effects.ev
   // Fallback recompute from counts (legacy bags without running ev).

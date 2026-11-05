@@ -214,7 +214,7 @@ export function DebugRail({
           {summary.finished}/{summary.matches} done · avg T{fmt(summary.avgTurns)} · spread {fmt(summary.avgFinalSpread)} · win {fmt(summary.avgWinnerScore)}
         </p>
         <p className="quiet debug-legend">
-          Rel = score Δ vs opponents · Self = own score Δ · Press = full EV (destroy/exile kinds/bounce/deck/control/draw-dig-search/steal/trap/deny/combo, calibrated). Win% = play-weighted seat wins. Heroes: Abil% / Sil%.
+          Rel = score Δ vs opponents · Self = own score Δ · Impact = avg EV pressure (destroy/exile kinds/bounce/deck/control/draw-dig-search/steal/trap/deny/combo, calibrated). Win% = play-weighted seat wins. Heroes: Abil% / Sil%.
         </p>
       </div>
 
@@ -329,6 +329,8 @@ export function DebugRail({
         seats={summary.seats}
       />
 
+      <ImpactTable rows={summary.contested} />
+
       <div className="debug-rel-grid">
         <div className="debug-block">
           <h3>Abilities</h3>
@@ -392,8 +394,6 @@ export function DebugRail({
           rowKey={(row) => String(row.attr)}
         />
       </div>
-
-      <ContestedTable rows={summary.contested} />
 
       {game ? (
         <>
@@ -560,7 +560,7 @@ function HeroModeTable({
   seats: number
 }) {
   const [mode, setMode] = useState<HeroSwingMode>('total')
-  // Cycle drives Rel/Press and the Win% partition (total vs ability vs silenced).
+  // Cycle drives Rel/Impact and the Win% partition (total vs ability vs silenced).
   const rows = mode === 'total' ? total : mode === 'silenced' ? silenced : open
   const label =
     mode === 'total' ? 'Total (body+ability)' : mode === 'silenced' ? 'Silenced' : 'Ability fired'
@@ -585,7 +585,7 @@ function HeroModeTable({
         </button>
       </h3>
       <p className="quiet debug-legend">
-        Cycle total → silenced → ability fired updates Rel/Press and win columns. {winLegend}.
+        Cycle total → silenced → ability fired updates Rel/Impact and win columns. {winLegend}.
         Rates seat-normalized (100% = fair 1/{seats || 'n'} ≈ {fair}% raw). Hover % for raw wins/n.
       </p>
       <CardSortTable
@@ -600,12 +600,12 @@ function HeroModeTable({
   )
 }
 
-function ContestedTable({ rows }: { rows: CardBalanceRow[] }) {
+function ImpactTable({ rows }: { rows: CardBalanceRow[] }) {
   const [showAll, setShowAll] = useState(false)
   return (
-    <div className="debug-block">
+    <div className="debug-block" data-testid="debug-impact-table">
       <h3>
-        Highest |Rel|{' '}
+        Highest impact{' '}
         <button
           type="button"
           className="debug-mode-cycle"
@@ -616,12 +616,12 @@ function ContestedTable({ rows }: { rows: CardBalanceRow[] }) {
         </button>
       </h3>
       <p className="quiet debug-legend">
-        Ranked by |Rel| × √n so rare spikes don&apos;t dominate. Pressure shows disruption even when Rel≈0.
+        Ranked by Impact × √n so rare spikes don&apos;t dominate. Captures disruption even when Rel≈0.
       </p>
       <CardSortTable
         rows={showAll ? rows : rows.slice(0, 16)}
-        empty="No contested swings yet."
-        defaultSort={{ key: 'abs', dir: 'desc' }}
+        empty="No impact samples yet."
+        defaultSort={{ key: 'pressure', dir: 'desc' }}
       />
     </div>
   )
@@ -857,11 +857,10 @@ function CardSortTable({
           className: 'debug-num',
         },
         { key: 'rel', label: 'Rel', get: (row) => signed(row.avgRelativeSwing), sortValue: (row) => row.avgRelativeSwing, className: 'debug-num' },
-        { key: 'abs', label: '|Rel|', get: (row) => fmt(row.avgAbsSwing), sortValue: (row) => row.avgAbsSwing, className: 'debug-num' },
         { key: 'self', label: 'Self', get: (row) => signed(row.avgActorSwing), sortValue: (row) => row.avgActorSwing, className: 'debug-num' },
         {
           key: 'pressure',
-          label: 'Press',
+          label: 'Impact',
           get: (row) => fmt(row.avgPressure),
           sortValue: (row) => row.avgPressure,
           className: 'debug-num',

@@ -1086,7 +1086,7 @@ export function summarizeReports(reports: MatchReport[], filter: StratFilter = A
     lootHigh: rankHigh(lootRows),
     lootLow: rankLow(lootRows),
     contested: [...ranked]
-      .sort((a, b) => b.avgAbsSwing * Math.sqrt(b.plays) - a.avgAbsSwing * Math.sqrt(a.plays) || b.plays - a.plays)
+      .sort((a, b) => b.avgPressure * Math.sqrt(b.plays) - a.avgPressure * Math.sqrt(a.plays) || b.plays - a.plays)
       .slice(0, 48),
     avgPtsByTurn: turnSeries.pts,
     avgCardsByTurn: turnSeries.cards,
