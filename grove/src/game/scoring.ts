@@ -125,26 +125,23 @@ export function scoreBodies(bodies: ScoreBody[], rules: ScoreRules = current): {
     return { points: base + bonus + atk, why: `${label(color)} x${capped}${whyAtk}` }
   }
 
-  // Mixed boards (size ≥ 3, 2+ attrs): better of core-stack bonus vs mix-attr bonus.
-  // So 4 STR + 1 AGI still earns the ×4 core bonus instead of flat-only.
-  // Naming: `STR x4 ATTR +2` (core stack) or `ATTR +3` (mix). Shape prefers core when stack ≥ 3.
-  // When the core stack wins, attack follows attackOnCore (default off → max 15), not attackOnMix.
+  // Mixed boards (size ≥ 3, 2+ attrs): better of mono-stack bonus vs mix-attr bonus for points
+  // (e.g. 4 STR + 1 AGI still earns ×4 stack bonus). Attack always follows attackOnMix —
+  // only pure mono (union size 1) is a "core" team for attackOnCore / shape.
   if (size >= SHAPE_MIN_HEROES && mixed) {
     const corePts = stack.count >= SHAPE_MIN_HEROES ? (rules.coreBonus[Math.min(stack.count, 5) - 1] ?? 0) : 0
     const mix = mixBonus(union.size, rules)
     const bonus = Math.max(corePts, mix.points)
-    const useCore = stack.count >= SHAPE_MIN_HEROES && corePts >= mix.points && corePts > 0
-    if (useCore) {
-      const atk = rules.attackOnCore ? attack.points : 0
-      const whyAtk = rules.attackOnCore ? attack.why : ''
+    const useStack = stack.count >= SHAPE_MIN_HEROES && corePts >= mix.points && corePts > 0
+    const atk = rules.attackOnMix ? attack.points : 0
+    const whyAtk = rules.attackOnMix ? attack.why : ''
+    if (useStack) {
       const attrPart = union.size >= 2 ? ` ${mix.why}` : ''
       return {
         points: base + bonus + atk,
         why: `${label(stack.attr)} x${Math.min(stack.count, 5)}${attrPart}${whyAtk}`,
       }
     }
-    const atk = rules.attackOnMix ? attack.points : 0
-    const whyAtk = rules.attackOnMix ? attack.why : ''
     return { points: base + bonus + atk, why: `${mix.why}${whyAtk}` }
   }
 
@@ -196,12 +193,11 @@ function attackBonus(bodies: ScoreBody[], rules: ScoreRules): { points: number; 
 }
 
 export function teamShape(why: string): 'core' | 'mix' | 'open' {
-  // Core if ≥3 same-attr stack (including splash boards like STR x4 ATTR +2).
+  // Splash boards (`STR x4 ATTR +2`) stay mix/open by attr count — core is pure mono only.
+  const mix = /ATTR \+(\d+)/.exec(why)
+  if (mix) return Number(mix[1]) >= SHAPE_MIN_HEROES ? 'mix' : 'open'
   const core = /^(STR|AGI|INT|UNI) x(\d+)/.exec(why)
   if (core && Number(core[2]) >= SHAPE_MIN_HEROES) return 'core'
-  // Mixed only when ≥3 distinct attributes.
-  const mix = /ATTR \+(\d+)/.exec(why)
-  if (mix && Number(mix[1]) >= SHAPE_MIN_HEROES) return 'mix'
   return 'open'
 }
 

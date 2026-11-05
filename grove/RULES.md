@@ -282,15 +282,17 @@ Bodies: each hero contributes `count` slots (`Meepo` = 2). Neutrals: `scoresFlat
 
 **Shape gate:** Core and mix bonuses (and shape classification) require **at least 3 bodies**. Teams of 1–2 are **Small** — flat points only (+ attack if `attackOnMix`).
 
-**Mono-attribute core** (every body has attr, union size 1, including UNI-only, **size ≥ 3**):
+**Mono-attribute core** (every body has the **same** attr, union size 1, including UNI-only, **size ≥ 3**):
 
 - Core bonus by size 1..5: default `[0, 0, 3, 6, 10]` (slots 1–2 unused in practice).
 - Attack bonus **off** by default (`attackOnCore: false`).
+- Shape is **core** only for these pure mono teams — a 3× stack on a multi-attr board is not core.
 
 **Mixed** (**size ≥ 3**, 2+ distinct attrs):
 
+- Points take the better of mono-stack bonus (if some attr has ≥3 bodies) vs mix-attr bonus.
 - Mix bonus by distinct attr count 1..4: default `[0, 0, 2, 4]` (needs 3+ attrs for points).
-- Attack bonus **on** by default (`attackOnMix: true`): if all non-null ranges are the same Melee or Ranged, size 1..5 → `[0, 0, 1, 2, 3]`. Neutrals have `range: null` and do not spoil sameness of hero ranges.
+- Attack bonus **on** by default (`attackOnMix: true`) for **all** mixed boards (including splash stacks): if all non-null ranges are the same Melee or Ranged, size 1..5 → `[0, 0, 1, 2, 3]`. Neutrals have `range: null` and do not spoil sameness of hero ranges.
 
 **Open / no attribute** (size ≥ 3, zero attrs, or otherwise not core/mix): flat + attack when `attackOnMix`.
 

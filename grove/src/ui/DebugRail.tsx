@@ -302,7 +302,7 @@ export function DebugRail({
         <h3>Shape compare {effectiveTurn == null ? '(final)' : `(T${effectiveTurn})`}</h3>
         <p className="quiet debug-legend">
           Core ×N = same-attr stack N (5+ → ×5). Mix · M = M distinct attrs. Dual-count allowed.
-          Avg pts = mean team score (core ≤15 / mix ≤12 under default rules, attack stripped when core active).
+          Avg pts = mean team score (pure core ≤15; mix gets attack by default).
           Pts/card = points ÷ heroes on those teams. Pure = mono cores only.
         </p>
         <ShapeTable rows={shapeRows} />

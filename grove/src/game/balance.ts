@@ -1265,7 +1265,10 @@ function maxCoreTeamPoints(): number {
 function maxMixTeamPoints(): number {
   const rules = getScoreRules()
   const atk = rules.attackOnMix ? (rules.attackBonus[4] ?? 0) : 0
-  return rules.heroPoints * 5 + (rules.mixBonus[3] ?? 0) + atk
+  // Pure 4-attr mix, or splash ×4 stack + 1 other (both size 5) — take the better bonus.
+  const mixAttr = rules.mixBonus[3] ?? 0
+  const splashStack = rules.coreBonus[3] ?? 0
+  return rules.heroPoints * 5 + Math.max(mixAttr, splashStack) + atk
 }
 
 function buildShapeCompareRows(shapeTotals: ShapeCounts, matchCount: number): ShapeCompareRow[] {

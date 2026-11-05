@@ -39,19 +39,27 @@ describe('scoring', () => {
       { attrs: ['UNI'], range: 'Melee', count: 1 },
     ])
     expect(fullMix.points).toBe(12)
-    // 4 STR + 1 UNI: core ×4 (+6) wins; attack follows attackOnCore (off) → 5+6=11 (not mix attack)
+    // 4 STR + 1 UNI: stack ×4 (+6) wins points; mixed board still takes attackOnMix → 5+6+3=14
     expect(scoreBodies([
       { attrs: ['STR'], range: 'Melee', count: 4 },
       { attrs: ['UNI'], range: 'Melee', count: 1 },
-    ]).points).toBe(11)
+    ]).points).toBe(14)
     expect(scoreBodies([
       { attrs: ['STR'], range: 'Melee', count: 4 },
       { attrs: ['AGI'], range: 'Melee', count: 1 },
     ]).why).toMatch(/^STR x4 ATTR \+2/)
-    expect(teamShape('STR x4 ATTR +2')).toBe('core')
+    // Core shape is pure mono only; splash / multi-attr boards are mix (3+ attrs) or open (2 attrs).
+    expect(teamShape('STR x4 ATTR +2')).toBe('open')
+    expect(teamShape('STR x3 ATTR +3')).toBe('mix')
     expect(teamShape('ATTR +3')).toBe('mix')
     expect(teamShape('ATTR +2')).toBe('open')
     expect(teamShape('STR x3')).toBe('core')
+    // 3 STR + AGI + INT: stack beats mix (+3 vs +2) but attack still applies → 5+3+3=11
+    expect(scoreBodies([
+      { attrs: ['STR'], range: 'Melee', count: 3 },
+      { attrs: ['AGI'], range: 'Melee', count: 1 },
+      { attrs: ['INT'], range: 'Melee', count: 1 },
+    ]).points).toBe(11)
     expect(scoreBodies([{ attrs: [], range: 'Melee', count: 4 }]).points).toBe(6)
     expect(scoreBodies([{ attrs: [], range: 'Melee', count: 5 }]).points).toBe(8)
     // Under 3 bodies: no mix/core — flat only (1), even with multiple attrs on one body.
