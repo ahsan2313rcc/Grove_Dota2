@@ -1264,11 +1264,11 @@ function maxCoreTeamPoints(): number {
 
 function maxMixTeamPoints(): number {
   const rules = getScoreRules()
-  const atk = rules.attackOnMix ? (rules.attackBonus[4] ?? 0) : 0
-  // Pure 4-attr mix, or splash ×4 stack + 1 other (both size 5) — take the better bonus.
-  const mixAttr = rules.mixBonus[3] ?? 0
-  const splashStack = rules.coreBonus[3] ?? 0
-  return rules.heroPoints * 5 + Math.max(mixAttr, splashStack) + atk
+  // Peak non-pure-core board: 4-attr mix + ATK, or CORE×3 + MIXED×3 (no ATK), or CORE×4 splash.
+  const mixAtk = (rules.mixBonus[3] ?? 0) + (rules.attackOnMix ? (rules.attackBonus[4] ?? 0) : 0)
+  const coreMix = (rules.coreBonus[2] ?? 0) + (rules.mixBonus[2] ?? 0)
+  const coreSplash = rules.coreBonus[3] ?? 0
+  return rules.heroPoints * 5 + Math.max(mixAtk, coreMix, coreSplash)
 }
 
 function buildShapeCompareRows(shapeTotals: ShapeCounts, matchCount: number): ShapeCompareRow[] {

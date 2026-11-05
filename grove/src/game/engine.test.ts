@@ -10,67 +10,105 @@ afterEach(() => {
 })
 
 describe('scoring', () => {
-  it('scores mono teams, mixed teams, and empty attributes', () => {
-    // Core bonus +0/0/3/6/10 → max 15. Mix attrs +0/0/2/4 + atk 0/0/1/2/3 → max 12.
-    expect(scoreBodies([{ attrs: ['STR'], range: 'Melee', count: 1 }]).points).toBe(1)
-    expect(scoreBodies([{ attrs: ['STR'], range: 'Melee', count: 2 }]).points).toBe(2)
-    expect(scoreBodies([{ attrs: ['STR'], range: 'Melee', count: 3 }]).points).toBe(6)
-    expect(scoreBodies([{ attrs: ['STR'], range: 'Melee', count: 4 }]).points).toBe(10)
-    expect(scoreBodies([{ attrs: ['STR'], range: 'Melee', count: 5 }]).points).toBe(15)
-    expect(scoreBodies([{ attrs: ['UNI'], range: 'Ranged', count: 5 }]).points).toBe(15)
-    expect(scoreBodies([{ attrs: ['AGI'], range: 'Melee', count: 2 }]).points).toBe(2)
-    const mixed = scoreBodies([
+  it('matches the CORE / MIXED / ATK truth table (melee unless noted)', () => {
+    const row = (
+      bodies: Parameters<typeof scoreBodies>[0],
+      points: number,
+      shape: 'core' | 'mix' | 'open',
+    ) => {
+      const scored = scoreBodies(bodies)
+      expect(scored.points).toBe(points)
+      expect(teamShape(scored.why)).toBe(shape)
+      return scored
+    }
+
+    // 1–2 heroes: flat only, no shape.
+    row([{ attrs: ['STR'], range: 'Melee', count: 1 }], 1, 'open')
+    row([{ attrs: ['STR'], range: 'Melee', count: 2 }], 2, 'open')
+    row([
+      { attrs: ['STR'], range: 'Melee', count: 1 },
+      { attrs: ['AGI'], range: 'Melee', count: 1 },
+    ], 2, 'open')
+
+    // 3 heroes.
+    row([
+      { attrs: ['STR'], range: 'Melee', count: 2 },
+      { attrs: ['AGI'], range: 'Melee', count: 1 },
+    ], 4, 'open') // 3+0+0+1 atk
+    row([
       { attrs: ['STR'], range: 'Melee', count: 1 },
       { attrs: ['AGI'], range: 'Melee', count: 1 },
       { attrs: ['INT'], range: 'Melee', count: 1 },
-    ])
-    expect(mixed.points).toBe(6)
-    const four = scoreBodies([
-      { attrs: ['STR'], range: 'Ranged', count: 1 },
-      { attrs: ['AGI'], range: 'Ranged', count: 1 },
-      { attrs: ['INT'], range: 'Ranged', count: 1 },
-      { attrs: ['UNI'], range: 'Ranged', count: 1 },
-    ])
-    expect(four.points).toBe(10)
-    const fullMix = scoreBodies([
+    ], 6, 'mix') // 3+0+2+1
+    row([{ attrs: ['STR'], range: 'Melee', count: 3 }], 6, 'core') // 3+3+0+0
+
+    // 4 heroes.
+    row([{ attrs: ['STR'], range: 'Melee', count: 4 }], 10, 'core') // 4+6
+    row([
+      { attrs: ['STR'], range: 'Melee', count: 3 },
+      { attrs: ['AGI'], range: 'Melee', count: 1 },
+    ], 7, 'core') // 4+3 — CORE blocks atk
+    row([
+      { attrs: ['STR'], range: 'Melee', count: 2 },
+      { attrs: ['AGI'], range: 'Melee', count: 2 },
+    ], 6, 'open') // 4+0+0+2
+    row([
+      { attrs: ['STR'], range: 'Melee', count: 2 },
+      { attrs: ['AGI'], range: 'Melee', count: 1 },
+      { attrs: ['INT'], range: 'Melee', count: 1 },
+    ], 8, 'mix') // 4+0+2+2
+    row([
+      { attrs: ['STR'], range: 'Melee', count: 1 },
+      { attrs: ['AGI'], range: 'Melee', count: 1 },
+      { attrs: ['INT'], range: 'Melee', count: 1 },
+      { attrs: ['UNI'], range: 'Melee', count: 1 },
+    ], 10, 'mix') // 4+0+4+2
+
+    // 5 heroes.
+    row([
       { attrs: ['STR'], range: 'Melee', count: 2 },
       { attrs: ['AGI'], range: 'Melee', count: 1 },
       { attrs: ['INT'], range: 'Melee', count: 1 },
       { attrs: ['UNI'], range: 'Melee', count: 1 },
-    ])
-    expect(fullMix.points).toBe(12)
-    // 4 STR + 1 UNI: stack ×4 (+6) wins points; mixed board still takes attackOnMix → 5+6+3=14
-    expect(scoreBodies([
-      { attrs: ['STR'], range: 'Melee', count: 4 },
-      { attrs: ['UNI'], range: 'Melee', count: 1 },
-    ]).points).toBe(14)
-    expect(scoreBodies([
-      { attrs: ['STR'], range: 'Melee', count: 4 },
-      { attrs: ['AGI'], range: 'Melee', count: 1 },
-    ]).why).toMatch(/^STR x4 ATTR \+2/)
-    // Core shape is pure mono only; splash / multi-attr boards are mix (3+ attrs) or open (2 attrs).
-    expect(teamShape('STR x4 ATTR +2')).toBe('open')
-    expect(teamShape('STR x3 ATTR +3')).toBe('mix')
-    expect(teamShape('ATTR +3')).toBe('mix')
-    expect(teamShape('ATTR +2')).toBe('open')
-    expect(teamShape('STR x3')).toBe('core')
-    // 3 STR + AGI + INT: stack beats mix (+3 vs +2) but attack still applies → 5+3+3=11
-    expect(scoreBodies([
+    ], 12, 'mix') // 5+0+4+3
+    const coreMix = row([
       { attrs: ['STR'], range: 'Melee', count: 3 },
       { attrs: ['AGI'], range: 'Melee', count: 1 },
       { attrs: ['INT'], range: 'Melee', count: 1 },
-    ]).points).toBe(11)
+    ], 10, 'core') // 5+3+2+0 — CORE+MIXED stack; no atk
+    expect(coreMix.why).toMatch(/STR x3/)
+    expect(coreMix.why).toMatch(/ATTR \+3/)
+    expect(coreMix.why).toMatch(/\(M5\)/)
+    row([
+      { attrs: ['STR'], range: 'Melee', count: 4 },
+      { attrs: ['AGI'], range: 'Melee', count: 1 },
+    ], 11, 'core') // 5+6
+    row([{ attrs: ['STR'], range: 'Melee', count: 5 }], 15, 'core') // 5+10
+    row([
+      { attrs: ['STR'], range: 'Melee', count: 2 },
+      { attrs: ['AGI'], range: 'Melee', count: 2 },
+      { attrs: ['INT'], range: 'Melee', count: 1 },
+    ], 10, 'mix') // 5+0+2+3
+    row([
+      { attrs: ['STR'], range: 'Melee', count: 3 },
+      { attrs: ['AGI'], range: 'Melee', count: 2 },
+    ], 8, 'core') // 5+3
+
+    // Ranged 4-attr mix; neutrals; small boards.
+    expect(scoreBodies([
+      { attrs: ['STR'], range: 'Ranged', count: 1 },
+      { attrs: ['AGI'], range: 'Ranged', count: 1 },
+      { attrs: ['INT'], range: 'Ranged', count: 1 },
+      { attrs: ['UNI'], range: 'Ranged', count: 1 },
+    ]).points).toBe(10)
     expect(scoreBodies([{ attrs: [], range: 'Melee', count: 4 }]).points).toBe(6)
     expect(scoreBodies([{ attrs: [], range: 'Melee', count: 5 }]).points).toBe(8)
-    // Under 3 bodies: no mix/core — flat only (1), even with multiple attrs on one body.
     expect(scoreBodies([{ attrs: ['STR', 'AGI', 'INT'], range: 'Melee', count: 1 }]).points).toBe(1)
     expect(scoreBodies([{ attrs: ['STR'], range: 'Melee', count: 2 }]).why).toMatch(/^Small/)
-    expect(scoreBodies([{ attrs: ['STR'], range: 'Melee', count: 3 }]).why).toMatch(/^STR x3/)
-    // Neutrals fill attr size but grant no flat points.
     expect(scoreBodies([
       { attrs: ['STR'], range: 'Melee', count: 2, scoresFlat: true },
       { attrs: ['STR'], range: null, count: 1, scoresFlat: false },
-    ]).points).toBe(5) // 2 flat + core×3 (+3)
+    ]).points).toBe(5) // 2 flat + core×3 (+3); null range does not spoil melee of the two heroes... wait, only 2 melee → no atk anyway
   })
 
   it('Brewmaster picks the single attr that maximizes the team', () => {
@@ -99,7 +137,7 @@ describe('scoring', () => {
       mixCombo: 4,
     })
     expect(scoreBodies([{ attrs: ['STR'], range: 'Melee', count: 3 }]).points).toBe(4)
-    expect(scoreBodies([{ attrs: ['STR'], range: 'Melee', count: 3 }]).why).toContain('(M1)')
+    expect(scoreBodies([{ attrs: ['STR'], range: 'Melee', count: 3 }]).why).toContain('(M3)')
     expect(scoreBodies([
       { attrs: ['STR'], range: 'Melee', count: 1 },
       { attrs: ['AGI'], range: 'Melee', count: 1 },

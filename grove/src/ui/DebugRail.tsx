@@ -13,7 +13,7 @@ import {
 import type { AiStrat } from '../game/types.ts'
 import { display } from '../game/catalog.ts'
 import { scoreState, scoreTeam } from '../game/flow.ts'
-import { teamShape } from '../game/scoring.ts'
+import { teamShapes } from '../game/scoring.ts'
 import type { Game } from '../game/types.ts'
 
 export type DebugSpeed = 0 | 0.5 | 1 | 2
@@ -1017,9 +1017,9 @@ function countShapes(game: Game, id: number): { core: number; mix: number } {
   let core = 0
   let mix = 0
   for (const team of game.players[id]?.teams ?? []) {
-    const shape = teamShape(scoreTeam(game, team).why)
-    if (shape === 'core') core += 1
-    if (shape === 'mix') mix += 1
+    const shapes = teamShapes(scoreTeam(game, team).why)
+    if (shapes.core) core += 1
+    if (shapes.mix) mix += 1
   }
   return { core, mix }
 }

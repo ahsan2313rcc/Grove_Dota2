@@ -282,27 +282,34 @@ Bodies: each hero contributes `count` slots (`Meepo` = 2). Neutrals: `scoresFlat
 
 **Shape gate:** Core and mix bonuses (and shape classification) require **at least 3 bodies**. Teams of 1–2 are **Small** — flat points only (+ attack if `attackOnMix`).
 
-**Mono-attribute core** (every body has the **same** attr, union size 1, including UNI-only, **size ≥ 3**):
+Label format: `STR x3, ATTR +3 (M5)` — numbers are **hero counts** (neutrals included in shape/atk counts).
 
-- Core bonus by size 1..5: default `[0, 0, 3, 6, 10]` (slots 1–2 unused in practice).
-- Attack bonus **off** by default (`attackOnCore: false`).
-- Shape is **core** only for these pure mono teams — a 3× stack on a multi-attr board is not core.
+**CORE** — 3×+ bodies share one attr (including UNI-only):
 
-**Mixed** (**size ≥ 3**, 2+ distinct attrs):
+- Bonus by stack size 1..5: default `[0, 0, 3, 6, 10]`.
+- Stacks with MIXED when both qualify (e.g. 3 STR + AGI + INT → core +3 and mix +2).
+- **Blocks ATK** by default (`attackOnCore: false`).
 
-- Points take the better of mono-stack bonus (if some attr has ≥3 bodies) vs mix-attr bonus.
-- Mix bonus by distinct attr count 1..4: default `[0, 0, 2, 4]` (needs 3+ attrs for points).
-- Attack bonus **on** by default (`attackOnMix: true`) for **all** mixed boards (including splash stacks): if all non-null ranges are the same Melee or Ranged, size 1..5 → `[0, 0, 1, 2, 3]`. Neutrals have `range: null` and do not spoil sameness of hero ranges.
+**MIXED** — 3+ distinct attrs:
 
-**Open / no attribute** (size ≥ 3, zero attrs, or otherwise not core/mix): flat + attack when `attackOnMix`.
+- Bonus by attr count 1..4: default `[0, 0, 2, 4]`.
+- Stacks with CORE.
+
+**ATK** — 3+ bodies share Melee or Ranged (`(M3)` / `(R5)` in the label = count, not points):
+
+- Bonus by count 1..5: default `[0, 0, 1, 2, 3]`.
+- Applies only when there is **no CORE** (unless `attackOnCore`). Toggle `attackOnMix` gates ATK on non-core boards.
+- Neutrals have `range: null` and do not spoil sameness of hero ranges; they still count toward attr stacks.
+
+**Open / small** — under 3 bodies, or 3+ with neither CORE nor MIXED: flat + ATK when eligible.
 
 **Brewmaster:** Counts as exactly one of STR/AGI/INT — engine picks the assignment that **maximizes that team’s score**.
 
 **Elder Titan:** Enemy heroes have no attribute (still 1 flat; attack type can still score).
 
-**No attribute** hero: still 1 flat; may block mono core.
+**No attribute** hero: still 1 flat; does not pad a mono stack.
 
-Max illustrative mono team: 5 same attr → 5 + 10 = **15**. Mix + attack e.g. 5 heroes 4 attrs melee: 5 + 4 + 3 = **12**.
+Max illustrative: 5 same attr → 5 + 10 = **15**. Mix + ATK e.g. 5 heroes 4 attrs melee: 5 + 4 + 3 = **12**. CORE+MIXED e.g. 3 STR + AGI + INT melee: 5 + 3 + 2 = **10** (no ATK).
 
 ### 9.2 Terrains
 

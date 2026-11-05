@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { display } from '../game/catalog.ts'
 import { comboPlans, morphCasts, needsTeam, playableFromGrave, teamsFor, undyingRevive } from '../game/engine.ts'
 import { findHero, isTrapHero, scoreState, scoreTeam } from '../game/flow.ts'
-import { teamShape } from '../game/scoring.ts'
+import { teamShapes } from '../game/scoring.ts'
 import type { Action, CardInst, Game, PlayerId } from '../game/types.ts'
 import { CardFace } from './CardFace.tsx'
 import { Prompt } from './Prompt.tsx'
@@ -747,9 +747,9 @@ function countShapes(game: Game, id: PlayerId): { core: number; mix: number } {
   let core = 0
   let mix = 0
   for (const team of game.players[id].teams) {
-    const shape = teamShape(scoreTeam(game, team).why)
-    if (shape === 'core') core += 1
-    if (shape === 'mix') mix += 1
+    const shapes = teamShapes(scoreTeam(game, team).why)
+    if (shapes.core) core += 1
+    if (shapes.mix) mix += 1
   }
   return { core, mix }
 }
