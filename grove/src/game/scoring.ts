@@ -181,12 +181,21 @@ function maxMonoStack(bodies: ScoreBody[]): { attr: Attr; count: number } {
   return { attr: best, count }
 }
 
+/**
+ * ATK count = every body that shares the attack type, including neutrals (`range: null`
+ * does not spoil sameness and still fills the M/R count). Label uses that hero/neutral
+ * count (e.g. `(R4)`), never the point value.
+ */
 function attackInfoFor(bodies: ScoreBody[], rules: ScoreRules): { points: number; count: number; tag: string } {
-  const ranges = bodies.map((body) => body.range).filter((range): range is Range => range !== null)
-  if (ranges.length < 1 || new Set(ranges).size !== 1) return { points: 0, count: 0, tag: 'M' }
-  const count = Math.min(ranges.length, 5)
-  const points = count >= SHAPE_MIN_HEROES ? (rules.attackBonus[count - 1] ?? 0) : 0
-  return { points, count, tag: ranges[0] === 'Melee' ? 'M' : 'R' }
+  const typed = bodies.filter((body): body is ScoreBody & { range: Range } => body.range !== null)
+  if (typed.length === 0) return { points: 0, count: 0, tag: 'M' }
+  const kinds = new Set(typed.map((body) => body.range))
+  if (kinds.size !== 1) return { points: 0, count: 0, tag: 'M' }
+  const nulls = bodies.length - typed.length
+  const count = typed.length + nulls
+  const capped = Math.min(count, 5)
+  const points = capped >= SHAPE_MIN_HEROES ? (rules.attackBonus[capped - 1] ?? 0) : 0
+  return { points, count, tag: typed[0]!.range === 'Melee' ? 'M' : 'R' }
 }
 
 export function teamShapes(why: string): { core: boolean; mix: boolean } {

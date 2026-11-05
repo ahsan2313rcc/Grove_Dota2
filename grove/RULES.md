@@ -295,11 +295,11 @@ Label format: `STR x3, ATTR +3 (M5)` — numbers are **hero counts** (neutrals i
 - Bonus by attr count 1..4: default `[0, 0, 2, 4]`.
 - Stacks with CORE.
 
-**ATK** — 3+ bodies share Melee or Ranged (`(M3)` / `(R5)` in the label = count, not points):
+**ATK** — 3+ bodies share Melee or Ranged (`(M3)` / `(R5)` in the label = **hero/neutral count**, never the point value):
 
 - Bonus by count 1..5: default `[0, 0, 1, 2, 3]`.
 - Applies only when there is **no CORE** (unless `attackOnCore`). Toggle `attackOnMix` gates ATK on non-core boards.
-- Neutrals have `range: null` and do not spoil sameness of hero ranges; they still count toward attr stacks.
+- Neutrals have `range: null`: they do not spoil Melee/Ranged sameness and **do** fill the M/R count (and attr stacks).
 
 **Open / small** — under 3 bodies, or 3+ with neither CORE nor MIXED: flat + ATK when eligible.
 

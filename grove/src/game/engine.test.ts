@@ -94,21 +94,40 @@ describe('scoring', () => {
       { attrs: ['AGI'], range: 'Melee', count: 2 },
     ], 8, 'core') // 5+3
 
-    // Ranged 4-attr mix; neutrals; small boards.
-    expect(scoreBodies([
+    // Display: (R#)/(M#) is hero/neutral count, never ATK points (4 ranged → (R4) not (R2)).
+    const fourRanged = scoreBodies([
       { attrs: ['STR'], range: 'Ranged', count: 1 },
       { attrs: ['AGI'], range: 'Ranged', count: 1 },
       { attrs: ['INT'], range: 'Ranged', count: 1 },
       { attrs: ['UNI'], range: 'Ranged', count: 1 },
-    ]).points).toBe(10)
+    ])
+    expect(fourRanged.points).toBe(10)
+    expect(fourRanged.why).toContain('(R4)')
+    expect(fourRanged.why).not.toContain('(R2)')
+
     expect(scoreBodies([{ attrs: [], range: 'Melee', count: 4 }]).points).toBe(6)
     expect(scoreBodies([{ attrs: [], range: 'Melee', count: 5 }]).points).toBe(8)
     expect(scoreBodies([{ attrs: ['STR', 'AGI', 'INT'], range: 'Melee', count: 1 }]).points).toBe(1)
     expect(scoreBodies([{ attrs: ['STR'], range: 'Melee', count: 2 }]).why).toMatch(/^Small/)
-    expect(scoreBodies([
+
+    // Neutrals fill CORE and ATK counts (null range does not spoil Melee).
+    const withNeutral = scoreBodies([
       { attrs: ['STR'], range: 'Melee', count: 2, scoresFlat: true },
       { attrs: ['STR'], range: null, count: 1, scoresFlat: false },
-    ]).points).toBe(5) // 2 flat + core×3 (+3); null range does not spoil melee of the two heroes... wait, only 2 melee → no atk anyway
+    ])
+    expect(withNeutral.points).toBe(5) // 2 flat + core×3
+    expect(withNeutral.why).toMatch(/STR x3/)
+    expect(withNeutral.why).toContain('(M3)')
+
+    // 2 melee heroes + 1 neutral + 1 other melee attr → ATK count 4 including neutral.
+    const mixNeutral = scoreBodies([
+      { attrs: ['STR'], range: 'Melee', count: 1, scoresFlat: true },
+      { attrs: ['AGI'], range: 'Melee', count: 1, scoresFlat: true },
+      { attrs: ['INT'], range: 'Melee', count: 1, scoresFlat: true },
+      { attrs: ['STR'], range: null, count: 1, scoresFlat: false },
+    ])
+    expect(mixNeutral.why).toContain('(M4)')
+    expect(mixNeutral.points).toBe(8) // 3 flat + mix +2 + atk +2 (count 4)
   })
 
   it('Brewmaster picks the single attr that maximizes the team', () => {
