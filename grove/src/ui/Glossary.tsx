@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { ANCIENT, HEROES, ITEMS, REWARDS, TERRAINS } from '../game/catalog.ts'
 import type { Attr } from '../game/types.ts'
+import { CardArt } from './CardArt.tsx'
 
 type Tab = 'heroes' | 'items' | 'terrains' | 'runes' | 'neutrals' | 'towers'
 
@@ -75,12 +76,15 @@ export function Glossary({ onClose }: { onClose: () => void }) {
         <p className="eyebrow">Card reference</p>
         <h2 id="glossary-title">Glossary</h2>
         <p className="quiet">Browse every hero, item, terrain, and reward in the shared decks. The Ancient (+10 on draw reveal, then one final turn each) is placed after the opening deal by seat count (mid for 2–4, deep for 5–6, last for 7–8).</p>
-        <div className="glossary-entry" data-kind="ancient" style={{ marginBottom: 12 }}>
-          <header>
-            <strong>{ANCIENT.name}</strong>
-            <span className="glossary-marks"><span className="pill muted">1× endgame</span></span>
-          </header>
-          <p>{ANCIENT.text}</p>
+        <div className="glossary-entry has-art" data-kind="ancient" style={{ marginBottom: 12 }}>
+          <CardArt defId={ANCIENT.id} size="icon" className="glossary-art" />
+          <div className="glossary-body">
+            <header>
+              <strong>{ANCIENT.name}</strong>
+              <span className="glossary-marks"><span className="pill muted">1× endgame</span></span>
+            </header>
+            <p>{ANCIENT.text}</p>
+          </div>
         </div>
 
         <div className="glossary-tabs" role="tablist" aria-label="Card type">
@@ -125,17 +129,20 @@ export function Glossary({ onClose }: { onClose: () => void }) {
         {tab === 'heroes' ? (
           <ul className="glossary-list">
             {heroes.map((hero) => (
-              <li key={hero.id} className="glossary-entry" data-kind="hero" data-attr={hero.attr}>
-                <header>
-                  <strong>{hero.name}</strong>
-                  <span className="glossary-marks">
-                    <span className={`pill attr-${hero.attr}`}>{ATTR_LABEL[hero.attr]}</span>
-                    <span className="pill range">{hero.range}</span>
-                    <span className={`type-pill inline timing-${hero.timing}`}>{TIMING_LABEL[hero.timing]}</span>
-                  </span>
-                </header>
-                <p className="spell">{hero.spell}</p>
-                <p>{hero.text}</p>
+              <li key={hero.id} className="glossary-entry has-art" data-kind="hero" data-attr={hero.attr}>
+                <CardArt defId={hero.id} size="icon" className="glossary-art" />
+                <div className="glossary-body">
+                  <header>
+                    <strong>{hero.name}</strong>
+                    <span className="glossary-marks">
+                      <span className={`pill attr-${hero.attr}`}>{ATTR_LABEL[hero.attr]}</span>
+                      <span className="pill range">{hero.range}</span>
+                      <span className={`type-pill inline timing-${hero.timing}`}>{TIMING_LABEL[hero.timing]}</span>
+                    </span>
+                  </header>
+                  <p className="spell">{hero.spell}</p>
+                  <p>{hero.text}</p>
+                </div>
               </li>
             ))}
           </ul>
@@ -144,15 +151,18 @@ export function Glossary({ onClose }: { onClose: () => void }) {
         {tab === 'items' ? (
           <ul className="glossary-list">
             {items.map((item) => (
-              <li key={item.id} className="glossary-entry" data-kind="item">
-                <header>
-                  <strong>{item.name}</strong>
-                  <span className="glossary-marks">
-                    <span className="pill muted">{item.copies}× in deck</span>
-                    {item.instant ? <span className="type-pill inline timing-instant">Instant</span> : null}
-                  </span>
-                </header>
-                <p>{item.text}</p>
+              <li key={item.id} className="glossary-entry has-art" data-kind="item">
+                <CardArt defId={item.id} size="icon" className="glossary-art" />
+                <div className="glossary-body">
+                  <header>
+                    <strong>{item.name}</strong>
+                    <span className="glossary-marks">
+                      <span className="pill muted">{item.copies}× in deck</span>
+                      {item.instant ? <span className="type-pill inline timing-instant">Instant</span> : null}
+                    </span>
+                  </header>
+                  <p>{item.text}</p>
+                </div>
               </li>
             ))}
           </ul>
@@ -161,12 +171,15 @@ export function Glossary({ onClose }: { onClose: () => void }) {
         {tab === 'terrains' ? (
           <ul className="glossary-list">
             {terrains.map((terrain) => (
-              <li key={terrain.id} className="glossary-entry" data-kind={terrain.id}>
-                <header>
-                  <strong>{terrain.name}</strong>
-                  <span className="glossary-marks"><span className="pill muted">12× in deck</span></span>
-                </header>
-                <p>{terrain.text}</p>
+              <li key={terrain.id} className="glossary-entry has-art" data-kind={terrain.id}>
+                <CardArt defId={terrain.id} size="icon" className="glossary-art" />
+                <div className="glossary-body">
+                  <header>
+                    <strong>{terrain.name}</strong>
+                    <span className="glossary-marks"><span className="pill muted">12× in deck</span></span>
+                  </header>
+                  <p>{terrain.text}</p>
+                </div>
               </li>
             ))}
           </ul>
@@ -175,17 +188,20 @@ export function Glossary({ onClose }: { onClose: () => void }) {
         {tab === 'runes' || tab === 'neutrals' || tab === 'towers' ? (
           <ul className="glossary-list">
             {rewards.map((reward) => (
-              <li key={reward.id} className="glossary-entry" data-kind={reward.kind} data-attr={reward.attr ?? ''}>
-                <header>
-                  <strong>{reward.name}</strong>
-                  <span className="glossary-marks">
-                    {reward.attr ? <span className={`pill attr-${reward.attr}`}>{ATTR_LABEL[reward.attr]}</span> : null}
-                    <span className="pill muted">{reward.copies}× in pile</span>
-                    {reward.instant ? <span className="type-pill inline timing-instant">Instant</span> : null}
-                    {reward.token ? <span className="pill muted">Neutral body</span> : null}
-                  </span>
-                </header>
-                <p>{reward.text}</p>
+              <li key={reward.id} className="glossary-entry has-art" data-kind={reward.kind} data-attr={reward.attr ?? ''}>
+                <CardArt defId={reward.id} size="icon" className="glossary-art" />
+                <div className="glossary-body">
+                  <header>
+                    <strong>{reward.name}</strong>
+                    <span className="glossary-marks">
+                      {reward.attr ? <span className={`pill attr-${reward.attr}`}>{ATTR_LABEL[reward.attr]}</span> : null}
+                      <span className="pill muted">{reward.copies}× in pile</span>
+                      {reward.instant ? <span className="type-pill inline timing-instant">Instant</span> : null}
+                      {reward.token ? <span className="pill muted">Neutral body</span> : null}
+                    </span>
+                  </header>
+                  <p>{reward.text}</p>
+                </div>
               </li>
             ))}
           </ul>

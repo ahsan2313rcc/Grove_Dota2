@@ -15,6 +15,7 @@ import { display } from '../game/catalog.ts'
 import { scoreState, scoreTeam } from '../game/flow.ts'
 import { teamShapes } from '../game/scoring.ts'
 import type { Game } from '../game/types.ts'
+import { CardArt } from './CardArt.tsx'
 
 export type DebugSpeed = 0 | 0.5 | 1 | 2
 export type DebugView = 'watch' | 'stats'
@@ -214,7 +215,7 @@ export function DebugRail({
           {summary.finished}/{summary.matches} done · avg T{fmt(summary.avgTurns)} · spread {fmt(summary.avgFinalSpread)} · win {fmt(summary.avgWinnerScore)}
         </p>
         <p className="quiet debug-legend">
-          Rel = score Δ vs opponents · Self = own score Δ · Impact = avg EV pressure (destroy/exile kinds/bounce/deck/control/draw-dig-search/steal/trap/deny/combo, calibrated). Win% = play-weighted seat wins. Heroes: Abil% / Sil%.
+          Rel = mean score Δ vs opponents · Self = own score Δ · Impact = calibrated EV of disruption (not a sum of Rel). Hover Impact for effect mix. Win% = play-weighted seat wins.
         </p>
       </div>
 
@@ -585,8 +586,7 @@ function HeroModeTable({
         </button>
       </h3>
       <p className="quiet debug-legend">
-        Cycle total → silenced → ability fired updates Rel/Impact and win columns. {winLegend}.
-        Rates seat-normalized (100% = fair 1/{seats || 'n'} ≈ {fair}% raw). Hover % for raw wins/n.
+        Cycle total → silenced → ability fired. {winLegend}. Win% seat-normalized (fair ≈ {fair}%). Hover % for raw.
       </p>
       <CardSortTable
         key={mode}
@@ -616,7 +616,7 @@ function ImpactTable({ rows }: { rows: CardBalanceRow[] }) {
         </button>
       </h3>
       <p className="quiet debug-legend">
-        Ranked by Impact × √n so rare spikes don&apos;t dominate. Captures disruption even when Rel≈0.
+        Ranked by Impact × √n. Disruption value even when Rel≈0 — not a Rel breakdown.
       </p>
       <CardSortTable
         rows={showAll ? rows : rows.slice(0, 16)}
@@ -815,8 +815,8 @@ function CardSortTable({
         },
       ]
 
-  // Mode-specific views already put sample size in winCols as `n`; hide the generic n column then.
-  const hideGenericN = heroWins && heroWinMode !== 'total'
+  // Hero modes already expose sample size via nΣ / n / win cols — drop the generic n.
+  const hideGenericN = heroWins
 
   return (
     <SortableTable
@@ -829,75 +829,34 @@ function CardSortTable({
           key: 'card',
           label: 'Card',
           get: (row) => (
-            <>
-              <strong>{row.name}</strong>
-              <small>
-                {row.kind}
-                {row.attr ? ` · ${attrLabel(row.attr)}` : ''}
-                {row.instant ? ' · instant' : ''}
-                {heroWins && heroWinMode === 'total' && row.abilityPlays + row.silencedPlays > 0 ? (
-                  <>
-                    {' · '}
-                    {row.abilityPlays} abil / {row.silencedPlays} sil
-                  </>
-                ) : null}
-              </small>
-            </>
+            <span className="debug-card-cell">
+              <CardArt defId={row.defId} size="icon" className="debug-card-art" />
+              <span className="debug-card-copy">
+                <strong>{row.name}</strong>
+                <small>
+                  {row.kind}
+                  {row.attr ? ` · ${attrLabel(row.attr)}` : ''}
+                  {row.instant ? ' · instant' : ''}
+                </small>
+              </span>
+            </span>
           ),
           sortValue: (row) => row.name,
         },
         ...(hideGenericN
           ? []
           : [{ key: 'n', label: 'n', get: (row: CardBalanceRow) => String(row.plays), sortValue: (row: CardBalanceRow) => row.plays, className: 'debug-num' }]),
-        {
-          key: 'pres',
-          label: 'Pres',
-          get: (row) => (row.presence > 0 ? String(row.presence) : '—'),
-          sortValue: (row) => row.presence,
-          className: 'debug-num',
-        },
         { key: 'rel', label: 'Rel', get: (row) => signed(row.avgRelativeSwing), sortValue: (row) => row.avgRelativeSwing, className: 'debug-num' },
         { key: 'self', label: 'Self', get: (row) => signed(row.avgActorSwing), sortValue: (row) => row.avgActorSwing, className: 'debug-num' },
         {
           key: 'pressure',
           label: 'Impact',
-          get: (row) => fmt(row.avgPressure),
+          get: (row) => (
+            <span title={impactTooltip(row)} className="debug-impact">
+              {fmt(row.avgPressure)}
+            </span>
+          ),
           sortValue: (row) => row.avgPressure,
-          className: 'debug-num',
-        },
-        {
-          key: 'destroy',
-          label: 'D',
-          get: (row) => soft(row.avgDestroy),
-          sortValue: (row) => row.avgDestroy,
-          className: 'debug-num',
-        },
-        {
-          key: 'discard',
-          label: 'Disc',
-          get: (row) => soft(row.avgDiscard),
-          sortValue: (row) => row.avgDiscard,
-          className: 'debug-num',
-        },
-        {
-          key: 'exile',
-          label: 'Ex',
-          get: (row) => soft(row.avgExile),
-          sortValue: (row) => row.avgExile,
-          className: 'debug-num',
-        },
-        {
-          key: 'steal',
-          label: 'Stl',
-          get: (row) => soft(row.avgSteal),
-          sortValue: (row) => row.avgSteal,
-          className: 'debug-num',
-        },
-        {
-          key: 'bounce',
-          label: 'Bnc',
-          get: (row) => soft(row.avgBounce),
-          sortValue: (row) => row.avgBounce,
           className: 'debug-num',
         },
         ...winCols,
@@ -926,6 +885,19 @@ function pctCell(rate: number, wins: number, samples: number, seats = 0): ReactN
 function soft(value: number): string {
   if (!value) return '·'
   return value >= 10 ? String(Math.round(value)) : fmt(value)
+}
+
+/** Hover detail: effect mix that feeds Impact (separate from Rel/Self). */
+function impactTooltip(row: CardBalanceRow): string {
+  const parts = [
+    row.avgDestroy ? `destroy ${soft(row.avgDestroy)}` : null,
+    row.avgExile ? `exile ${soft(row.avgExile)}` : null,
+    row.avgDiscard ? `discard ${soft(row.avgDiscard)}` : null,
+    row.avgSteal ? `steal ${soft(row.avgSteal)}` : null,
+    row.avgBounce ? `bounce ${soft(row.avgBounce)}` : null,
+  ].filter(Boolean)
+  const mix = parts.length > 0 ? parts.join(' · ') : 'low typed removal'
+  return `Impact ${fmt(row.avgPressure)} — EV pressure from disruption (${mix}). Not Rel.`
 }
 
 function attrLabel(attr: string): string {
