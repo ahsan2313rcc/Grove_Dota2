@@ -664,9 +664,35 @@ button.debug-mode-cycle:hover {
   flex: 0 0 auto;
   box-shadow: inset 0 1px 0 rgba(224, 201, 138, 0.08);
 }
-.team header, .team footer, .combo-chip { display: flex; gap: 6px; align-items: baseline; flex-wrap: nowrap; }
+.team header, .team footer, .combo-chip { display: flex; gap: 4px 6px; align-items: baseline; flex-wrap: wrap; }
 .team header strong { color: var(--gold); font-family: Fraunces, Georgia, serif; font-size: 1.15rem; flex: 0 0 auto; }
-.team header span { color: var(--cream-dim); font-size: 0.72rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.team header .team-why {
+  color: var(--cream-dim);
+  font-size: 0.72rem;
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.team-range {
+  flex: 0 0 auto;
+  margin: 0;
+  font-style: normal;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  padding: 1px 6px;
+  border-radius: 999px;
+  border: 1px solid rgba(224, 201, 138, 0.28);
+  color: var(--cream-dim);
+  background: rgba(255, 255, 255, 0.04);
+}
+.team-range.on {
+  color: var(--ink);
+  background: var(--gold);
+  border-color: transparent;
+}
 .team footer em, .combo-chip em { font-style: normal; color: var(--gold); font-size: 0.75rem; }
 .team-heroes { display: flex; flex-direction: column; }
 

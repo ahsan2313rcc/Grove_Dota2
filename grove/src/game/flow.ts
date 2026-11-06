@@ -285,15 +285,26 @@ export function scoreTeam(
   state: Game,
   team: Team,
   rules?: import('./scoring.ts').ScoreRules,
-): { points: number; why: string; brew?: Record<string, Attr> } {
+): {
+  points: number
+  why: string
+  attack: import('./scoring.ts').AttackScore
+  brew?: Record<string, Attr>
+} {
   const flex = team.heroes.filter((hero) => isBrewFlex(state, hero))
   if (flex.length === 0) {
     return scoreBodies(team.heroes.map((hero) => bodyFor(hero, fixedAttrsOf(state, hero))), rules)
   }
 
-  let best: { points: number; why: string; brew: Record<string, Attr> } = {
+  let best: {
+    points: number
+    why: string
+    attack: import('./scoring.ts').AttackScore
+    brew: Record<string, Attr>
+  } = {
     points: -1,
     why: 'Empty',
+    attack: { tag: 'M', count: 0, points: 0 },
     brew: {},
   }
 

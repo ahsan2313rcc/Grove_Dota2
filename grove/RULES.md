@@ -282,7 +282,7 @@ Bodies: each hero contributes `count` slots (`Meepo` = 2). Neutrals: `scoresFlat
 
 **Shape gate:** Core and mix bonuses (and shape classification) require **at least 3 bodies**. Teams of 1–2 are **Small** — flat points only (+ attack if `attackOnMix`).
 
-Label format: `STR x3, ATTR +3 (M5)` — numbers are **hero counts** (neutrals included in shape/atk counts).
+Label format: `STR x3, ATTR +3, ATK +1 (M3)` — attr numbers are **hero counts**; `ATK +N` is the attack **points** when it scores; `(M#)`/`(R#)` is the shared Melee/Ranged **body count** (neutrals included).
 
 **CORE** — 3×+ bodies share one attr (including UNI-only):
 

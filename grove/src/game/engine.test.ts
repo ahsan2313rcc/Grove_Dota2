@@ -102,8 +102,10 @@ describe('scoring', () => {
       { attrs: ['UNI'], range: 'Ranged', count: 1 },
     ])
     expect(fourRanged.points).toBe(10)
+    expect(fourRanged.why).toContain('ATK +2')
     expect(fourRanged.why).toContain('(R4)')
     expect(fourRanged.why).not.toContain('(R2)')
+    expect(fourRanged.attack).toEqual({ tag: 'R', count: 4, points: 2 })
 
     expect(scoreBodies([{ attrs: [], range: 'Melee', count: 4 }]).points).toBe(6)
     expect(scoreBodies([{ attrs: [], range: 'Melee', count: 5 }]).points).toBe(8)
@@ -126,8 +128,16 @@ describe('scoring', () => {
       { attrs: ['INT'], range: 'Melee', count: 1, scoresFlat: true },
       { attrs: ['STR'], range: null, count: 1, scoresFlat: false },
     ])
+    expect(mixNeutral.why).toContain('ATK +2')
     expect(mixNeutral.why).toContain('(M4)')
     expect(mixNeutral.points).toBe(7) // 3 flat + mix +2 + atk +2 (count 4)
+    expect(mixNeutral.attack).toEqual({ tag: 'M', count: 4, points: 2 })
+
+    // CORE blocks ATK points but still shows the shared-range count.
+    const coreMelee = scoreBodies([{ attrs: ['STR'], range: 'Melee', count: 3 }])
+    expect(coreMelee.why).toContain('(M3)')
+    expect(coreMelee.why).not.toContain('ATK +')
+    expect(coreMelee.attack.points).toBe(0)
   })
 
   it('Brewmaster picks the single attr that maximizes the team', () => {

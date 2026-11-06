@@ -106,9 +106,14 @@ export const SHAPE_MIN_HEROES = 3
  *
  * Why label: `STR x3, ATTR +3 (M5)` — numbers are hero counts in each category.
  */
-export function scoreBodies(bodies: ScoreBody[], rules: ScoreRules = current): { points: number; why: string } {
+export type AttackScore = { tag: 'M' | 'R'; count: number; points: number }
+
+export function scoreBodies(
+  bodies: ScoreBody[],
+  rules: ScoreRules = current,
+): { points: number; why: string; attack: AttackScore } {
   const expanded = bodies.flatMap((body) => Array.from({ length: body.count }, () => body))
-  if (expanded.length === 0) return { points: 0, why: 'Empty' }
+  if (expanded.length === 0) return { points: 0, why: 'Empty', attack: { tag: 'M', count: 0, points: 0 } }
 
   const union = new Set<Attr>()
   for (const body of expanded) {
@@ -135,7 +140,15 @@ export function scoreBodies(bodies: ScoreBody[], rules: ScoreRules = current): {
   const atkPts = atkAllowed ? attack.points : 0
 
   const points = base + corePts + mixPts + atkPts
-  return { points, why: formatWhy({ hasCore, stack, attrCount, size, attack }) }
+  return {
+    points,
+    why: formatWhy({ hasCore, stack, attrCount, size, attack, atkPts }),
+    attack: {
+      tag: attack.tag as 'M' | 'R',
+      count: attack.count,
+      points: atkPts,
+    },
+  }
 }
 
 function formatWhy(opts: {
@@ -144,11 +157,14 @@ function formatWhy(opts: {
   attrCount: number
   size: number
   attack: { count: number; tag: string }
+  atkPts: number
 }): string {
-  const { hasCore, stack, attrCount, size, attack } = opts
+  const { hasCore, stack, attrCount, size, attack, atkPts } = opts
   const parts: string[] = []
   if (hasCore) parts.push(`${label(stack.attr)} x${Math.min(stack.count, 5)}`)
   if (attrCount >= 2) parts.push(`ATTR +${attrCount}`)
+  // Surface the range bonus when it actually scores (CORE normally blocks it).
+  if (atkPts > 0) parts.push(`ATK +${atkPts}`)
 
   let why = parts.join(', ')
   if (!why) {
@@ -157,7 +173,7 @@ function formatWhy(opts: {
     else if (attrCount === 1) why = `${label(stack.attr)} x${Math.min(stack.count, 5)}`
     else why = `Open x${size}`
   }
-  // (M#)/(R#) = heroes sharing that attack type (not the point value).
+  // (M#)/(R#) = heroes sharing that attack type (not the ATK point value).
   if (attack.count >= SHAPE_MIN_HEROES) why += ` (${attack.tag}${attack.count})`
   return why
 }
