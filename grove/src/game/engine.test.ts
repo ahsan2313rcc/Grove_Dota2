@@ -484,6 +484,47 @@ describe('heroes', () => {
     expect(game.log.some((line) => line.includes('trap'))).toBe(true)
   })
 
+  it('Batrider moves traps across players, never within the same player', () => {
+    let game = ready()
+    game = only(game, 0, ['batrider', 'techies', 'sven', 'axe'])
+    game = only(game, 1, ['phantom_assassin'])
+    // Two teams for seat 0 + one for seat 1.
+    game = apply(game, { type: 'play', uid: uid(game, 0, 'sven'), team: 'new' })
+    game = passInstants(game)
+    const homeA = game.players[0].teams[0]!.id
+    game = {
+      ...game,
+      players: [{ ...game.players[0], actions: 3 }, game.players[1]] as Game['players'],
+    }
+    game = apply(game, { type: 'play', uid: uid(game, 0, 'axe'), team: 'new' })
+    game = passInstants(game)
+    const homeB = game.players[0].teams.find((team) => team.id !== homeA)!.id
+    game = apply(game, { type: 'end' })
+    game = apply(game, { type: 'ready' })
+    game = apply(game, { type: 'play', uid: uid(game, 1, 'phantom_assassin'), team: 'new' })
+    game = passInstants(game)
+    const foe = game.players[1].teams[0]!.id
+    game = apply(game, { type: 'end' })
+    game = apply(game, { type: 'ready' })
+    game = apply(game, { type: 'play', uid: uid(game, 0, 'techies'), team: homeA })
+    expect(game.players[0].teams.find((team) => team.id === homeA)?.trap?.defId).toBe('techies')
+    game = apply(game, { type: 'play', uid: uid(game, 0, 'batrider'), team: 'new' })
+    game = passInstants(game)
+    expect(game.pending?.prompt.toLowerCase()).toMatch(/trap/)
+    game = apply(game, { type: 'choose', ids: [`team:${homeA}`] })
+    const destIds = (game.pending?.choices ?? [])
+      .filter((choice) => choice.id.startsWith('team:'))
+      .map((choice) => choice.id.slice(5))
+    expect(destIds).toContain(foe)
+    expect(destIds).not.toContain(homeB)
+    expect(destIds).not.toContain(homeA)
+    game = apply(game, { type: 'choose', ids: [`team:${foe}`] })
+    game = passInstants(game)
+    expect(game.players[0].teams.some((team) => team.trap?.defId === 'techies')).toBe(false)
+    expect(game.players[1].teams.some((team) => team.trap?.defId === 'techies')).toBe(true)
+    expect(game.players[1].teams.find((team) => team.trap?.defId === 'techies')?.trap?.owner).toBe(0)
+  })
+
   it('revealed non-sacrifice traps join the team; sacrifice traps go to the grave', () => {
     let game = ready()
     game = only(game, 0, ['monkey_king', 'phantom_assassin', 'sven'])

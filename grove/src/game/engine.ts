@@ -543,6 +543,9 @@ function play(state: Game, uid: string, team: string, extras: string[] = []): Ga
     if (graveTop.kind === 'terrain') {
       return log(state, 'Terrains are played three at a time — include the grave terrain in a combo.')
     }
+    // Exorcism spends a normal action — gate before mutating the grave.
+    if (cardsLocked(state, actor)) return log(state, 'Chronosphere stops you from playing cards.')
+    if (state.players[actor].actions < 1) return state
     state = { ...state, grave: state.grave.slice(0, -1) }
     state = addHand(state, actor, [graveTop])
     held = findHand(state, uid)
@@ -560,7 +563,9 @@ function play(state: Game, uid: string, team: string, extras: string[] = []): Ga
     held.card.kind === 'item' &&
     !!state.primalItems &&
     state.primalItems.caster === actor
-  const instant = info.instant || freeItem || primalFree || freeGrant || fromGrave
+  // Exorcism (fromGrave) spends a normal action — it is not a free Instant.
+  const handInstant = info.instant && !fromGrave
+  const instant = handInstant || freeItem || primalFree || freeGrant
   const offTurn = actor !== state.active
   if (offTurn && !instant) {
     return log(state, 'Only Instant cards can be played during an opponent\'s turn.')
@@ -572,7 +577,7 @@ function play(state: Game, uid: string, team: string, extras: string[] = []): Ga
   if (cardsLocked(state, actor)) return log(state, 'Chronosphere stops you from playing cards.')
   if (!instant && state.players[actor].actions < 1) return state
   if (held.card.kind === 'item' && itemsLocked(state, actor)) return log(state, 'Doom locks item cards.')
-  if (instant && !freeItem && !primalFree && !freeGrant && !fromGrave && instantsLocked(state, actor)) {
+  if (handInstant && instantsLocked(state, actor)) {
     return log(state, 'Battle Trance stops Instant cards.')
   }
   if (held.card.kind === 'hero' && state.players[actor].noHeroNow && !offTurn) {

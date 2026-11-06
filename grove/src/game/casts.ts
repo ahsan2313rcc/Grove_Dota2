@@ -177,7 +177,10 @@ export function cast(state: Game, resume: CastResume): Game {
     }
     const pickedHeroes = heroIds(resume.picked)
     const pickedTeams = rawTeams(resume.picked)
-    if (sourceKind(resume.defId) === 'ability') state = noteTargets(state, resume.actor, pickedHeroes, pickedTeams)
+    // Flaming Lasso moves traps without revealing — do not treat team picks as trap triggers.
+    if (sourceKind(resume.defId) === 'ability' && resume.defId !== 'batrider') {
+      state = noteTargets(state, resume.actor, pickedHeroes, pickedTeams)
+    }
     const countered = refracts(state, resume.actor, pickedHeroes)
     if (countered.stopped) return countered.state
     let armed = { ...resume, armed: true }
@@ -406,14 +409,13 @@ function questions(state: Game, resume: CastResume): Ask {
       const fromId = rawTeams(resume.picked)[0]
       const from = fromId ? teamById(state, fromId) : null
       if (!from?.team.trap) return fizzle('That trap is gone.')
-      const trapOwner = from.team.trap.owner
-      const yours = trapOwner === actor
+      // Cross-player only — never between two teams of the same seat.
       return pose(
         actor,
-        yours ? 'Move the trap onto an enemy team.' : 'Move the trap onto a team you control.',
+        'Move the trap onto another player\'s team.',
         teamChoices(state, actor, kind, (team, player) => {
           if (team.id === fromId || team.trap || team.mine) return false
-          return yours ? player.id !== actor : player.id === actor
+          return player.id !== from.player.id
         }),
       )
     }

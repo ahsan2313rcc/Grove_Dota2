@@ -251,7 +251,7 @@ export const HEROES: HeroDef[] = [
     'INT',
     'Ranged',
     'Exorcism',
-    'On your turn, play the top grave card (may finish a terrain combo). Exorcised items, runes, and towers exile after use. Heroes and neutrals you control exile instead of dying.',
+    'On your turn, spend 1 action to play the top grave card (may finish a terrain combo). Exorcised items, runes, and towers exile after use. Heroes and neutrals you control exile instead of dying.',
     'aura',
   ),
   hero('disruptor', 'Disruptor', 'INT', 'Ranged', 'Glimpse', 'Put target enemy card on the top or bottom of the deck. Instant.', 'instant'),
@@ -321,7 +321,7 @@ export const HEROES: HeroDef[] = [
   // —— Universal ——
   hero('arc_warden', 'Arc Warden', 'UNI', 'Ranged', 'Magnetic Field', 'Take the top Rune card into your hand. You may play it immediately for free.', 'cast'),
   hero('bane', 'Bane', 'UNI', 'Ranged', "Fiend's Grip", 'Target opponent loses their next turn.', 'cast'),
-  hero('batrider', 'Batrider', 'UNI', 'Ranged', 'Flaming Lasso', 'Move a trap from your team to an enemy team, or from an enemy team to yours, without revealing it.', 'cast'),
+  hero('batrider', 'Batrider', 'UNI', 'Ranged', 'Flaming Lasso', 'Move a trap to another player\'s team without revealing it (your team ↔ enemy, or enemy ↔ you / another player — never within the same player).', 'cast'),
   hero('brewmaster', 'Brewmaster', 'UNI', 'Melee', 'Primal Split', 'Brewmaster counts as any one attribute (the one that results in the highest score).', 'aura'),
   hero('enigma', 'Enigma', 'UNI', 'Ranged', 'Black Hole', 'Destroy a target team from each player.', 'cast'),
   hero('io', 'Io', 'UNI', 'Ranged', 'Tether', 'Draw cards equal to the number of players from the deck. Give a card of your choosing to each player.', 'cast'),

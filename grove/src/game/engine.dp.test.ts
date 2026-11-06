@@ -18,6 +18,42 @@ describe('Death Prophet Exorcism', () => {
     expect(game.grave.some((card) => card.uid === sven.uid)).toBe(false)
   })
 
+  it('spends 1 action when Exorcism plays the top grave card', () => {
+    let game = ready()
+    game = only(game, 0, ['death_prophet', 'sven'])
+    game = apply(game, { type: 'play', uid: uid(game, 0, 'death_prophet'), team: 'new' })
+    game = passInstants(game)
+    const sven = game.players[0].hand.find((card) => card.defId === 'sven')!
+    game = bury(game, 0, sven)
+    game = {
+      ...game,
+      players: [{ ...game.players[0], actions: 2 }, game.players[1]] as Game['players'],
+    }
+    const top = playableFromGrave(game, 0)!
+    expect(top.defId).toBe('sven')
+    game = apply(game, { type: 'play', uid: top.uid, team: 'new' })
+    game = passInstants(game)
+    expect(game.players[0].actions).toBe(1)
+    expect(game.players[0].teams.some((team) => team.heroes.some((hero) => hero.defId === 'sven'))).toBe(true)
+  })
+
+  it('blocks Exorcism plays when you have no actions left', () => {
+    let game = ready()
+    game = only(game, 0, ['death_prophet', 'sven'])
+    game = apply(game, { type: 'play', uid: uid(game, 0, 'death_prophet'), team: 'new' })
+    game = passInstants(game)
+    const sven = game.players[0].hand.find((card) => card.defId === 'sven')!
+    game = bury(game, 0, sven)
+    game = {
+      ...game,
+      players: [{ ...game.players[0], actions: 0 }, game.players[1]] as Game['players'],
+    }
+    const top = playableFromGrave(game, 0)!
+    game = apply(game, { type: 'play', uid: top.uid, team: 'new' })
+    expect(game.grave.some((card) => card.uid === sven.uid)).toBe(true)
+    expect(game.players[0].teams.some((team) => team.heroes.some((hero) => hero.defId === 'sven'))).toBe(false)
+  })
+
   it('lets a grave terrain finish a combo with two hand terrains', () => {
     let game = ready()
     game = only(game, 0, ['death_prophet', 'river', 'river'])

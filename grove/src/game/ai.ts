@@ -133,7 +133,7 @@ export function chooseAiAction(state: Game, mode: AiSearchMode = 'full'): Action
   const heroUids = hand.filter((card) => card.kind === 'hero' && !isTrapHero(card.defId)).map((card) => card.uid)
   const seen = new Set<string>()
 
-  // Death Prophet: play the top of the grave (free Exorcism), including terrain combo plans.
+  // Death Prophet: play the top of the grave (costs 1 action), including terrain combo plans.
   const graveTop = playableFromGrave(state, actor)
   if (graveTop && graveTop.kind !== 'terrain') {
     const teams = pickTeamOptions(state, graveTop.uid, graveTop.defId, graveTop.kind, fast)
