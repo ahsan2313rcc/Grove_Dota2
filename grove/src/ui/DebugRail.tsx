@@ -720,9 +720,9 @@ function CardSortTable({
   rows: CardBalanceRow[]
   empty?: string
   defaultSort?: SortState
-  /** Show Abil% / Sil% play-weighted win columns (heroes). */
+  /** Heroes table: n / Win% for the active cycle slice. */
   heroWins?: boolean
-  /** Cycle mode: which win partition (and columns) to show. */
+  /** Cycle mode: total / silenced / ability-fired partition. */
   heroWinMode?: HeroSwingMode
   /** Lobby size for seat-normalized hero Win% (100% = fair 1/seats). */
   seats?: number
