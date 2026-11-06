@@ -12,6 +12,8 @@ import {
   teamById,
 } from './flow.ts'
 import type { Action, AiStrat, CardInst, Game, PlayerId } from './types.ts'
+import { chooseAiActionChallenge, chooseAiPendingChallenge } from './aiChallenge.ts'
+import { chooseAiActionNeural } from './nnValue.ts'
 
 export const AI_STRATS: { id: AiStrat; label: string; blurb: string }[] = [
   { id: 'balanced', label: 'Balanced', blurb: 'Scores first, holds answers, interrupts threats, and banks denial auras.' },
@@ -63,13 +65,14 @@ export function cycleStrat(index: number): AiStrat {
 }
 
 /**
- * `full` — watch / human-vs-AI quality (wide 1-ply tree).
- * `fast` — batch sims: static pre-rank + budgeted 1-ply on top candidates (~20 games/sec).
+ * `challenge` — strongest heuristic (turn beam + sharper eval). Use vs humans.
+ * `full` — wide 1-ply tree (Watch default before challenge).
+ * `fast` — batch sims (~20 games/sec), budgeted 1-ply.
+ * `neural` — offline-trained tiny net ranks actions (no speculative apply).
  *
- * Limit is speculative `apply` cost: full mode can fire 20–50 applies per decision;
- * fast caps that to a handful while still comparing realized score deltas.
+ * Limit is speculative `apply` cost: challenge/full fire many applies per decision.
  */
-export type AiSearchMode = 'full' | 'fast'
+export type AiSearchMode = 'full' | 'fast' | 'challenge' | 'neural'
 
 /**
  * Unique hand cards that get a real 1-ply try in batch sims.
@@ -81,7 +84,12 @@ const FAST_PLY_CARDS = 1
 export function chooseAiAction(state: Game, mode: AiSearchMode = 'full'): Action {
   if (state.veil) return { type: 'ready' }
   if (state.over) return { type: 'end' }
-  if (state.pending) return { type: 'choose', ids: chooseAiPending(state) }
+  if (state.pending) {
+    return {
+      type: 'choose',
+      ids: mode === 'challenge' ? chooseAiPendingChallenge(state) : chooseAiPending(state),
+    }
+  }
 
   const fast = mode === 'fast'
   const actor = state.active
@@ -94,6 +102,8 @@ export function chooseAiAction(state: Game, mode: AiSearchMode = 'full'): Action
   if (core) return { type: 'combo', uids: core.uids }
   if (mixed) return { type: 'combo', uids: mixed.uids }
 
+  if (mode === 'challenge') return chooseAiActionChallenge(state, actor, strat)
+  if (mode === 'neural') return chooseAiActionNeural(state, actor, strat)
   if (fast) return chooseAiActionFast(state, actor, strat)
 
   let best: Action = { type: 'end' }

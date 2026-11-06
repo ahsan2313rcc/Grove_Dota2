@@ -1,5 +1,16 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { AI_STRATS, chooseAiAction, chooseAiPending, cycleStrat, DEFAULT_STRAT, isAiStrat, stratLabel } from './game/ai.ts'
+import {
+  AI_STRATS,
+  chooseAiAction,
+  chooseAiPending,
+  cycleStrat,
+  DEFAULT_STRAT,
+  isAiStrat,
+  stratLabel,
+  type AiSearchMode,
+} from './game/ai.ts'
+import { chooseAiPendingChallenge } from './game/aiChallenge.ts'
+import { modelHasTraining } from './game/nnValue.ts'
 import {
   ALL_STRAT_FILTER,
   aiRoster,
@@ -46,6 +57,15 @@ function randomSeed(): number {
 
 type LobbySeat = { name: string; kind: 'human' | 'ai'; strat: AiStrat }
 
+/** Live / Watch brain — batch sims stay on `fast` inside runMatchFast. */
+export type AiBrain = Extract<AiSearchMode, 'challenge' | 'full' | 'neural'>
+
+const AI_BRAINS: { id: AiBrain; label: string; blurb: string }[] = [
+  { id: 'challenge', label: 'Challenge', blurb: 'Best heuristic — turn planning beam + sharper eval.' },
+  { id: 'full', label: 'Standard', blurb: 'Wide 1-ply search (previous default).' },
+  { id: 'neural', label: 'Neural', blurb: 'Offline-trained tiny net (train with scripts/train-nn.mts).' },
+]
+
 type LiveRun = {
   seed: number
   game: Game
@@ -53,6 +73,7 @@ type LiveRun = {
   stuck: boolean
   /** Consecutive no-op advances — escalate escapes so Watch never freezes forever. */
   stall: number
+  brain: AiBrain
 }
 
 function defaultSeats(count: SeatCount): LobbySeat[] {
@@ -74,7 +95,7 @@ function parseSeedInput(raw: string): number | null {
   return null
 }
 
-function makeRun(seed: number, seats: number, strats?: AiStrat[]): LiveRun {
+function makeRun(seed: number, seats: number, strats?: AiStrat[], brain: AiBrain = 'challenge'): LiveRun {
   const game = createGame({
     seed,
     seats: aiRoster(seats, strats, seed),
@@ -82,7 +103,7 @@ function makeRun(seed: number, seats: number, strats?: AiStrat[]): LiveRun {
   })
   const tracker = new BalanceTracker(seed)
   tracker.start(game)
-  return { seed, game, tracker, stuck: false, stall: 0 }
+  return { seed, game, tracker, stuck: false, stall: 0, brain }
 }
 
 function pendingMark(pending: Game['pending']): string {
@@ -116,7 +137,7 @@ function advanceTracked(run: LiveRun): LiveRun {
     }
     if (game.pending) {
       if (game.players[game.pending.actor]?.ai || game.autoAll) {
-        const ids = chooseAiPending(game)
+        const ids = run.brain === 'challenge' ? chooseAiPendingChallenge(game) : chooseAiPending(game)
         let next = apply(game, { type: 'choose', ids })
         run.tracker.observe(game, { type: 'choose', ids }, next)
         if (next.pending && pendingMark(next.pending) === pendingMark(game.pending)) {
@@ -155,7 +176,7 @@ function advanceTracked(run: LiveRun): LiveRun {
       }
     }
 
-    const action = chooseAiAction(game)
+    const action = chooseAiAction(game, run.brain)
     const next = apply(game, action)
     run.tracker.observe(game, action, next)
     const same = next === game
@@ -193,7 +214,13 @@ function readStart(): { debug: boolean; seed: number; seats: SeatCount; runs: Li
     const game = createGame({ seed, seats })
     const tracker = new BalanceTracker(seed)
     tracker.start(game)
-    return { debug: false, seed, seats: count, runs: [{ seed, game, tracker, stuck: false, stall: 0 }], view: 'watch' }
+    return {
+      debug: false,
+      seed,
+      seats: count,
+      runs: [{ seed, game, tracker, stuck: false, stall: 0, brain: 'challenge' }],
+      view: 'watch',
+    }
   }
   // Debug defaults to Stats (fast sim); open Watch from the rail to slow the board.
   return { debug: true, seed, seats: count, runs: [], view: 'stats' }
@@ -215,14 +242,17 @@ export default function App() {
   const [runningFast, setRunningFast] = useState(false)
   const [stratFilter, setStratFilter] = useState<StratFilter>(ALL_STRAT_FILTER)
   const [debugStrats, setDebugStrats] = useState<AiStrat[]>(() => Array.from({ length: boot?.seats ?? 2 }, (_, index) => cycleStrat(index)))
+  const [aiBrain, setAiBrain] = useState<AiBrain>('challenge')
   const queueToken = useRef(0)
   const watchRef = useRef(false)
   const watchAdvanceRef = useRef(0)
   const archivedWatchRef = useRef<number | null>(null)
   const seatCountRef = useRef(seatCount)
   const debugStratsRef = useRef(debugStrats)
+  const aiBrainRef = useRef(aiBrain)
   seatCountRef.current = seatCount
   debugStratsRef.current = debugStrats
+  aiBrainRef.current = aiBrain
 
   const live = runs[0] ?? null
   const game = live?.game ?? null
@@ -283,7 +313,7 @@ export default function App() {
       setSeed(nextSeed)
       setQueueLeft((left) => Math.max(0, left - 1))
       setMatch((value) => value + 1)
-      setRuns([makeRun(nextSeed, seatCountRef.current, debugStratsRef.current)])
+      setRuns([makeRun(nextSeed, seatCountRef.current, debugStratsRef.current, aiBrainRef.current)])
     }, 120)
     return () => window.clearTimeout(timer)
   }, [debug, debugView, live, queueLeft, runningFast])
@@ -379,7 +409,7 @@ export default function App() {
     setDebug(false)
     const tracker = new BalanceTracker(saved.seed)
     tracker.start(saved.game)
-    setRuns([{ seed: saved.seed, game: saved.game, tracker, stuck: false, stall: 0 }])
+    setRuns([{ seed: saved.seed, game: saved.game, tracker, stuck: false, stall: 0, brain: aiBrainRef.current }])
     setFocus(0)
   }
 
@@ -396,7 +426,7 @@ export default function App() {
       setRuns([])
       return
     }
-    setRuns([makeRun(seed, seatCount, debugStrats)])
+    setRuns([makeRun(seed, seatCount, debugStrats, aiBrainRef.current)])
   }
 
   /** Run N matches in the background at full speed; paint stats in batches so the rail doesn't thrash. */
@@ -424,7 +454,7 @@ export default function App() {
         setSeed(nextSeed)
         setQueueLeft(total - index)
         setMatch((value) => value + 1)
-        setRuns([makeRun(nextSeed, seats, strats)])
+        setRuns([makeRun(nextSeed, seats, strats, aiBrainRef.current)])
         setRunningFast(false)
         return
       }
@@ -433,7 +463,7 @@ export default function App() {
       } catch (error) {
         // runMatchFast soft-finishes internally; this is a last-resort stub so the queue never stalls.
         const reason = error instanceof Error ? error.message : 'sim error'
-        const stub = makeRun(fromSeed + index, seats, strats)
+        const stub = makeRun(fromSeed + index, seats, strats, aiBrainRef.current)
         const finished = softFinishLive(stub.game, `Match halted (${reason}).`)
         chunk.push(stub.tracker.finish(finished))
       }
@@ -466,7 +496,7 @@ export default function App() {
         const jump = live?.game.over ? live.seed + 1 : seed
         setSeed(jump)
         setMatch((value) => value + 1)
-        setRuns([makeRun(jump, seatCount, debugStrats)])
+        setRuns([makeRun(jump, seatCount, debugStrats, aiBrainRef.current)])
         setQueueLeft((left) => Math.min(MAX_QUEUE, left + Math.max(0, extra - 1)))
       } else {
         setQueueLeft((left) => Math.min(MAX_QUEUE, left + extra))
@@ -488,14 +518,14 @@ export default function App() {
     const jump = (live?.seed ?? seed) + 1
     setSeed(jump)
     setMatch((value) => value + 1)
-    setRuns([makeRun(jump, seatCount, debugStrats)])
+    setRuns([makeRun(jump, seatCount, debugStrats, aiBrainRef.current)])
     setDebugView('watch')
     if (debugSpeed === 0) setDebugSpeed(1)
   }
 
   function startWatchFromStats() {
     watchRef.current = true
-    const created = [makeRun(seed, seatCount, debugStrats)]
+    const created = [makeRun(seed, seatCount, debugStrats, aiBrainRef.current)]
     setRuns(created)
     setFocus(0)
     setDebugView('watch')
@@ -558,7 +588,9 @@ export default function App() {
       <Lobby
         onOnline={() => setOnline(true)}
         onResumeLocal={resumeLocal}
-        onStart={(next, nextSeed, nextDebug, seats, queue, strats, rules) => {
+        onStart={(next, nextSeed, nextDebug, seats, queue, strats, rules, brain) => {
+          setAiBrain(brain)
+          aiBrainRef.current = brain
           if (nextDebug) {
             startDebugSession(nextSeed, seats, queue, strats, rules)
             return
@@ -571,7 +603,7 @@ export default function App() {
           const tracker = new BalanceTracker(nextSeed)
           tracker.start(next)
           saveLocalMatch(nextSeed, next, rules)
-          setRuns([{ seed: nextSeed, game: next, tracker, stuck: false, stall: 0 }])
+          setRuns([{ seed: nextSeed, game: next, tracker, stuck: false, stall: 0, brain }])
           setFocus(0)
         }}
       />
@@ -639,6 +671,7 @@ function Lobby({
     queue: number,
     strats: AiStrat[],
     rules: ScoreRules,
+    brain: AiBrain,
   ) => void
 }) {
   const [seedText, setSeedText] = useState('')
@@ -651,6 +684,7 @@ function Lobby({
   const [scoreOpen, setScoreOpen] = useState(false)
   const [lobbyRules, setLobbyRules] = useState<ScoreRules>(() => cloneRules(getScoreRules()))
   const [savedLocal, setSavedLocal] = useState<SavedLocalMatch | null>(() => loadLocalMatch())
+  const [brain, setBrain] = useState<AiBrain>('challenge')
 
   function setPlayerCount(next: SeatCount) {
     setCount(next)
@@ -691,6 +725,7 @@ function Lobby({
         debug ? queue : 1,
         strats,
         rules,
+        brain,
       )
     } catch (error) {
       setFault(error instanceof Error ? error.message : 'The deck could not be dealt.')
@@ -781,6 +816,26 @@ function Lobby({
         </ul>
         <fieldset className="debug-lobby">
           <legend>Match options</legend>
+          <div className="layout-picks" role="group" aria-label="AI brain">
+            {AI_BRAINS.map((entry) => (
+              <button
+                key={entry.id}
+                type="button"
+                className={brain === entry.id ? 'on' : ''}
+                data-testid={`lobby-brain-${entry.id}`}
+                title={entry.blurb}
+                onClick={() => setBrain(entry.id)}
+              >
+                {entry.label}
+              </button>
+            ))}
+          </div>
+          <p className="quiet">
+            {AI_BRAINS.find((entry) => entry.id === brain)?.blurb}
+            {brain === 'neural' && !modelHasTraining()
+              ? ' — model untrained; run npx tsx scripts/train-nn.mts first.'
+              : ''}
+          </p>
           <label className="check-row">
             <input
               data-testid="lobby-ancient-endgame"

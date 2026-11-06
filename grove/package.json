@@ -13,7 +13,8 @@
     "preview": "vite preview",
     "test": "vitest run",
     "test:online": "vitest run server",
-    "smoke:online": "node server/smoke-ws.mjs"
+    "smoke:online": "node server/smoke-ws.mjs",
+    "train:nn": "tsx scripts/train-nn.mts"
   },
   "dependencies": {
     "react": "^19.3.1",
