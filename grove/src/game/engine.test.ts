@@ -77,8 +77,8 @@ describe('scoring', () => {
       { attrs: ['INT'], range: 'Melee', count: 1 },
     ], 10, 'core') // 5+3+2+0 — CORE+MIXED stack; no atk
     expect(coreMix.why).toMatch(/STR x3/)
-    expect(coreMix.why).toMatch(/ATTR \+3/)
-    expect(coreMix.why).toMatch(/\(M5\)/)
+    expect(coreMix.why).toMatch(/ATTR x3/)
+    expect(coreMix.why).toMatch(/MELEE x5/)
     row([
       { attrs: ['STR'], range: 'Melee', count: 4 },
       { attrs: ['AGI'], range: 'Melee', count: 1 },
@@ -94,7 +94,7 @@ describe('scoring', () => {
       { attrs: ['AGI'], range: 'Melee', count: 2 },
     ], 8, 'core') // 5+3
 
-    // Display: (R#)/(M#) is hero/neutral count, never ATK points (4 ranged → (R4) not (R2)).
+    // Display: MELEE/RANGE xN is body count, never ATK points (4 ranged → RANGE x4).
     const fourRanged = scoreBodies([
       { attrs: ['STR'], range: 'Ranged', count: 1 },
       { attrs: ['AGI'], range: 'Ranged', count: 1 },
@@ -102,9 +102,8 @@ describe('scoring', () => {
       { attrs: ['UNI'], range: 'Ranged', count: 1 },
     ])
     expect(fourRanged.points).toBe(10)
-    expect(fourRanged.why).toContain('ATK +2')
-    expect(fourRanged.why).toContain('(R4)')
-    expect(fourRanged.why).not.toContain('(R2)')
+    expect(fourRanged.why).toContain('RANGE x4')
+    expect(fourRanged.why).not.toContain('ATK +')
     expect(fourRanged.attack).toEqual({ tag: 'R', count: 4, points: 2 })
 
     expect(scoreBodies([{ attrs: [], range: 'Melee', count: 4 }]).points).toBe(6)
@@ -119,7 +118,7 @@ describe('scoring', () => {
     ])
     expect(withNeutral.points).toBe(5) // 2 flat + core×3
     expect(withNeutral.why).toMatch(/STR x3/)
-    expect(withNeutral.why).toContain('(M3)')
+    expect(withNeutral.why).toContain('MELEE x3')
 
     // 3 melee heroes + 1 melee neutral → ATK count 4.
     const mixNeutral = scoreBodies([
@@ -128,8 +127,8 @@ describe('scoring', () => {
       { attrs: ['INT'], range: 'Melee', count: 1, scoresFlat: true },
       { attrs: ['STR'], range: 'Melee', count: 1, scoresFlat: false },
     ])
-    expect(mixNeutral.why).toContain('ATK +2')
-    expect(mixNeutral.why).toContain('(M4)')
+    expect(mixNeutral.why).toContain('ATTR x3')
+    expect(mixNeutral.why).toContain('MELEE x4')
     expect(mixNeutral.points).toBe(7) // 3 flat + mix +2 + atk +2 (count 4)
     expect(mixNeutral.attack).toEqual({ tag: 'M', count: 4, points: 2 })
 
@@ -138,28 +137,27 @@ describe('scoring', () => {
       { attrs: ['AGI'], range: 'Ranged', count: 2, scoresFlat: true },
       { attrs: ['AGI'], range: 'Ranged', count: 1, scoresFlat: false },
     ])
-    expect(rangedNeutral.why).toContain('(R3)')
+    expect(rangedNeutral.why).toContain('RANGE x3')
     expect(rangedNeutral.attack.tag).toBe('R')
 
-    // CORE blocks ATK points but still shows the shared-range count.
+    // CORE blocks ATK points but still shows the range count in the label.
     const coreMelee = scoreBodies([{ attrs: ['STR'], range: 'Melee', count: 3 }])
-    expect(coreMelee.why).toContain('(M3)')
+    expect(coreMelee.why).toContain('MELEE x3')
     expect(coreMelee.why).not.toContain('ATK +')
     expect(coreMelee.attack.points).toBe(0)
 
-    // Mixed range: 3 Ranged still scores R3 even with Melee on the team.
+    // Mixed range: 3 Ranged still scores RANGE x3 even with Melee on the team.
     const mixedRange = scoreBodies([
       { attrs: ['STR'], range: 'Ranged', count: 1 },
       { attrs: ['AGI'], range: 'Ranged', count: 1 },
       { attrs: ['INT'], range: 'Ranged', count: 1 },
       { attrs: ['UNI'], range: 'Melee', count: 2 },
     ])
-    expect(mixedRange.why).toContain('ATK +1')
-    expect(mixedRange.why).toContain('(R3)')
+    expect(mixedRange.why).toContain('RANGE x3')
     expect(mixedRange.attack).toEqual({ tag: 'R', count: 3, points: 1 })
     expect(mixedRange.points).toBe(10) // 5 flat + mix +4 + atk +1
 
-    // Symmetric: 3 Melee + 2 Ranged → M3.
+    // Symmetric: 3 Melee + 2 Ranged → MELEE x3.
     const mixedMelee = scoreBodies([
       { attrs: ['STR'], range: 'Melee', count: 1 },
       { attrs: ['AGI'], range: 'Melee', count: 1 },
@@ -168,7 +166,7 @@ describe('scoring', () => {
       { attrs: ['STR'], range: 'Ranged', count: 1 },
     ])
     expect(mixedMelee.attack).toEqual({ tag: 'M', count: 3, points: 1 })
-    expect(mixedMelee.why).toContain('(M3)')
+    expect(mixedMelee.why).toContain('MELEE x3')
   })
 
   it('Brewmaster picks the single attr that maximizes the team', () => {
@@ -197,7 +195,7 @@ describe('scoring', () => {
       mixCombo: 4,
     })
     expect(scoreBodies([{ attrs: ['STR'], range: 'Melee', count: 3 }]).points).toBe(4)
-    expect(scoreBodies([{ attrs: ['STR'], range: 'Melee', count: 3 }]).why).toContain('(M3)')
+    expect(scoreBodies([{ attrs: ['STR'], range: 'Melee', count: 3 }]).why).toContain('MELEE x3')
     expect(scoreBodies([
       { attrs: ['STR'], range: 'Melee', count: 1 },
       { attrs: ['AGI'], range: 'Melee', count: 1 },

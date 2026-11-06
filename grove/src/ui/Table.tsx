@@ -810,28 +810,12 @@ function Lane({
           {teams.map((team, index) => {
             const scored = scoreTeam(game, team)
             const letter = teamLetter(index)
-            const rangeChip =
-              scored.attack.count >= 3
-                ? `${scored.attack.tag}${scored.attack.count}${scored.attack.points > 0 ? ` +${scored.attack.points}` : ''}`
-                : null
-            const whyMain = scored.why.replace(/\s*\([MR]\d+\)\s*$/, '').trim()
             return (
               <article key={team.id} className="team" data-testid={mine ? `team-${index}` : undefined}>
                 <header>
-                  <strong>{scored.points}</strong>
-                  <span className="team-why">{letter} {whyMain}</span>
-                  {rangeChip ? (
-                    <em
-                      className={`team-range${scored.attack.points > 0 ? ' on' : ''}`}
-                      title={
-                        scored.attack.points > 0
-                          ? `Attack bonus +${scored.attack.points} (${scored.attack.tag === 'M' ? 'Melee' : 'Ranged'} ×${scored.attack.count})`
-                          : `${scored.attack.tag === 'M' ? 'Melee' : 'Ranged'} ×${scored.attack.count} — no ATK while CORE is active`
-                      }
-                    >
-                      {rangeChip}
-                    </em>
-                  ) : null}
+                  <strong className="team-points">{scored.points}</strong>
+                  <span className="team-letter">{letter}</span>
+                  <span className="team-why">{scored.why}</span>
                 </header>
                 <div className="team-heroes">
                   {team.heroes.map((hero) => (

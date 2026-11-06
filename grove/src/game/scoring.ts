@@ -105,7 +105,7 @@ export const SHAPE_MIN_HEROES = 3
  *         attackBonus[n], but **only when CORE is absent** (unless `attackOnCore`;
  *         non-core boards use `attackOnMix`).
  *
- * Why label: `STR x3, ATTR +3, ATK +1 (M3)` — attr/M·R numbers are counts; ATK is points.
+ * Why label: `STR x3, ATTR x3, MELEE x3` — all numbers are body/attr counts (not point values).
  */
 export type AttackScore = { tag: 'M' | 'R'; count: number; points: number }
 
@@ -143,7 +143,7 @@ export function scoreBodies(
   const points = base + corePts + mixPts + atkPts
   return {
     points,
-    why: formatWhy({ hasCore, stack, attrCount, size, attack, atkPts }),
+    why: formatWhy({ hasCore, stack, attrCount, size, attack }),
     attack: {
       tag: attack.tag as 'M' | 'R',
       count: attack.count,
@@ -158,14 +158,14 @@ function formatWhy(opts: {
   attrCount: number
   size: number
   attack: { count: number; tag: string }
-  atkPts: number
 }): string {
-  const { hasCore, stack, attrCount, size, attack, atkPts } = opts
+  const { hasCore, stack, attrCount, size, attack } = opts
   const parts: string[] = []
   if (hasCore) parts.push(`${label(stack.attr)} x${Math.min(stack.count, 5)}`)
-  if (attrCount >= 2) parts.push(`ATTR +${attrCount}`)
-  // Surface the range bonus when it actually scores (CORE normally blocks it).
-  if (atkPts > 0) parts.push(`ATK +${atkPts}`)
+  if (attrCount >= 2) parts.push(`ATTR x${attrCount}`)
+  if (attack.count >= SHAPE_MIN_HEROES) {
+    parts.push(`${attack.tag === 'M' ? 'MELEE' : 'RANGE'} x${Math.min(attack.count, 5)}`)
+  }
 
   let why = parts.join(', ')
   if (!why) {
@@ -174,8 +174,6 @@ function formatWhy(opts: {
     else if (attrCount === 1) why = `${label(stack.attr)} x${Math.min(stack.count, 5)}`
     else why = `Open x${size}`
   }
-  // (M#)/(R#) = heroes sharing that attack type (not the ATK point value).
-  if (attack.count >= SHAPE_MIN_HEROES) why += ` (${attack.tag}${attack.count})`
   return why
 }
 
@@ -201,7 +199,7 @@ function maxMonoStack(bodies: ScoreBody[]): { attr: Attr; count: number } {
 /**
  * ATK = 3+ Melee **or** 3+ Ranged, counted separately — mixed teams still score
  * (e.g. 3 Ranged + 2 Melee → R3). Neutrals carry a real Melee/Ranged type.
- * Label uses the winning side's body count (e.g. `(R4)`), never points.
+ * Label uses the winning side's body count (e.g. `RANGE x4`), never points.
  */
 function attackInfoFor(bodies: ScoreBody[], rules: ScoreRules): { points: number; count: number; tag: string } {
   let melee = 0
@@ -223,7 +221,7 @@ function attackInfoFor(bodies: ScoreBody[], rules: ScoreRules): { points: number
 
 export function teamShapes(why: string): { core: boolean; mix: boolean } {
   const core = /(STR|AGI|INT|UNI) x(\d+)/.exec(why)
-  const mix = /ATTR \+(\d+)/.exec(why)
+  const mix = /ATTR x(\d+)/.exec(why)
   return {
     core: !!core && Number(core[2]) >= SHAPE_MIN_HEROES,
     mix: !!mix && Number(mix[1]) >= SHAPE_MIN_HEROES,

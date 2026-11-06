@@ -282,7 +282,7 @@ Bodies: each hero contributes `count` slots (`Meepo` = 2). Neutrals: `scoresFlat
 
 **Shape gate:** Core and mix bonuses (and shape classification) require **at least 3 bodies**. Teams of 1–2 are **Small** — flat points only (+ attack if `attackOnMix`).
 
-Label format: `STR x3, ATTR +3, ATK +1 (M3)` — attr numbers are **hero counts**; `ATK +N` is the attack **points** when it scores; `(M#)`/`(R#)` is the shared Melee/Ranged **body count** (neutrals included).
+Label format: `STR x3, ATTR x3, MELEE x3` / `RANGE x3` — all numbers are **counts** (neutrals included). Attack **points** are in the team total only, not spelled out in the label.
 
 **CORE** — 3×+ bodies share one attr (including UNI-only):
 
@@ -295,7 +295,7 @@ Label format: `STR x3, ATTR +3, ATK +1 (M3)` — attr numbers are **hero counts*
 - Bonus by attr count 1..4: default `[0, 0, 2, 4]`.
 - Stacks with CORE.
 
-**ATK** — 3+ **Melee** or 3+ **Ranged**, counted separately (`(M3)` / `(R4)` = that side’s **body count**, never the point value):
+**ATK** — 3+ **Melee** or 3+ **Ranged**, counted separately (`MELEE x3` / `RANGE x4` = that side’s **body count**, never the point value):
 
 - Bonus by count 1..5: default `[0, 0, 1, 2, 3]`.
 - Mixed range is fine: 3 Ranged + 2 Melee still scores **R3** (and the reverse for Melee).
