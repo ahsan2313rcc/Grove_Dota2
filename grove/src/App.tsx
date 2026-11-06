@@ -475,10 +475,8 @@ export default function App() {
       try {
         if (trainNeuralRef.current) {
           const roster = aiRoster(seats, strats, fromSeed + index)
-          const { game: finished } = runMatchWithOptionalTrain(fromSeed + index, roster, true)
-          const tracker = new BalanceTracker(fromSeed + index, { lite: true })
-          tracker.start(finished)
-          chunk.push(tracker.finish(finished))
+          const { report } = runMatchWithOptionalTrain(fromSeed + index, roster, true)
+          chunk.push(report)
           setNnInfo(nnMemoryInfo())
         } else {
           chunk.push(runMatchFast(fromSeed + index, seats, strats))
@@ -902,7 +900,7 @@ function Lobby({
                 Train Neural
               </label>
               <p className="quiet">
-                When enabled, Challenge seats teach the Neural strat each sim (saved to browser memory). Use Save / Clear in the debug rail.
+                When enabled, Challenge seats teach Neural each sim with full balance tracking. Weights live in this browser (localStorage) — Save / Clear in the debug rail. Not written to git.
               </p>
               <button type="button" data-testid="lobby-scoring" onClick={() => setScoreOpen(true)}>
                 Scoring…

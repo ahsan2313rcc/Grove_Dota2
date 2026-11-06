@@ -1,12 +1,14 @@
 /**
  * Online imitation updates for Debug → Train Neural.
- * Learns from Challenge (max heuristic) decisions into nnMemory.
+ * Learns from Challenge (max heuristic) decisions into nnMemory,
+ * while recording a full BalanceTracker report for the debug rail.
  */
-import { chooseAiAction, chooseAiPending, heuristicFace, searchModeForStrat } from './ai.ts'
+import { chooseAiAction, chooseAiPending, searchModeForStrat } from './ai.ts'
 import { chooseAiPendingChallenge } from './aiChallenge.ts'
+import { BalanceTracker, type MatchReport } from './balance.ts'
 import { apply, createGame, type SeatSpec } from './engine.ts'
 import { scoreState } from './flow.ts'
-import { getNnMemory, replaceNnMemory } from './nnMemory.ts'
+import { getNnMemory, replaceNnMemory, saveNnMemory } from './nnMemory.ts'
 import {
   encodeActionFeatures,
   encodeStateFeatures,
@@ -17,6 +19,8 @@ import {
 import type { Action, AiStrat, Game } from './types.ts'
 
 const LR = 0.0015
+/** Autosave browser checkpoint every N trained games. */
+const AUTOSAVE_EVERY = 10
 
 export function learnFromTeacher(before: Game, actor: number, teacher: Action): number {
   const model = getNnMemory()
@@ -49,21 +53,26 @@ function softFinish(game: Game): Game {
 
 /**
  * Play one match with max Challenge for heuristic seats / Neural for neural seats.
- * When `train` is true, every Challenge decision updates NN memory.
+ * Full balance tracking is always on. When `train` is true, Challenge decisions
+ * update NN memory (browser); autosaves every AUTOSAVE_EVERY games.
  */
 export function runMatchWithOptionalTrain(
   seed: number,
   seats: SeatSpec[],
   train: boolean,
-): { game: Game; samples: number } {
+): { game: Game; samples: number; report: MatchReport } {
   let game = createGame({ seed, seats })
+  const tracker = new BalanceTracker(seed, { lite: false })
+  tracker.start(game)
   let samples = 0
   let guard = 0
   while (!game.over && guard < 900) {
     guard += 1
     try {
       if (game.veil) {
+        const before = game
         game = apply(game, { type: 'ready' })
+        tracker.observe(before, { type: 'ready' }, game)
         continue
       }
       if (game.pending) {
@@ -73,7 +82,9 @@ export function runMatchWithOptionalTrain(
         const ids = mode === 'challenge' || mode === 'neural'
           ? chooseAiPendingChallenge(game)
           : chooseAiPending(game)
+        const before = game
         game = apply(game, { type: 'choose', ids })
+        tracker.observe(before, { type: 'choose', ids }, game)
         continue
       }
       const actor = game.active
@@ -85,6 +96,7 @@ export function runMatchWithOptionalTrain(
         samples += learnFromTeacher(before, actor, action)
       }
       game = apply(game, action)
+      tracker.observe(before, action, game)
     } catch {
       break
     }
@@ -95,7 +107,7 @@ export function runMatchWithOptionalTrain(
     model.trainedGames += 1
     model.note = `online train; games=${model.trainedGames}; ${new Date().toISOString()}`
     replaceNnMemory(model)
+    if (model.trainedGames % AUTOSAVE_EVERY === 0) saveNnMemory()
   }
-  void heuristicFace
-  return { game, samples }
+  return { game, samples, report: tracker.finish(game) }
 }

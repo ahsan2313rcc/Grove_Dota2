@@ -195,9 +195,9 @@ export function DebugRail({
             Train enabled
           </label>
           <p className="quiet">
-            Challenge seats teach Neural each sim / watch tick.
+            Challenge seats teach Neural each sim / watch tick (balance tracking on). Autosaves to this browser every 10 games; Save forces a write; Clear wipes localStorage. Not committed to git.
             {nnInfo
-              ? ` Memory: ${nnInfo.trainedGames} games · ${nnInfo.trainedSamples} samples${nnInfo.persisted ? ' · saved' : ''}.`
+              ? ` Memory: ${nnInfo.trainedGames} games · ${nnInfo.trainedSamples} samples${nnInfo.persisted ? ' · saved locally' : ' · unsaved'}.`
               : ''}
           </p>
           <div className="debug-speeds" role="group" aria-label="Neural memory actions">
