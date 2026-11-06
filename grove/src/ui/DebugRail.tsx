@@ -565,7 +565,6 @@ function HeroModeTable({
   const rows = mode === 'total' ? total : mode === 'silenced' ? silenced : open
   const label =
     mode === 'total' ? 'Total (body+ability)' : mode === 'silenced' ? 'Silenced' : 'Ability fired'
-  const fair = seats > 0 ? Math.round(100 / seats) : 50
   const winLegend =
     mode === 'total'
       ? 'n / Win% = all plays'
@@ -586,7 +585,7 @@ function HeroModeTable({
         </button>
       </h3>
       <p className="quiet debug-legend">
-        Cycle total → silenced → ability fired for that slice (Rel / Impact / Win%). {winLegend}. Win% seat-normalized (fair ≈ {fair}%). Hover % for raw.
+        Cycle total → silenced → ability fired for that slice (Rel / Impact / Win%). {winLegend}. Win% scaled so fair ≈ 50%. Hover % for raw.
       </p>
       <CardSortTable
         key={mode}
@@ -703,7 +702,7 @@ function heroWinColumns(mode: HeroSwingMode, seats: number): Column<CardBalanceR
       key: 'win',
       label: 'Win%',
       get: (row) => pctCell(row.playWinRate, row.playWins, sampleCount(row), seats),
-      sortValue: (row) => (seats > 0 ? row.playWinRate * seats : row.playWinRate),
+      sortValue: (row) => winRateShown(row.playWinRate, seats),
       className: 'debug-num',
     },
   ]
@@ -724,7 +723,7 @@ function CardSortTable({
   heroWins?: boolean
   /** Cycle mode: total / silenced / ability-fired partition. */
   heroWinMode?: HeroSwingMode
-  /** Lobby size for seat-normalized hero Win% (100% = fair 1/seats). */
+  /** Lobby size for seat-scaled hero Win% (fair ≈ 50%). */
   seats?: number
 }) {
   const winCols: Column<CardBalanceRow>[] = heroWins
@@ -741,7 +740,7 @@ function CardSortTable({
                 : '—',
           sortValue: (row) => {
             const rate = row.plays > 0 ? row.playWinRate : row.winRate
-            return seats > 0 ? rate * seats : rate
+            return winRateShown(rate, seats)
           },
           className: 'debug-num',
         },
@@ -798,13 +797,19 @@ function CardSortTable({
 }
 
 /**
- * Hero Win% display. When `seats` is set, show seat-normalized rate so fair share
- * is always 100% (raw seat-win × seats). Tooltip keeps raw wins/n and raw %.
+ * Seat-scaled Win% with fair share ≈ 50% (raw × seats / 2).
+ * 2-seat lobby → raw %; 4-seat → raw × 2, so 25% raw reads as 50%.
+ */
+function winRateShown(rate: number, seats: number): number {
+  return seats > 0 ? (rate * seats) / 2 : rate
+}
+
+/**
+ * Hero Win% display. When `seats` is set, scale so fair ≈ 50%. Tooltip keeps raw wins/n.
  */
 function pctCell(rate: number, wins: number, samples: number, seats = 0): ReactNode {
   if (samples <= 0) return '—'
-  const normalized = seats > 0
-  const shown = normalized ? rate * seats : rate
+  const shown = winRateShown(rate, seats)
   const fair = seats > 0 ? ` · fair raw ${(100 / seats).toFixed(0)}%` : ''
   return (
     <span title={`${wins}/${samples} raw ${Math.round(rate * 100)}%${fair}`}>
