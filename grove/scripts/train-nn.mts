@@ -3,10 +3,12 @@
  *
  * Usage:
  *   npx tsx scripts/train-nn.mts [--games 2000] [--teacher full|challenge|fast]
+ *   npx tsx scripts/train-nn.mts --games 500          # continues from saved weights
+ *   npx tsx scripts/train-nn.mts --fresh --games 1200 # wipe and retrain from scratch
  *
  * Writes src/game/data/nn-value.json
  */
-import { writeFileSync } from 'node:fs'
+import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { chooseAiAction, chooseAiPending, type AiSearchMode } from '../src/game/ai.ts'
@@ -34,6 +36,19 @@ function arg(name: string, fallback: string): string {
 const games = Number(arg('--games', '1200'))
 const teacher = arg('--teacher', 'full') as AiSearchMode
 const epochs = Number(arg('--epochs', '3'))
+const fresh = process.argv.includes('--fresh')
+
+function loadCheckpoint(): NnModel {
+  if (fresh || !existsSync(outPath)) return randomModel(48, 42)
+  try {
+    const raw = JSON.parse(readFileSync(outPath, 'utf8')) as NnModel
+    const model = hydrateModel(raw)
+    if (!model.w1.length) return randomModel(48, 42)
+    return model
+  } catch {
+    return randomModel(48, 42)
+  }
+}
 
 function candidatesLikeNeural(state: Game, actor: number, teacherAction: Action): Action[] {
   // Re-query teacher alternatives by asking neural candidate space via replaying teacher mode options:
@@ -87,14 +102,22 @@ function playGame(seed: number, model: NnModel): number {
   return samples
 }
 
-console.log(`Training NN — games=${games} teacher=${teacher} epochs=${epochs}`)
-let model = randomModel(48, 42)
+let model = loadCheckpoint()
+const priorGames = model.trainedGames
+const priorSamples = model.trainedSamples
+console.log(
+  `Training NN — games=${games} teacher=${teacher} epochs=${epochs} `
+  + (fresh || priorSamples === 0
+    ? '(fresh weights)'
+    : `(continue from checkpoint: ${priorGames} games / ${priorSamples} samples)`),
+)
+
 let totalSamples = 0
 for (let epoch = 0; epoch < epochs; epoch += 1) {
   let epochSamples = 0
   const t0 = Date.now()
   for (let g = 0; g < games; g += 1) {
-    epochSamples += playGame(10_000 + epoch * games + g, model)
+    epochSamples += playGame(10_000 + priorGames + epoch * games + g, model)
     if ((g + 1) % 100 === 0) {
       console.log(`  epoch ${epoch + 1} game ${g + 1}/${games} samples=${epochSamples}`)
     }
@@ -104,9 +127,9 @@ for (let epoch = 0; epoch < epochs; epoch += 1) {
 }
 
 model = hydrateModel(model)
-model.trainedGames = games * epochs
-model.trainedSamples = totalSamples
-model.note = `imitate ${teacher}; ${games}×${epochs} games; ${new Date().toISOString()}`
+model.trainedGames = priorGames + games * epochs
+model.trainedSamples = priorSamples + totalSamples
+model.note = `imitate ${teacher}; +${games}×${epochs} games (total ${model.trainedGames}); ${new Date().toISOString()}`
 
 writeFileSync(outPath, JSON.stringify(model))
 console.log(`Wrote ${outPath}`)
