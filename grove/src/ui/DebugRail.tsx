@@ -10,6 +10,12 @@ import {
   type StratFilter,
   type TurnGraphMetric,
 } from '../game/balance.ts'
+import {
+  AI_POWER_MAX,
+  AI_POWER_MIN,
+  aiSearchBudget,
+  aiThoughtPowerLabel,
+} from '../game/aiPower.ts'
 import type { NnMemoryInfo } from '../game/nnMemory.ts'
 import type { AiStrat } from '../game/types.ts'
 import { display } from '../game/catalog.ts'
@@ -60,6 +66,8 @@ export function DebugRail({
   onNnSave,
   onNnExportGit,
   onNnClear,
+  thoughtPower = 7,
+  onThoughtPower,
 }: {
   game: Game | null
   seed: number
@@ -90,6 +98,8 @@ export function DebugRail({
   onNnSave?: () => void
   onNnExportGit?: () => void
   onNnClear?: () => void
+  thoughtPower?: number
+  onThoughtPower?: (value: number) => void
 }) {
   const active = game?.players[game.active]
   void _focus
@@ -154,6 +164,32 @@ export function DebugRail({
           Reset
         </button>
       </div>
+
+      {onThoughtPower ? (
+        <div className="debug-block">
+          <h3>AI thought power</h3>
+          <label className="thought-power">
+            <span>
+              {thoughtPower}/10 · {aiThoughtPowerLabel(thoughtPower)}
+            </span>
+            <input
+              data-testid="debug-thought-power"
+              type="range"
+              min={AI_POWER_MIN}
+              max={AI_POWER_MAX}
+              step={1}
+              value={thoughtPower}
+              onChange={(event) => onThoughtPower(Number(event.target.value))}
+            />
+            <span className="quiet">
+              {(() => {
+                const b = aiSearchBudget(thoughtPower)
+                return `Heuristic depth ${b.depth} · beam ${b.beam} · hand ${b.handPly}`
+              })()}
+            </span>
+          </label>
+        </div>
+      ) : null}
 
       <div className="debug-block">
         <h3>Sequential queue</h3>

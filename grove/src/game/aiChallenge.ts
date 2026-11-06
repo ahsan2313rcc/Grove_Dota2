@@ -16,16 +16,10 @@ import {
   scoreTeam,
   teamById,
 } from './flow.ts'
+import { aiSearchBudget } from './aiPower.ts'
 import type { Action, AiStrat, CardInst, Game, PlayerId } from './types.ts'
 
 const DEFAULT_STRAT: AiStrat = 'balanced'
-
-/** Max-strength search — live / Watch heuristic seats (no speed shortcuts). */
-const BEAM = 12
-const DEPTH = 5
-const PENDING_TRY = 16
-const HAND_PLY = 8
-const TEAM_OPTS = 3
 
 const INTERRUPT_VALUE: Record<string, number> = {
   nyx_assassin: 12,
@@ -62,6 +56,7 @@ type BeamNode = {
 }
 
 export function chooseAiActionChallenge(state: Game, actor: PlayerId, strat: AiStrat): Action {
+  const budget = aiSearchBudget()
   const plans = comboPlans(state)
   const core = plans.find((plan) => plan.detail.startsWith('core'))
   const mixed = plans.find((plan) => plan.detail.startsWith('mixed'))
@@ -73,7 +68,7 @@ export function chooseAiActionChallenge(state: Game, actor: PlayerId, strat: AiS
   let bestFirst: Action = { type: 'end' }
   let bestScore = rootScore + endBiasChallenge(state, actor, strat)
 
-  for (let depth = 0; depth < DEPTH; depth += 1) {
+  for (let depth = 0; depth < budget.depth; depth += 1) {
     const nextBeam: BeamNode[] = []
     for (const node of beam) {
       if (node.state.over || node.state.active !== actor || node.state.veil) {
@@ -111,7 +106,7 @@ export function chooseAiActionChallenge(state: Game, actor: PlayerId, strat: AiS
           || after.over
           || after.active !== actor
           || after.veil
-          || node.steps + 1 >= DEPTH
+          || node.steps + 1 >= budget.depth
         const child: BeamNode = { state: after, first, score, steps: node.steps + 1 }
         nextBeam.push(child)
         if (score > bestScore) {
@@ -125,7 +120,7 @@ export function chooseAiActionChallenge(state: Game, actor: PlayerId, strat: AiS
       }
     }
     nextBeam.sort((a, b) => b.score - a.score)
-    beam = nextBeam.slice(0, BEAM)
+    beam = nextBeam.slice(0, budget.beam)
     if (beam.length === 0) break
   }
 
@@ -148,7 +143,7 @@ export function chooseAiPendingChallenge(state: Game): string[] {
   }
 
   const ids = pending.choices.map((choice) => choice.id)
-  const tryIds = ids.slice(0, PENDING_TRY)
+  const tryIds = ids.slice(0, aiSearchBudget().pendingTry)
   let best: string[] = ids.slice(0, Math.max(pending.min, 1))
   let bestScore = -Infinity
   for (const id of tryIds) {
@@ -200,9 +195,10 @@ function challengeCandidates(state: Game, actor: PlayerId, strat: AiStrat): Acti
     }
   }
 
+  const budget = aiSearchBudget()
   const ranked = rankHand(state, actor, hand, strat)
-  for (const card of ranked.slice(0, HAND_PLY)) {
-    const teams = pickTeams(state, card.uid, card.defId, card.kind).slice(0, TEAM_OPTS)
+  for (const card of ranked.slice(0, budget.handPly)) {
+    const teams = pickTeams(state, card.uid, card.defId, card.kind).slice(0, budget.teamOpts)
     for (const team of teams) {
       out.push({ type: 'play', uid: card.uid, team: team.id })
       if (card.kind === 'hero' && !isTrapHero(card.defId)) {

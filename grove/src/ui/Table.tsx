@@ -53,6 +53,8 @@ export function Table({
   onDebugNnSave,
   onDebugNnExportGit,
   onDebugNnClear,
+  debugThoughtPower = 7,
+  onDebugThoughtPower,
   onlineSeat = null,
   onAction,
   onLobby,
@@ -89,6 +91,8 @@ export function Table({
   onDebugNnSave?: () => void
   onDebugNnExportGit?: () => void
   onDebugNnClear?: () => void
+  debugThoughtPower?: number
+  onDebugThoughtPower?: (value: number) => void
   /** When set, this seat is the networked player (no hotseat handoff). */
   onlineSeat?: PlayerId | null
   onAction: (action: Action) => void
@@ -254,6 +258,8 @@ export function Table({
             onNnSave={onDebugNnSave}
             onNnExportGit={onDebugNnExportGit}
             onNnClear={onDebugNnClear}
+            thoughtPower={debugThoughtPower}
+            onThoughtPower={onDebugThoughtPower}
           />
         </div>
         {rules ? <Rules onClose={() => setRules(false)} /> : null}
@@ -586,6 +592,8 @@ export function Table({
             onNnSave={onDebugNnSave}
             onNnExportGit={onDebugNnExportGit}
             onNnClear={onDebugNnClear}
+            thoughtPower={debugThoughtPower}
+            onThoughtPower={onDebugThoughtPower}
           />
         ) : (
           <aside className="hud">

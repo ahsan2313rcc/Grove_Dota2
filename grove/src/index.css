@@ -1269,6 +1269,21 @@ button.debug-mode-cycle:hover {
 .lobby-card input {
   border: 1px solid var(--line); background: rgba(0, 0, 0, 0.25); border-radius: 12px; padding: 10px 12px; color: var(--cream);
 }
+.thought-power {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  color: var(--cream-dim);
+  font-size: 0.85rem;
+}
+.thought-power input[type='range'] {
+  width: 100%;
+  padding: 0;
+  accent-color: var(--moss, #6b8f71);
+  background: transparent;
+  border: 0;
+}
+.debug-block .thought-power { margin-top: 4px; }
 
 @media (max-width: 900px) {
   .shell {

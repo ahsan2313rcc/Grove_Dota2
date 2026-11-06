@@ -9,6 +9,15 @@ import {
   searchModeForStrat,
   stratLabel,
 } from './game/ai.ts'
+import {
+  AI_POWER_MAX,
+  AI_POWER_MIN,
+  aiSearchBudget,
+  aiThoughtPowerLabel,
+  bootAiThoughtPower,
+  getAiThoughtPower,
+  setAiThoughtPower,
+} from './game/aiPower.ts'
 import { chooseAiPendingChallenge } from './game/aiChallenge.ts'
 import {
   bootNnMemory,
@@ -257,6 +266,7 @@ export default function App() {
   const [debugStrats, setDebugStrats] = useState<AiStrat[]>(() => Array.from({ length: boot?.seats ?? 2 }, (_, index) => cycleStrat(index)))
   const [trainNeural, setTrainNeural] = useState(false)
   const [nnInfo, setNnInfo] = useState<NnMemoryInfo>(() => bootNnMemory())
+  const [thoughtPower, setThoughtPower] = useState(() => bootAiThoughtPower())
   const queueToken = useRef(0)
   const watchRef = useRef(false)
   const watchAdvanceRef = useRef(0)
@@ -614,6 +624,7 @@ export default function App() {
           setTrainNeural(train)
           trainNeuralRef.current = train
           liveTrainNeural = train
+          setThoughtPower(getAiThoughtPower())
           if (nextDebug) {
             startDebugSession(nextSeed, seats, queue, strats, rules)
             return
@@ -667,6 +678,8 @@ export default function App() {
         onDebugNnSave={() => setNnInfo(saveNnMemory())}
         onDebugNnExportGit={() => setNnInfo(downloadNnMemoryForGit())}
         onDebugNnClear={() => setNnInfo(clearNnMemory(false))}
+        debugThoughtPower={thoughtPower}
+        onDebugThoughtPower={(value) => setThoughtPower(setAiThoughtPower(value))}
         onAction={send}
         onLobby={leave}
       />
@@ -714,6 +727,7 @@ function Lobby({
   const [lobbyRules, setLobbyRules] = useState<ScoreRules>(() => cloneRules(getScoreRules()))
   const [savedLocal, setSavedLocal] = useState<SavedLocalMatch | null>(() => loadLocalMatch())
   const [trainNeural, setTrainNeural] = useState(false)
+  const [thoughtPower, setThoughtPower] = useState(() => bootAiThoughtPower())
 
   function setPlayerCount(next: SeatCount) {
     setCount(next)
@@ -846,8 +860,28 @@ function Lobby({
         <fieldset className="debug-lobby">
           <legend>Match options</legend>
           <p className="quiet">
-            AI seats use max Challenge search (Balanced / Tempo / Architect / Spite). Pick <strong>Neural</strong> on a seat to play the trained net.
+            Heuristic seats (Balanced / Tempo / Architect / Spite) use Challenge search. Pick <strong>Neural</strong> on a seat to play the trained net.
           </p>
+          <label className="thought-power">
+            <span>
+              AI thought power · {thoughtPower}/10 · {aiThoughtPowerLabel(thoughtPower)}
+            </span>
+            <input
+              data-testid="lobby-thought-power"
+              type="range"
+              min={AI_POWER_MIN}
+              max={AI_POWER_MAX}
+              step={1}
+              value={thoughtPower}
+              onChange={(event) => setThoughtPower(setAiThoughtPower(Number(event.target.value)))}
+            />
+            <span className="quiet">
+              {(() => {
+                const b = aiSearchBudget(thoughtPower)
+                return `depth ${b.depth} · beam ${b.beam} · hand ${b.handPly}`
+              })()}
+            </span>
+          </label>
           <label className="check-row">
             <input
               data-testid="lobby-ancient-endgame"
