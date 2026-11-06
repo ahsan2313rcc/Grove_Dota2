@@ -101,10 +101,11 @@ export const SHAPE_MIN_HEROES = 3
  * Base = heroPoints × flat bodies (neutrals excluded from flat, included in shape/atk counts).
  * CORE  = 3×+ same attr → coreBonus[stack] (stacks with MIXED).
  * MIXED = 3+ distinct attrs → mixBonus[attrs] (stacks with CORE).
- * ATK   = 3+ same Melee/Ranged → attackBonus[n], but **only when CORE is absent**
- *         (unless `attackOnCore`; non-core boards use `attackOnMix`).
+ * ATK   = 3+ Melee **or** 3+ Ranged (counted separately; mixed range OK) →
+ *         attackBonus[n], but **only when CORE is absent** (unless `attackOnCore`;
+ *         non-core boards use `attackOnMix`).
  *
- * Why label: `STR x3, ATTR +3 (M5)` — numbers are hero counts in each category.
+ * Why label: `STR x3, ATTR +3, ATK +1 (M3)` — attr/M·R numbers are counts; ATK is points.
  */
 export type AttackScore = { tag: 'M' | 'R'; count: number; points: number }
 
@@ -198,20 +199,31 @@ function maxMonoStack(bodies: ScoreBody[]): { attr: Attr; count: number } {
 }
 
 /**
- * ATK count = every body that shares the attack type, including neutrals (`range: null`
- * does not spoil sameness and still fills the M/R count). Label uses that hero/neutral
- * count (e.g. `(R4)`), never the point value.
+ * ATK = 3+ Melee **or** 3+ Ranged, counted separately — mixed teams still score
+ * (e.g. 3 Ranged + 2 Melee → R3). Neutrals (`range: null`) pad both sides as
+ * wildcards. Label uses the winning side's body count (e.g. `(R4)`), never points.
  */
 function attackInfoFor(bodies: ScoreBody[], rules: ScoreRules): { points: number; count: number; tag: string } {
-  const typed = bodies.filter((body): body is ScoreBody & { range: Range } => body.range !== null)
-  if (typed.length === 0) return { points: 0, count: 0, tag: 'M' }
-  const kinds = new Set(typed.map((body) => body.range))
-  if (kinds.size !== 1) return { points: 0, count: 0, tag: 'M' }
-  const nulls = bodies.length - typed.length
-  const count = typed.length + nulls
+  let melee = 0
+  let ranged = 0
+  let nulls = 0
+  for (const body of bodies) {
+    if (body.range === 'Melee') melee += 1
+    else if (body.range === 'Ranged') ranged += 1
+    else nulls += 1
+  }
+  if (melee === 0 && ranged === 0) return { points: 0, count: 0, tag: 'M' }
+
+  const meleeTotal = melee + nulls
+  const rangedTotal = ranged + nulls
+  // Prefer the larger stack; ties keep the side that already has more typed bodies, then Melee.
+  const useRanged =
+    rangedTotal > meleeTotal || (rangedTotal === meleeTotal && ranged > melee)
+  const count = useRanged ? rangedTotal : meleeTotal
+  const tag = useRanged ? 'R' : 'M'
   const capped = Math.min(count, 5)
   const points = capped >= SHAPE_MIN_HEROES ? (rules.attackBonus[capped - 1] ?? 0) : 0
-  return { points, count, tag: typed[0]!.range === 'Melee' ? 'M' : 'R' }
+  return { points, count, tag }
 }
 
 export function teamShapes(why: string): { core: boolean; mix: boolean } {

@@ -138,6 +138,29 @@ describe('scoring', () => {
     expect(coreMelee.why).toContain('(M3)')
     expect(coreMelee.why).not.toContain('ATK +')
     expect(coreMelee.attack.points).toBe(0)
+
+    // Mixed range: 3 Ranged still scores R3 even with Melee on the team.
+    const mixedRange = scoreBodies([
+      { attrs: ['STR'], range: 'Ranged', count: 1 },
+      { attrs: ['AGI'], range: 'Ranged', count: 1 },
+      { attrs: ['INT'], range: 'Ranged', count: 1 },
+      { attrs: ['UNI'], range: 'Melee', count: 2 },
+    ])
+    expect(mixedRange.why).toContain('ATK +1')
+    expect(mixedRange.why).toContain('(R3)')
+    expect(mixedRange.attack).toEqual({ tag: 'R', count: 3, points: 1 })
+    expect(mixedRange.points).toBe(10) // 5 flat + mix +4 + atk +1
+
+    // Symmetric: 3 Melee + 2 Ranged → M3.
+    const mixedMelee = scoreBodies([
+      { attrs: ['STR'], range: 'Melee', count: 1 },
+      { attrs: ['AGI'], range: 'Melee', count: 1 },
+      { attrs: ['INT'], range: 'Melee', count: 1 },
+      { attrs: ['UNI'], range: 'Ranged', count: 1 },
+      { attrs: ['STR'], range: 'Ranged', count: 1 },
+    ])
+    expect(mixedMelee.attack).toEqual({ tag: 'M', count: 3, points: 1 })
+    expect(mixedMelee.why).toContain('(M3)')
   })
 
   it('Brewmaster picks the single attr that maximizes the team', () => {
