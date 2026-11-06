@@ -7,6 +7,8 @@ import {
   effectEv,
   DEFAULT_CALIBRATION,
   diffPlayEffects,
+  forwardEv,
+  impactOf,
   pressureOf,
   trapEv,
   EMPTY_EFFECTS,
@@ -65,6 +67,17 @@ describe('evModel', () => {
     bag.destroy = 2
     bag.ev = 12.5
     expect(pressureOf(bag)).toBe(12.5)
+  })
+
+  it('impactOf equals Rel so cumulative Impact tracks winners', () => {
+    const bag = EMPTY_EFFECTS()
+    bag.destroy = 2
+    bag.silenceLock = 1
+    bag.trapPlant = 1
+    bag.ev = 99
+    const cal = { ...DEFAULT_CALIBRATION, alpha: 2, beta: 1, meanVBody: 3 }
+    expect(impactOf(4.5, bag, cal)).toBe(4.5)
+    expect(forwardEv(bag, cal)).toBeGreaterThan(0)
   })
 
   it('diffPlayEffects values Anti-Mage destroys with full EV pressure', () => {

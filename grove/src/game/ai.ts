@@ -62,11 +62,15 @@ export function cycleStrat(index: number): AiStrat {
   return AI_STRATS[index % AI_STRATS.length]!.id
 }
 
-export function chooseAiAction(state: Game): Action {
+/** `fast` shrinks the 1-ply tree for batch sims (~AI is ~90% of sim time). */
+export type AiSearchMode = 'full' | 'fast'
+
+export function chooseAiAction(state: Game, mode: AiSearchMode = 'full'): Action {
   if (state.veil) return { type: 'ready' }
   if (state.over) return { type: 'end' }
   if (state.pending) return { type: 'choose', ids: chooseAiPending(state) }
 
+  const fast = mode === 'fast'
   const actor = state.active
   const strat = state.players[actor]?.strat ?? DEFAULT_STRAT
   const plans = comboPlans(state)
@@ -108,17 +112,19 @@ export function chooseAiAction(state: Game): Action {
     }
   }
 
-  // Ember Spirit repositioning is free value.
-  for (const ember of emberMoves(state)) {
-    for (const team of emberTargets(state, ember.uid)) {
-      if (!team.ok) continue
-      const action: Action = { type: 'move', uid: ember.uid, team: team.id }
-      const next = apply({ ...state, autoAll: true }, action)
-      if (!moved(state, next)) continue
-      const score = evaluate(next, actor, strat) + 0.4
-      if (score > bestScore) {
-        bestScore = score
-        best = action
+  // Ember Spirit repositioning is free value (skip in fast sims — rare + expensive).
+  if (!fast) {
+    for (const ember of emberMoves(state)) {
+      for (const team of emberTargets(state, ember.uid)) {
+        if (!team.ok) continue
+        const action: Action = { type: 'move', uid: ember.uid, team: team.id }
+        const next = apply({ ...state, autoAll: true }, action)
+        if (!moved(state, next)) continue
+        const score = evaluate(next, actor, strat) + 0.4
+        if (score > bestScore) {
+          bestScore = score
+          best = action
+        }
       }
     }
   }
@@ -130,9 +136,7 @@ export function chooseAiAction(state: Game): Action {
   // Death Prophet: play the top of the grave (free Exorcism), including terrain combo plans.
   const graveTop = playableFromGrave(state, actor)
   if (graveTop && graveTop.kind !== 'terrain') {
-    const teams = needsTeam(graveTop.defId, graveTop.kind)
-      ? teamsFor(state, graveTop.uid).filter((team) => team.ok)
-      : [{ id: '', ok: true, label: '', reason: undefined }]
+    const teams = pickTeamOptions(state, graveTop.uid, graveTop.defId, graveTop.kind, fast)
     for (const team of teams) {
       const action: Action = { type: 'play', uid: graveTop.uid, team: team.id }
       const next = apply({ ...state, autoAll: true }, action)
@@ -164,16 +168,19 @@ export function chooseAiAction(state: Game): Action {
     seen.add(card.defId)
     const instant = display(card.defId).instant
     if (!instant && state.players[actor].actions < 1) continue
-    const teams = needsTeam(card.defId, card.kind)
-      ? teamsFor(state, card.uid).filter((team) => team.ok)
-      : [{ id: '', ok: true, label: '', reason: undefined }]
+    const teams = pickTeamOptions(state, card.uid, card.defId, card.kind, fast)
     for (const team of teams) {
       const packs: (string[] | undefined)[] = [undefined]
       if (card.kind === 'hero' && !isTrapHero(card.defId)) {
         const mates = rankMates(state, actor, card.uid, team.id, heroUids)
-        // Prefer stuffing the board without exploding the search tree.
-        if (mates.length >= 2) packs.push(mates.slice(0, 2))
-        for (const mate of mates.slice(0, 3)) packs.push([mate])
+        if (fast) {
+          // One companion max — full search tries 2-packs + top-3 singles.
+          if (mates[0]) packs.push([mates[0]])
+        } else {
+          // Prefer stuffing the board without exploding the search tree.
+          if (mates.length >= 2) packs.push(mates.slice(0, 2))
+          for (const mate of mates.slice(0, 3)) packs.push([mate])
+        }
       }
       for (const extras of packs) {
         const action: Action = extras
@@ -860,6 +867,28 @@ function evaluate(state: Game, actor: PlayerId, strat: AiStrat): number {
     if (!behind) score += denial * 0.2
   }
   return score
+}
+
+/** Legal team destinations; fast sims keep at most two (fill-first, then new). */
+function pickTeamOptions(
+  state: Game,
+  uid: string,
+  defId: string,
+  kind: CardInst['kind'],
+  fast: boolean,
+): { id: string; ok: boolean; label: string; reason: string | undefined }[] {
+  if (!needsTeam(defId, kind)) return [{ id: '', ok: true, label: '', reason: undefined }]
+  const all = teamsFor(state, uid).filter((team) => team.ok)
+  if (!fast || all.length <= 2) return all
+  const ranked = [...all].sort((a, b) => {
+    const teamA = a.id !== 'new' ? teamById(state, a.id)?.team : null
+    const teamB = b.id !== 'new' ? teamById(state, b.id)?.team : null
+    const fillA = teamA ? teamA.heroes.length : -1
+    const fillB = teamB ? teamB.heroes.length : -1
+    // Prefer nearly-full / existing teams over brand new seats.
+    return fillB - fillA
+  })
+  return ranked.slice(0, 2)
 }
 
 /** Rank silent companions by how well they fit the destination team. */

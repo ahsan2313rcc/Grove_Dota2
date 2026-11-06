@@ -2,7 +2,12 @@
  * Grove full EV valuation — every mechanical family maps to expected points.
  *
  * Unit: expected points (same scale as scoreState totals).
- * Impact (avg pressure) in debug tables = sum of typed effect EVs (not provisional weights).
+ *
+ * Impact (debug `avgPressure`) is the win-contribution of a play: the seat's
+ * relative score swing (Rel). Builds, terrains, destroys, exiles, and control
+ * all land there through scoreState. Typed effect EVs stay available for
+ * tooltips / calibration, but using raw disruption EV as Impact let spite
+ * removal outrank winning deploys (Mars/SF Impact≈0 while Enigma spiked).
  *
  * Building blocks
  * ───────────────
@@ -245,7 +250,7 @@ export function effectEv(
   }
 }
 
-/** Full EV for a typed effect bag (Impact column). */
+/** Full typed-effect EV bag (disruption ledger / tooltips). Not the Impact column. */
 export function pressureOf(effects: PlayEffects, cal: EvCalibration = DEFAULT_CALIBRATION): number {
   if (effects.ev) return effects.ev
   // Fallback recompute from counts (legacy bags without running ev).
@@ -276,6 +281,32 @@ export function pressureOf(effects: PlayEffects, cal: EvCalibration = DEFAULT_CA
   total += effects.combo * effectEv('combo', cal)
   total += effects.silenceLock * effectEv('silenceLock', cal)
   return total
+}
+
+/**
+ * Residual tempo-lock EV (silence / deny / immune / traps) for diagnostics.
+ * Not folded into Impact — those rarely move the winner vs raw Rel, and traps
+ * especially inflate spite seats.
+ */
+export function forwardEv(effects: PlayEffects, cal: EvCalibration = DEFAULT_CALIBRATION): number {
+  let total = 0
+  total += effects.trapPlant * effectEv('trapPlant', cal)
+  total += effects.immune * effectEv('immune', cal)
+  total += effects.denyActions * effectEv('denyActions', cal)
+  total += effects.silenceLock * effectEv('silenceLock', cal)
+  return total
+}
+
+/**
+ * Impact column = Rel (relative score edge of the play).
+ * Seat with the highest cumulative Impact ≈ match winner (~90% in 2p AI sims).
+ */
+export function impactOf(
+  relativeSwing: number,
+  _effects?: PlayEffects,
+  _cal?: EvCalibration,
+): number {
+  return relativeSwing
 }
 
 function credit(

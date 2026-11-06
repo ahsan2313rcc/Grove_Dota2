@@ -6,7 +6,7 @@ import {
   DEFAULT_CALIBRATION,
   diffPlayEffects,
   EMPTY_EFFECTS,
-  pressureOf,
+  impactOf,
   type PlayEffects,
 } from './evModel.ts'
 import {
@@ -26,7 +26,7 @@ import { getScoreRules } from './scoring.ts'
 import type { Action, AiStrat, Attr, CardInst, CardKind, Game, Team } from './types.ts'
 
 export type { PlayEffects } from './evModel.ts'
-export { EMPTY_EFFECTS, pressureOf, diffPlayEffects, addEffects } from './evModel.ts'
+export { EMPTY_EFFECTS, impactOf, pressureOf, forwardEv, diffPlayEffects, addEffects } from './evModel.ts'
 
 export type PlayKind = CardKind | 'combo' | 'draw' | 'morph' | 'move' | 'ability' | 'other'
 export type RelBucket = 'hero' | 'terrain' | 'loot' | 'ability' | 'other'
@@ -806,7 +806,8 @@ export class BalanceTracker {
       exile: effects.exile,
       control: effects.control,
       bounce: effects.bounce,
-      pressure: pressureOf(effects, DEFAULT_CALIBRATION),
+      // Impact = Rel (win contribution). Typed EV stays on `effects` for tooltips.
+      pressure: impactOf(relativeSwing, effects, DEFAULT_CALIBRATION),
     })
   }
 }
@@ -1395,7 +1396,7 @@ export function runMatchFast(seed: number, seats: number, strats?: AiStrat[], gu
           game = { ...game, pending: null, log: [...game.log, 'Forced past a stuck choice.'] }
         }
       } else {
-        const action = chooseAiAction(game)
+        const action = chooseAiAction(game, 'fast')
         const before = game
         game = apply(game, action)
         tracker.observe(before, action, game)
