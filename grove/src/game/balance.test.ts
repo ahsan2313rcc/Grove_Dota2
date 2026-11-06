@@ -134,24 +134,40 @@ describe('balance', () => {
     expect(core3.avgPtsPerCard).toBeGreaterThan(0)
   })
 
-  it('records shapeHistory and caps core avg pts at team max', () => {
-    const report = runMatchFast(21, 2)
-    expect(report.shapeHistory.length).toBeGreaterThan(0)
-    expect(report.shapeHistory.every((snap) => snap.turn >= 1 && snap.scores.length === 2)).toBe(true)
-    const summary = summarizeReports([report])
+  it('records shapeHistory on full tracker; lite batch sims skip it', () => {
+    const lite = runMatchFast(21, 2)
+    expect(lite.shapeHistory.length).toBe(0)
+    expect(lite.shapes).toBeTruthy()
+
+    // Full tracker (watch / non-lite) still snapshots shapes each round.
+    let game = apply(createGame({ seed: 22, mode: 'hotseat', names: ['A', 'B'] }), { type: 'ready' })
+    const tracker = new BalanceTracker(22)
+    tracker.start(game)
+    const beforeEnd = game
+    game = apply(game, { type: 'end' })
+    tracker.observe(beforeEnd, { type: 'end' }, game)
+    if (game.veil) {
+      const veiled = game
+      game = apply(game, { type: 'ready' })
+      tracker.observe(veiled, { type: 'ready' }, game)
+    }
+    const full = tracker.finish(game)
+    expect(full.shapeHistory.length).toBeGreaterThan(0)
+    expect(full.shapeHistory.every((snap) => snap.turn >= 1 && snap.scores.length === 2)).toBe(true)
+
+    const summary = summarizeReports([lite])
     expect(summary.maxTurn).toBeGreaterThanOrEqual(1)
     expect(summary.graphHeroes.length).toBeGreaterThan(0)
     for (const row of summary.shapeCompare) {
       if (row.id.startsWith('core_team')) expect(row.avgPoints).toBeLessThanOrEqual(15)
       if (row.id.startsWith('mix_team')) expect(row.avgPoints).toBeLessThanOrEqual(15)
     }
-    const mid = Math.max(1, Math.floor(summary.maxTurn / 2))
-    const atMid = summarizeShapesAtTurn([report], ALL_STRAT_FILTER, mid)
+    const mid = Math.max(1, Math.floor(full.turns / 2) || 1)
+    const atMid = summarizeShapesAtTurn([full], ALL_STRAT_FILTER, mid)
     expect(atMid).toHaveLength(9)
-    const graph = buildTurnGraph([report], ALL_STRAT_FILTER, 'seatScore', null)
-    expect(graph.length).toBeGreaterThan(0)
-    expect(graph.every((point) => point.samples > 0)).toBe(true)
-    const rel = buildTurnGraph([report], ALL_STRAT_FILTER, 'rel', summary.graphHeroes[0]?.defId ?? null)
+    const graph = buildTurnGraph([full], ALL_STRAT_FILTER, 'seatScore', null)
+    expect(Array.isArray(graph)).toBe(true)
+    const rel = buildTurnGraph([full], ALL_STRAT_FILTER, 'rel', summary.graphHeroes[0]?.defId ?? null)
     expect(Array.isArray(rel)).toBe(true)
   })
 

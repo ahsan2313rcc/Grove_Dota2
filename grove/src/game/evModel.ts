@@ -484,6 +484,7 @@ function allHands(game: Game): Map<string, { defId: string; seat: number }> {
 /**
  * Diff before→after into a full PlayEffects bag credited to `actor`.
  * `impactDefId` helps classify euls / SD / medusa / chronosphere sources.
+ * `cheapBodies` skips per-hero scoreTeam (batch sims) and uses calibration means.
  */
 export function diffPlayEffects(
   before: Game,
@@ -491,6 +492,7 @@ export function diffPlayEffects(
   actor: number,
   impactDefId: string | null = null,
   cal: EvCalibration = DEFAULT_CALIBRATION,
+  opts: { cheapBodies?: boolean } = {},
 ): PlayEffects {
   const effects = EMPTY_EFFECTS()
   const logs = newLogs(before, after)
@@ -502,12 +504,16 @@ export function diffPlayEffects(
   const afterGrave = new Set(after.grave.map((card) => card.uid))
   const afterHands = allHands(after)
   const beforeHands = allHands(before)
+  const bodyOf = (uid: string, defId: string) =>
+    opts.cheapBodies ? cal.meanVBody : marginalBodyValue(before, uid, cal.meanVBody)
+  const abilityOf = (defId: string) =>
+    opts.cheapBodies ? cal.meanVAbility : abilityValue(defId, cal)
 
   // --- Board removals / control ---
   for (const [uid, prior] of beforeBoard) {
     const next = afterBoard.get(uid)
-    const vBody = marginalBodyValue(before, uid, cal.meanVBody)
-    const vAbility = abilityValue(prior.defId, cal)
+    const vBody = bodyOf(uid, prior.defId)
+    const vAbility = abilityOf(prior.defId)
 
     if (!next) {
       if (afterGrave.has(uid)) {
@@ -559,8 +565,8 @@ export function diffPlayEffects(
   for (const [uid, next] of afterBoard) {
     if (beforeBoard.has(uid)) continue
     if (next.controller !== actor) continue
-    const vBody = marginalBodyValue(after, uid, cal.meanVBody)
-    const vAbility = abilityValue(next.defId, cal)
+    const vBody = opts.cheapBodies ? cal.meanVBody : marginalBodyValue(after, uid, cal.meanVBody)
+    const vAbility = abilityOf(next.defId)
     credit(effects, 'deploy', cal, 1, vBody, vAbility)
   }
 

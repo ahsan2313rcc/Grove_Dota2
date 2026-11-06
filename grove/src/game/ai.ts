@@ -62,7 +62,10 @@ export function cycleStrat(index: number): AiStrat {
   return AI_STRATS[index % AI_STRATS.length]!.id
 }
 
-/** `fast` shrinks the 1-ply tree for batch sims (~AI is ~90% of sim time). */
+/**
+ * `full` — watch / human-vs-AI quality (wide 1-ply tree).
+ * `fast` — batch sims: pre-rank hand, search only top candidates (target ~20 games/sec).
+ */
 export type AiSearchMode = 'full' | 'fast'
 
 export function chooseAiAction(state: Game, mode: AiSearchMode = 'full'): Action {
@@ -80,6 +83,8 @@ export function chooseAiAction(state: Game, mode: AiSearchMode = 'full'): Action
   // Free terrain combos first. Prefer core (reward + same points). Never play a lone terrain.
   if (core) return { type: 'combo', uids: core.uids }
   if (mixed) return { type: 'combo', uids: mixed.uids }
+
+  if (fast) return chooseAiActionFast(state, actor, strat)
 
   let best: Action = { type: 'end' }
   let bestScore = evaluate(state, actor, strat) + endBias(state, actor, strat)
@@ -112,19 +117,16 @@ export function chooseAiAction(state: Game, mode: AiSearchMode = 'full'): Action
     }
   }
 
-  // Ember Spirit repositioning is free value (skip in fast sims — rare + expensive).
-  if (!fast) {
-    for (const ember of emberMoves(state)) {
-      for (const team of emberTargets(state, ember.uid)) {
-        if (!team.ok) continue
-        const action: Action = { type: 'move', uid: ember.uid, team: team.id }
-        const next = apply({ ...state, autoAll: true }, action)
-        if (!moved(state, next)) continue
-        const score = evaluate(next, actor, strat) + 0.4
-        if (score > bestScore) {
-          bestScore = score
-          best = action
-        }
+  for (const ember of emberMoves(state)) {
+    for (const team of emberTargets(state, ember.uid)) {
+      if (!team.ok) continue
+      const action: Action = { type: 'move', uid: ember.uid, team: team.id }
+      const next = apply({ ...state, autoAll: true }, action)
+      if (!moved(state, next)) continue
+      const score = evaluate(next, actor, strat) + 0.4
+      if (score > bestScore) {
+        bestScore = score
+        best = action
       }
     }
   }
@@ -136,7 +138,7 @@ export function chooseAiAction(state: Game, mode: AiSearchMode = 'full'): Action
   // Death Prophet: play the top of the grave (costs 1 action), including terrain combo plans.
   const graveTop = playableFromGrave(state, actor)
   if (graveTop && graveTop.kind !== 'terrain') {
-    const teams = pickTeamOptions(state, graveTop.uid, graveTop.defId, graveTop.kind, fast)
+    const teams = pickTeamOptions(state, graveTop.uid, graveTop.defId, graveTop.kind, false)
     for (const team of teams) {
       const action: Action = { type: 'play', uid: graveTop.uid, team: team.id }
       const next = apply({ ...state, autoAll: true }, action)
@@ -168,19 +170,13 @@ export function chooseAiAction(state: Game, mode: AiSearchMode = 'full'): Action
     seen.add(card.defId)
     const instant = display(card.defId).instant
     if (!instant && state.players[actor].actions < 1) continue
-    const teams = pickTeamOptions(state, card.uid, card.defId, card.kind, fast)
+    const teams = pickTeamOptions(state, card.uid, card.defId, card.kind, false)
     for (const team of teams) {
       const packs: (string[] | undefined)[] = [undefined]
       if (card.kind === 'hero' && !isTrapHero(card.defId)) {
         const mates = rankMates(state, actor, card.uid, team.id, heroUids)
-        if (fast) {
-          // One companion max — full search tries 2-packs + top-3 singles.
-          if (mates[0]) packs.push([mates[0]])
-        } else {
-          // Prefer stuffing the board without exploding the search tree.
-          if (mates.length >= 2) packs.push(mates.slice(0, 2))
-          for (const mate of mates.slice(0, 3)) packs.push([mate])
-        }
+        if (mates.length >= 2) packs.push(mates.slice(0, 2))
+        for (const mate of mates.slice(0, 3)) packs.push([mate])
       }
       for (const extras of packs) {
         const action: Action = extras
@@ -218,6 +214,81 @@ export function chooseAiAction(state: Game, mode: AiSearchMode = 'full'): Action
   }
 
   return best
+}
+
+/**
+ * Batch-sim policy: zero speculative apply/evaluate.
+ * Static hand rank + one destination — engine apply happens only for the chosen action.
+ * (1-ply search was ~80% of sim time; this targets ~20 games/sec.)
+ */
+function chooseAiActionFast(state: Game, actor: PlayerId, strat: AiStrat): Action {
+  void strat
+  const undying = undyingRevive(state)
+  if (undying.ok) {
+    const discards = pickUndyingDiscards(state, actor)
+    if (discards.length >= 2) return { type: 'undying', team: 'new', discards }
+  }
+
+  const graveTop = playableFromGrave(state, actor)
+  if (graveTop?.kind === 'terrain') {
+    for (const plan of comboPlans(state)) {
+      if (!plan.uids.includes(graveTop.uid)) continue
+      return { type: 'combo', uids: plan.uids }
+    }
+  } else if (graveTop && graveTop.kind !== 'terrain' && state.players[actor].actions > 0) {
+    const team = pickTeamOptions(state, graveTop.uid, graveTop.defId, graveTop.kind, true)[0]
+    if (team) return { type: 'play', uid: graveTop.uid, team: team.id }
+  }
+
+  const morph = morphCasts(state)[0]
+  if (morph) return { type: 'morph', uid: morph.uid }
+
+  const hand = state.players[actor].hand
+  const ranked = rankHandForFast(state, actor, hand)
+  const top = ranked[0]
+  if (top) {
+    const team = pickTeamOptions(state, top.uid, top.defId, top.kind, true)[0]
+    if (!needsTeam(top.defId, top.kind) || team) {
+      return { type: 'play', uid: top.uid, team: team?.id ?? '' }
+    }
+  }
+
+  // Dig only when the hand has nothing playable (don't burn actions drawing forever).
+  const playable = ranked.length > 0
+  if (!playable && state.players[actor].actions > 0 && state.deck.length > 0) {
+    return { type: 'draw' }
+  }
+
+  const stuck = stuckDiscardUid(state, actor)
+  if (stuck && state.players[actor].actions > 0 && !playable) return { type: 'discard', uid: stuck }
+  return { type: 'end' }
+}
+
+function rankHandForFast(state: Game, actor: PlayerId, hand: CardInst[]): CardInst[] {
+  const threat = threatScore(state, actor)
+  const actions = state.players[actor].actions
+  const seen = new Set<string>()
+  const ranked: { card: CardInst; rank: number }[] = []
+  for (const card of hand) {
+    if (card.kind === 'terrain') continue
+    if (seen.has(card.defId)) continue
+    seen.add(card.defId)
+    const instant = display(card.defId).instant
+    if (!instant && actions < 1) continue
+    let rank = 0
+    const denial = INTERRUPT_VALUE[card.defId] ?? 0
+    if (isTrapHero(card.defId)) rank += 2.5
+    else if (card.kind === 'hero') rank += 4 + (HERO_BY_ID[card.defId]?.timing === 'cast' ? 1.2 : 0.4)
+    else if (card.kind === 'item') rank += 3
+    else rank += 2.2
+    // Hold premium answers unless the board already looks hot.
+    if (denial >= 7) rank += threat >= 5 ? 3 : -2
+    else if (denial >= 5) rank += threat >= 4 ? 1.2 : -0.4
+    if (instant && denial < 5) rank += 0.3
+    ranked.push({ card, rank })
+  }
+  ranked.sort((a, b) => b.rank - a.rank)
+  return ranked.map((entry) => entry.card)
 }
 
 /** Smart answers for pending prompts (also used by engine settle for AI / autoAll). */

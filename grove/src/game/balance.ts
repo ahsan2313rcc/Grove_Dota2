@@ -2,7 +2,6 @@ import { chooseAiAction, chooseAiPending, cycleStrat, DEFAULT_STRAT } from './ai
 import { display, firesAbility, HERO_BY_ID } from './catalog.ts'
 import { apply, createGame, type SeatSpec } from './engine.ts'
 import {
-  addEffects,
   DEFAULT_CALIBRATION,
   diffPlayEffects,
   EMPTY_EFFECTS,
@@ -417,6 +416,8 @@ type ImpactFrame = {
   kind: PlayKind
   turn: number
   startTotals: number[]
+  /** Snapshot at frame open — effects are diffs once on seal (not every step). */
+  startState: Game
   playId: number | null
   silenced: boolean
   effects: PlayEffects
@@ -433,6 +434,8 @@ type AbilitySplit = {
 
 export class BalanceTracker {
   readonly seed: number
+  /** Skip shape-history / event tallies — for batch sims (~debug turn graphs only). */
+  readonly lite: boolean
   private swings: SwingEvent[] = []
   private rounds: RoundEvent[] = []
   private events: EventCounts = EMPTY_EVENTS()
@@ -450,8 +453,9 @@ export class BalanceTracker {
   private playSeq = 0
   private shapeHistory: ShapeSnapshot[] = []
 
-  constructor(seed: number) {
+  constructor(seed: number, opts: { lite?: boolean } = {}) {
     this.seed = seed
+    this.lite = !!opts.lite
   }
 
   start(game: Game) {
@@ -482,6 +486,7 @@ export class BalanceTracker {
       this.turnStartScores = totals(after)
     }
 
+    // Keep event tallies (cheap); shapeHistory is the heavy optional graph feed.
     this.tallyEvents(before, after, eventActor)
 
     // Instant / Illusion spent from a prompt: close the interrupted card, open the interrupt card.
@@ -531,23 +536,27 @@ export class BalanceTracker {
       this.bumpEvent(before.active, 'playTerrain')
     } else if (action.type === 'morph') {
       this.turnCards += 1
-      const loc = before.players.flatMap((player) => player.teams.flatMap((team) => team.heroes)).find((hero) => hero.uid === action.uid)
-      this.sealImpact(before)
-      this.openImpact(before, before.active, loc?.defId ?? 'morphling', 'morph')
+      if (!this.lite) {
+        const loc = before.players.flatMap((player) => player.teams.flatMap((team) => team.heroes)).find((hero) => hero.uid === action.uid)
+        this.sealImpact(before)
+        this.openImpact(before, before.active, loc?.defId ?? 'morphling', 'morph')
+      }
     } else if (action.type === 'draw') {
       this.turnCards += 1
-      this.sealImpact(before)
-      this.openImpact(before, before.active, 'draw', 'draw')
       this.bumpEvent(before.active, 'drawAction')
+      // Lite batch sims skip draw impact frames (noise + expensive totals()).
+      if (!this.lite) {
+        this.sealImpact(before)
+        this.openImpact(before, before.active, 'draw', 'draw')
+      }
     } else if (action.type === 'move') {
-      this.sealImpact(before)
-      this.openImpact(before, before.active, 'ember_spirit', 'move')
+      if (!this.lite) {
+        this.sealImpact(before)
+        this.openImpact(before, before.active, 'ember_spirit', 'move')
+      }
     }
 
-    // Credit this step's disruption before any body→ability split so placement
-    // deltas land on the body frame; later choose steps feed the ability frame.
-    if (this.impact) this.creditEffects(before, after, this.impact)
-
+    // Effect EV is computed once on seal from startState→after (not every micro-step).
     this.maybeSplitAbility(before, after)
 
     if (!resolving(after)) this.sealImpact(after)
@@ -661,12 +670,6 @@ export class BalanceTracker {
     if (gainedImmune > 0) this.bumpEvent(actor, 'immune', gainedImmune)
   }
 
-  /** Fold board/hand pile deltas into the open impact's effect bag (full EV). */
-  private creditEffects(before: Game, after: Game, frame: ImpactFrame) {
-    const delta = diffPlayEffects(before, after, frame.actor, frame.defId, DEFAULT_CALIBRATION)
-    addEffects(frame.effects, delta)
-  }
-
   private report(game: Game, includeOpenRound: boolean): MatchReport {
     const scores = totals(game)
     const best = Math.max(...scores, 0)
@@ -723,11 +726,13 @@ export class BalanceTracker {
       pointsDelta: end - start,
       endScore: end,
     })
-    this.shapeHistory.push({
-      turn: this.turnNo,
-      scores: endScores.slice(),
-      seatShapes: game.players.map((player) => shapeCountsFor(game, player.id)),
-    })
+    if (!this.lite) {
+      this.shapeHistory.push({
+        turn: this.turnNo,
+        scores: endScores.slice(),
+        seatShapes: game.players.map((player) => shapeCountsFor(game, player.id)),
+      })
+    }
     this.turnCards = 0
     this.turnStartScores = endScores
   }
@@ -747,6 +752,7 @@ export class BalanceTracker {
       kind,
       turn: at.turn,
       startTotals: totals(at),
+      startState: at,
       playId,
       silenced: silencedPlay,
       effects: EMPTY_EFFECTS(),
@@ -761,6 +767,16 @@ export class BalanceTracker {
     const frame = this.impact
     if (!frame) return
     this.impact = null
+    // One net EV diff for the whole resolution frame (body or ability).
+    // Lite sims skip per-body scoreTeam and use calibration means (big speed win).
+    frame.effects = diffPlayEffects(
+      frame.startState,
+      at,
+      frame.actor,
+      frame.defId,
+      DEFAULT_CALIBRATION,
+      this.lite ? { cheapBodies: true } : undefined,
+    )
     this.commitSwing(frame, totals(at))
   }
 
@@ -1371,7 +1387,7 @@ export function aiRoster(count: number, strats?: AiStrat[], offset = 0): SeatSpe
 
 export function runMatchFast(seed: number, seats: number, strats?: AiStrat[], guard = 2500): MatchReport {
   let game = createGame({ seed, seats: aiRoster(seats, strats, seed) })
-  const tracker = new BalanceTracker(seed)
+  const tracker = new BalanceTracker(seed, { lite: true })
   tracker.start(game)
   let steps = 0
   let noProgress = 0
