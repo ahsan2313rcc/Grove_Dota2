@@ -6,7 +6,7 @@ import type { AiStrat, BoardHero } from './types.ts'
 
 describe('ai strats', () => {
   it('exposes four personalities', () => {
-    expect(AI_STRATS.map((entry) => entry.id)).toEqual(['balanced', 'tempo', 'architect', 'spite'])
+    expect(AI_STRATS.map((entry) => entry.id)).toEqual(['balanced', 'tempo', 'architect', 'spite', 'neural'])
   })
 
   it('each strat returns a legal action on an opening hand', () => {

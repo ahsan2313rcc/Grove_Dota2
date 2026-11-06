@@ -20,7 +20,11 @@ export const AI_STRATS: { id: AiStrat; label: string; blurb: string }[] = [
   { id: 'tempo', label: 'Tempo', blurb: 'Floods heroes, spends actions, and gates Chronosphere / Silence on real board threats.' },
   { id: 'architect', label: 'Architect', blurb: 'Builds cores and terrain paths, still removes filled enemy teams, ends only with empty denial.' },
   { id: 'spite', label: 'Spite', blurb: 'Pressure-first: hunts the highest threat seat with traps, steals, and removal without breaking own cores.' },
+  { id: 'neural', label: 'Neural', blurb: 'Offline-trained net (1-ply value search). Train from Debug → Train Neural.' },
 ]
+
+/** Heuristic personalities (everything except Neural). */
+export const HEURISTIC_STRATS: AiStrat[] = ['balanced', 'tempo', 'architect', 'spite']
 
 export const DEFAULT_STRAT: AiStrat = 'balanced'
 
@@ -68,11 +72,23 @@ export function cycleStrat(index: number): AiStrat {
  * `challenge` — strongest heuristic (turn beam + sharper eval). Use vs humans.
  * `full` — wide 1-ply tree (Watch default before challenge).
  * `fast` — batch sims (~20 games/sec), budgeted 1-ply.
- * `neural` — offline-trained tiny net ranks actions (no speculative apply).
+ * `neural` — offline-trained net with 1-ply apply + value(after) (quality over speed).
  *
- * Limit is speculative `apply` cost: challenge/full fire many applies per decision.
+ * Limit is speculative `apply` cost: challenge/full/neural fire many applies per decision.
  */
 export type AiSearchMode = 'full' | 'fast' | 'challenge' | 'neural'
+
+/** Map seat strat → search brain. Neural seats use the net; others use Challenge (max). */
+export function searchModeForStrat(strat: AiStrat, batchFast = false): AiSearchMode {
+  if (strat === 'neural') return 'neural'
+  if (batchFast) return 'fast'
+  return 'challenge'
+}
+
+/** Personality used inside eval when seat is Neural. */
+export function heuristicFace(strat: AiStrat): Exclude<AiStrat, 'neural'> {
+  return strat === 'neural' ? 'balanced' : strat
+}
 
 /**
  * Unique hand cards that get a real 1-ply try in batch sims.
@@ -87,13 +103,18 @@ export function chooseAiAction(state: Game, mode: AiSearchMode = 'full'): Action
   if (state.pending) {
     return {
       type: 'choose',
-      ids: mode === 'challenge' ? chooseAiPendingChallenge(state) : chooseAiPending(state),
+      ids: mode === 'challenge' || mode === 'neural'
+        ? chooseAiPendingChallenge(state)
+        : chooseAiPending(state),
     }
   }
 
-  const fast = mode === 'fast'
   const actor = state.active
-  const strat = state.players[actor]?.strat ?? DEFAULT_STRAT
+  const seatStrat = state.players[actor]?.strat ?? DEFAULT_STRAT
+  // Seat strat wins: Neural seats always use the net; otherwise honor caller mode.
+  const resolved: AiSearchMode =
+    seatStrat === 'neural' ? 'neural' : mode === 'fast' ? 'fast' : mode === 'neural' ? 'neural' : mode === 'challenge' ? 'challenge' : mode
+  const strat = heuristicFace(seatStrat)
   const plans = comboPlans(state)
   const core = plans.find((plan) => plan.detail.startsWith('core'))
   const mixed = plans.find((plan) => plan.detail.startsWith('mixed'))
@@ -102,9 +123,9 @@ export function chooseAiAction(state: Game, mode: AiSearchMode = 'full'): Action
   if (core) return { type: 'combo', uids: core.uids }
   if (mixed) return { type: 'combo', uids: mixed.uids }
 
-  if (mode === 'challenge') return chooseAiActionChallenge(state, actor, strat)
-  if (mode === 'neural') return chooseAiActionNeural(state, actor, strat)
-  if (fast) return chooseAiActionFast(state, actor, strat)
+  if (resolved === 'challenge') return chooseAiActionChallenge(state, actor, strat)
+  if (resolved === 'neural') return chooseAiActionNeural(state, actor, strat)
+  if (resolved === 'fast') return chooseAiActionFast(state, actor, strat)
 
   let best: Action = { type: 'end' }
   let bestScore = evaluate(state, actor, strat) + endBias(state, actor, strat)

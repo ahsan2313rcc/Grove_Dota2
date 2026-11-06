@@ -1,15 +1,14 @@
 /**
- * Tiny offline action-ranking net for Grove.
+ * Tiny offline action-ranking / value net for Grove.
  *
- * Train with `npx tsx scripts/train-nn.mts` (imitates a heuristic teacher over a few
- * thousand self-play games). At play time the net ranks legal actions WITHOUT
- * speculative apply — fast, and only as strong as its training data.
+ * Train with `npx tsx scripts/train-nn.mts` or the hillclimb arena
+ * (`scripts/hillclimb-nn.mts`) which imitates Challenge then self-plays
+ * until the net beats the heuristic brains.
  *
- * Honest limit: a few thousand games approximates the teacher; it will not invent
- * superhuman play from scratch.
+ * `chooseAiActionNeural` uses 1-ply apply + value(after) — quality over speed.
  */
 import { display, HERO_BY_ID } from './catalog.ts'
-import { comboPlans, morphCasts, needsTeam, playableFromGrave, teamsFor, undyingRevive } from './engine.ts'
+import { apply, comboPlans, morphCasts, needsTeam, playableFromGrave, teamsFor, undyingRevive } from './engine.ts'
 import { isTrapHero, preferredFoe, scoreState, teamById } from './flow.ts'
 import type { Action, AiStrat, CardInst, Game, PlayerId } from './types.ts'
 import baked from './data/nn-value.json'
@@ -40,6 +39,20 @@ type LiveNet = {
 
 let cached: LiveNet | null = null
 let cachedKey = ''
+/** Live training / eval override — when set, play uses these weights. */
+let activeModel: NnModel | null = null
+
+const END_ACTION: Action = { type: 'end' }
+
+export function setActiveModel(model: NnModel | null) {
+  activeModel = model
+  cached = null
+  cachedKey = ''
+}
+
+export function getActiveModel(): NnModel | null {
+  return activeModel
+}
 
 const KEY_CARDS = [
   'nyx_assassin', 'rubick', 'faceless_void', 'silencer', 'spirit_breaker',
@@ -168,8 +181,8 @@ export function hydrateModel(raw: Partial<NnModel> | null | undefined): NnModel 
 }
 
 export function loadModel(model?: NnModel): LiveNet {
-  const source = hydrateModel(model ?? (baked as NnModel))
-  const key = `${source.trainedGames}:${source.trainedSamples}:${source.hidden}:${source.w1[0]}`
+  const source = hydrateModel(model ?? activeModel ?? (baked as NnModel))
+  const key = `${source.trainedGames}:${source.trainedSamples}:${source.hidden}:${source.w1[0]}:${source.w1[1]}`
   if (cached && cachedKey === key) return cached
   cached = {
     hidden: source.hidden,
@@ -180,6 +193,11 @@ export function loadModel(model?: NnModel): LiveNet {
   }
   cachedKey = key
   return cached
+}
+
+/** State value proxy: score of taking `end` from this seat's features. */
+export function valueOfState(net: LiveNet, state: Game, actor: PlayerId): number {
+  return scoreAction(net, encodeStateFeatures(state, actor), encodeActionFeatures(state, actor, END_ACTION))
 }
 
 export function scoreAction(net: LiveNet, stateFeats: Float64Array, actionFeats: Float64Array): number {
@@ -242,16 +260,24 @@ function bump(model: NnModel, stateFeats: Float64Array, actionFeats: Float64Arra
   }
 }
 
+/**
+ * Best neural play: 1-ply speculative apply, pick max value(after).
+ * Also blends raw action score so the policy prior still matters.
+ */
 export function chooseAiActionNeural(state: Game, actor: PlayerId, _strat: AiStrat): Action {
   void _strat
   const net = loadModel()
   const stateFeats = encodeStateFeatures(state, actor)
-  const candidates = neuralCandidates(state, actor)
+  const candidates = listNeuralCandidates(state, actor)
   if (candidates.length === 0) return { type: 'end' }
   let best = candidates[0]!
   let bestScore = -Infinity
   for (const action of candidates) {
-    const score = scoreAction(net, stateFeats, encodeActionFeatures(state, actor, action))
+    const prior = scoreAction(net, stateFeats, encodeActionFeatures(state, actor, action))
+    const after = apply({ ...state, autoAll: true }, action)
+    const leaf = valueOfState(net, after, actor)
+    // Prefer realized leaf value; keep a little policy prior for stability.
+    const score = leaf * 1.35 + prior * 0.35
     if (score > bestScore) {
       bestScore = score
       best = action
@@ -260,7 +286,7 @@ export function chooseAiActionNeural(state: Game, actor: PlayerId, _strat: AiStr
   return best
 }
 
-function neuralCandidates(state: Game, actor: PlayerId): Action[] {
+export function listNeuralCandidates(state: Game, actor: PlayerId): Action[] {
   const out: Action[] = []
   const plans = comboPlans(state)
   const core = plans.find((plan) => plan.detail.startsWith('core'))

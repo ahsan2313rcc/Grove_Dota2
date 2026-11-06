@@ -6,11 +6,18 @@ import {
   cycleStrat,
   DEFAULT_STRAT,
   isAiStrat,
+  searchModeForStrat,
   stratLabel,
-  type AiSearchMode,
 } from './game/ai.ts'
 import { chooseAiPendingChallenge } from './game/aiChallenge.ts'
-import { modelHasTraining } from './game/nnValue.ts'
+import {
+  bootNnMemory,
+  clearNnMemory,
+  nnMemoryInfo,
+  saveNnMemory,
+  type NnMemoryInfo,
+} from './game/nnMemory.ts'
+import { learnFromTeacher, runMatchWithOptionalTrain } from './game/nnTrainOnline.ts'
 import {
   ALL_STRAT_FILTER,
   aiRoster,
@@ -57,15 +64,6 @@ function randomSeed(): number {
 
 type LobbySeat = { name: string; kind: 'human' | 'ai'; strat: AiStrat }
 
-/** Live / Watch brain — batch sims stay on `fast` inside runMatchFast. */
-export type AiBrain = Extract<AiSearchMode, 'challenge' | 'full' | 'neural'>
-
-const AI_BRAINS: { id: AiBrain; label: string; blurb: string }[] = [
-  { id: 'challenge', label: 'Challenge', blurb: 'Best heuristic — turn planning beam + sharper eval.' },
-  { id: 'full', label: 'Standard', blurb: 'Wide 1-ply search (previous default).' },
-  { id: 'neural', label: 'Neural', blurb: 'Offline-trained tiny net (train with scripts/train-nn.mts).' },
-]
-
 type LiveRun = {
   seed: number
   game: Game
@@ -73,8 +71,10 @@ type LiveRun = {
   stuck: boolean
   /** Consecutive no-op advances — escalate escapes so Watch never freezes forever. */
   stall: number
-  brain: AiBrain
 }
+
+/** Module flag so advanceTracked can optionally imitate Challenge → Neural. */
+let liveTrainNeural = false
 
 function defaultSeats(count: SeatCount): LobbySeat[] {
   return Array.from({ length: count }, (_, index) => {
@@ -95,7 +95,7 @@ function parseSeedInput(raw: string): number | null {
   return null
 }
 
-function makeRun(seed: number, seats: number, strats?: AiStrat[], brain: AiBrain = 'challenge'): LiveRun {
+function makeRun(seed: number, seats: number, strats?: AiStrat[]): LiveRun {
   const game = createGame({
     seed,
     seats: aiRoster(seats, strats, seed),
@@ -103,7 +103,11 @@ function makeRun(seed: number, seats: number, strats?: AiStrat[], brain: AiBrain
   })
   const tracker = new BalanceTracker(seed)
   tracker.start(game)
-  return { seed, game, tracker, stuck: false, stall: 0, brain }
+  return { seed, game, tracker, stuck: false, stall: 0 }
+}
+
+function modeForSeat(game: Game, seat: number) {
+  return searchModeForStrat(game.players[seat]?.strat ?? DEFAULT_STRAT, false)
 }
 
 function pendingMark(pending: Game['pending']): string {
@@ -137,7 +141,10 @@ function advanceTracked(run: LiveRun): LiveRun {
     }
     if (game.pending) {
       if (game.players[game.pending.actor]?.ai || game.autoAll) {
-        const ids = run.brain === 'challenge' ? chooseAiPendingChallenge(game) : chooseAiPending(game)
+        const mode = modeForSeat(game, game.pending.actor)
+        const ids = mode === 'challenge' || mode === 'neural'
+          ? chooseAiPendingChallenge(game)
+          : chooseAiPending(game)
         let next = apply(game, { type: 'choose', ids })
         run.tracker.observe(game, { type: 'choose', ids }, next)
         if (next.pending && pendingMark(next.pending) === pendingMark(game.pending)) {
@@ -176,7 +183,12 @@ function advanceTracked(run: LiveRun): LiveRun {
       }
     }
 
-    const action = chooseAiAction(game, run.brain)
+    const mode = modeForSeat(game, game.active)
+    const action = chooseAiAction(game, mode)
+    // Live train: imitate Challenge seats into Neural memory when enabled.
+    if (liveTrainNeural && mode === 'challenge') {
+      learnFromTeacher(game, game.active, action)
+    }
     const next = apply(game, action)
     run.tracker.observe(game, action, next)
     const same = next === game
@@ -218,7 +230,7 @@ function readStart(): { debug: boolean; seed: number; seats: SeatCount; runs: Li
       debug: false,
       seed,
       seats: count,
-      runs: [{ seed, game, tracker, stuck: false, stall: 0, brain: 'challenge' }],
+      runs: [{ seed, game, tracker, stuck: false, stall: 0 }],
       view: 'watch',
     }
   }
@@ -242,17 +254,19 @@ export default function App() {
   const [runningFast, setRunningFast] = useState(false)
   const [stratFilter, setStratFilter] = useState<StratFilter>(ALL_STRAT_FILTER)
   const [debugStrats, setDebugStrats] = useState<AiStrat[]>(() => Array.from({ length: boot?.seats ?? 2 }, (_, index) => cycleStrat(index)))
-  const [aiBrain, setAiBrain] = useState<AiBrain>('challenge')
+  const [trainNeural, setTrainNeural] = useState(false)
+  const [nnInfo, setNnInfo] = useState<NnMemoryInfo>(() => bootNnMemory())
   const queueToken = useRef(0)
   const watchRef = useRef(false)
   const watchAdvanceRef = useRef(0)
   const archivedWatchRef = useRef<number | null>(null)
   const seatCountRef = useRef(seatCount)
   const debugStratsRef = useRef(debugStrats)
-  const aiBrainRef = useRef(aiBrain)
+  const trainNeuralRef = useRef(trainNeural)
   seatCountRef.current = seatCount
   debugStratsRef.current = debugStrats
-  aiBrainRef.current = aiBrain
+  trainNeuralRef.current = trainNeural
+  liveTrainNeural = trainNeural
 
   const live = runs[0] ?? null
   const game = live?.game ?? null
@@ -313,7 +327,7 @@ export default function App() {
       setSeed(nextSeed)
       setQueueLeft((left) => Math.max(0, left - 1))
       setMatch((value) => value + 1)
-      setRuns([makeRun(nextSeed, seatCountRef.current, debugStratsRef.current, aiBrainRef.current)])
+      setRuns([makeRun(nextSeed, seatCountRef.current, debugStratsRef.current)])
     }, 120)
     return () => window.clearTimeout(timer)
   }, [debug, debugView, live, queueLeft, runningFast])
@@ -409,7 +423,7 @@ export default function App() {
     setDebug(false)
     const tracker = new BalanceTracker(saved.seed)
     tracker.start(saved.game)
-    setRuns([{ seed: saved.seed, game: saved.game, tracker, stuck: false, stall: 0, brain: aiBrainRef.current }])
+    setRuns([{ seed: saved.seed, game: saved.game, tracker, stuck: false, stall: 0 }])
     setFocus(0)
   }
 
@@ -426,7 +440,7 @@ export default function App() {
       setRuns([])
       return
     }
-    setRuns([makeRun(seed, seatCount, debugStrats, aiBrainRef.current)])
+    setRuns([makeRun(seed, seatCount, debugStrats)])
   }
 
   /** Run N matches in the background at full speed; paint stats in batches so the rail doesn't thrash. */
@@ -454,16 +468,25 @@ export default function App() {
         setSeed(nextSeed)
         setQueueLeft(total - index)
         setMatch((value) => value + 1)
-        setRuns([makeRun(nextSeed, seats, strats, aiBrainRef.current)])
+        setRuns([makeRun(nextSeed, seats, strats)])
         setRunningFast(false)
         return
       }
       try {
-        chunk.push(runMatchFast(fromSeed + index, seats, strats))
+        if (trainNeuralRef.current) {
+          const roster = aiRoster(seats, strats, fromSeed + index)
+          const { game: finished } = runMatchWithOptionalTrain(fromSeed + index, roster, true)
+          const tracker = new BalanceTracker(fromSeed + index, { lite: true })
+          tracker.start(finished)
+          chunk.push(tracker.finish(finished))
+          setNnInfo(nnMemoryInfo())
+        } else {
+          chunk.push(runMatchFast(fromSeed + index, seats, strats))
+        }
       } catch (error) {
         // runMatchFast soft-finishes internally; this is a last-resort stub so the queue never stalls.
         const reason = error instanceof Error ? error.message : 'sim error'
-        const stub = makeRun(fromSeed + index, seats, strats, aiBrainRef.current)
+        const stub = makeRun(fromSeed + index, seats, strats)
         const finished = softFinishLive(stub.game, `Match halted (${reason}).`)
         chunk.push(stub.tracker.finish(finished))
       }
@@ -496,7 +519,7 @@ export default function App() {
         const jump = live?.game.over ? live.seed + 1 : seed
         setSeed(jump)
         setMatch((value) => value + 1)
-        setRuns([makeRun(jump, seatCount, debugStrats, aiBrainRef.current)])
+        setRuns([makeRun(jump, seatCount, debugStrats)])
         setQueueLeft((left) => Math.min(MAX_QUEUE, left + Math.max(0, extra - 1)))
       } else {
         setQueueLeft((left) => Math.min(MAX_QUEUE, left + extra))
@@ -518,14 +541,14 @@ export default function App() {
     const jump = (live?.seed ?? seed) + 1
     setSeed(jump)
     setMatch((value) => value + 1)
-    setRuns([makeRun(jump, seatCount, debugStrats, aiBrainRef.current)])
+    setRuns([makeRun(jump, seatCount, debugStrats)])
     setDebugView('watch')
     if (debugSpeed === 0) setDebugSpeed(1)
   }
 
   function startWatchFromStats() {
     watchRef.current = true
-    const created = [makeRun(seed, seatCount, debugStrats, aiBrainRef.current)]
+    const created = [makeRun(seed, seatCount, debugStrats)]
     setRuns(created)
     setFocus(0)
     setDebugView('watch')
@@ -588,9 +611,10 @@ export default function App() {
       <Lobby
         onOnline={() => setOnline(true)}
         onResumeLocal={resumeLocal}
-        onStart={(next, nextSeed, nextDebug, seats, queue, strats, rules, brain) => {
-          setAiBrain(brain)
-          aiBrainRef.current = brain
+        onStart={(next, nextSeed, nextDebug, seats, queue, strats, rules, train) => {
+          setTrainNeural(train)
+          trainNeuralRef.current = train
+          liveTrainNeural = train
           if (nextDebug) {
             startDebugSession(nextSeed, seats, queue, strats, rules)
             return
@@ -603,7 +627,7 @@ export default function App() {
           const tracker = new BalanceTracker(nextSeed)
           tracker.start(next)
           saveLocalMatch(nextSeed, next, rules)
-          setRuns([{ seed: nextSeed, game: next, tracker, stuck: false, stall: 0, brain }])
+          setRuns([{ seed: nextSeed, game: next, tracker, stuck: false, stall: 0 }])
           setFocus(0)
         }}
       />
@@ -638,6 +662,11 @@ export default function App() {
         onDebugPlayNext={playNext}
         onDebugStratFilter={setStratFilter}
         onDebugReset={resetDebug}
+        debugTrainNeural={trainNeural}
+        debugNnInfo={nnInfo}
+        onDebugTrainNeural={setTrainNeural}
+        onDebugNnSave={() => setNnInfo(saveNnMemory())}
+        onDebugNnClear={() => setNnInfo(clearNnMemory(false))}
         onAction={send}
         onLobby={leave}
       />
@@ -671,7 +700,7 @@ function Lobby({
     queue: number,
     strats: AiStrat[],
     rules: ScoreRules,
-    brain: AiBrain,
+    trainNeural: boolean,
   ) => void
 }) {
   const [seedText, setSeedText] = useState('')
@@ -684,7 +713,7 @@ function Lobby({
   const [scoreOpen, setScoreOpen] = useState(false)
   const [lobbyRules, setLobbyRules] = useState<ScoreRules>(() => cloneRules(getScoreRules()))
   const [savedLocal, setSavedLocal] = useState<SavedLocalMatch | null>(() => loadLocalMatch())
-  const [brain, setBrain] = useState<AiBrain>('challenge')
+  const [trainNeural, setTrainNeural] = useState(false)
 
   function setPlayerCount(next: SeatCount) {
     setCount(next)
@@ -725,7 +754,7 @@ function Lobby({
         debug ? queue : 1,
         strats,
         rules,
-        brain,
+        debug && trainNeural,
       )
     } catch (error) {
       setFault(error instanceof Error ? error.message : 'The deck could not be dealt.')
@@ -816,25 +845,8 @@ function Lobby({
         </ul>
         <fieldset className="debug-lobby">
           <legend>Match options</legend>
-          <div className="layout-picks" role="group" aria-label="AI brain">
-            {AI_BRAINS.map((entry) => (
-              <button
-                key={entry.id}
-                type="button"
-                className={brain === entry.id ? 'on' : ''}
-                data-testid={`lobby-brain-${entry.id}`}
-                title={entry.blurb}
-                onClick={() => setBrain(entry.id)}
-              >
-                {entry.label}
-              </button>
-            ))}
-          </div>
           <p className="quiet">
-            {AI_BRAINS.find((entry) => entry.id === brain)?.blurb}
-            {brain === 'neural' && !modelHasTraining()
-              ? ' — model untrained; run npx tsx scripts/train-nn.mts first.'
-              : ''}
+            AI seats use max Challenge search (Balanced / Tempo / Architect / Spite). Pick <strong>Neural</strong> on a seat to play the trained net.
           </p>
           <label className="check-row">
             <input
@@ -879,6 +891,18 @@ function Lobby({
               </label>
               <p className="quiet">
                 Sims one game at a time at full speed in Stats. Open Watch to slow the board. Queue up to {MAX_QUEUE}.
+              </p>
+              <label className="check-row">
+                <input
+                  data-testid="lobby-train-neural"
+                  type="checkbox"
+                  checked={trainNeural}
+                  onChange={(event) => setTrainNeural(event.target.checked)}
+                />
+                Train Neural
+              </label>
+              <p className="quiet">
+                When enabled, Challenge seats teach the Neural strat each sim (saved to browser memory). Use Save / Clear in the debug rail.
               </p>
               <button type="button" data-testid="lobby-scoring" onClick={() => setScoreOpen(true)}>
                 Scoring…

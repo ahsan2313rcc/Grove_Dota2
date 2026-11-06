@@ -20,9 +20,12 @@ import type { Action, AiStrat, CardInst, Game, PlayerId } from './types.ts'
 
 const DEFAULT_STRAT: AiStrat = 'balanced'
 
-const BEAM = 5
-const DEPTH = 3
-const PENDING_TRY = 8
+/** Max-strength search — live / Watch heuristic seats (no speed shortcuts). */
+const BEAM = 12
+const DEPTH = 5
+const PENDING_TRY = 16
+const HAND_PLY = 8
+const TEAM_OPTS = 3
 
 const INTERRUPT_VALUE: Record<string, number> = {
   nyx_assassin: 12,
@@ -198,8 +201,8 @@ function challengeCandidates(state: Game, actor: PlayerId, strat: AiStrat): Acti
   }
 
   const ranked = rankHand(state, actor, hand, strat)
-  for (const card of ranked.slice(0, 4)) {
-    const teams = pickTeams(state, card.uid, card.defId, card.kind).slice(0, 1)
+  for (const card of ranked.slice(0, HAND_PLY)) {
+    const teams = pickTeams(state, card.uid, card.defId, card.kind).slice(0, TEAM_OPTS)
     for (const team of teams) {
       out.push({ type: 'play', uid: card.uid, team: team.id })
       if (card.kind === 'hero' && !isTrapHero(card.defId)) {

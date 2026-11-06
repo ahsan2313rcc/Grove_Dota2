@@ -47,6 +47,11 @@ export function Table({
   onDebugPlayNext,
   onDebugStratFilter,
   onDebugReset,
+  debugTrainNeural = false,
+  debugNnInfo,
+  onDebugTrainNeural,
+  onDebugNnSave,
+  onDebugNnClear,
   onlineSeat = null,
   onAction,
   onLobby,
@@ -77,6 +82,11 @@ export function Table({
   onDebugPlayNext?: () => void
   onDebugStratFilter?: (filter: StratFilter) => void
   onDebugReset?: () => void
+  debugTrainNeural?: boolean
+  debugNnInfo?: import('../game/nnMemory.ts').NnMemoryInfo
+  onDebugTrainNeural?: (on: boolean) => void
+  onDebugNnSave?: () => void
+  onDebugNnClear?: () => void
   /** When set, this seat is the networked player (no hotseat handoff). */
   onlineSeat?: PlayerId | null
   onAction: (action: Action) => void
@@ -236,6 +246,11 @@ export function Table({
             onPlayNext={onDebugPlayNext}
             onStratFilter={onDebugStratFilter!}
             onReset={onDebugReset!}
+            trainNeural={debugTrainNeural}
+            nnInfo={debugNnInfo}
+            onTrainNeural={onDebugTrainNeural}
+            onNnSave={onDebugNnSave}
+            onNnClear={onDebugNnClear}
           />
         </div>
         {rules ? <Rules onClose={() => setRules(false)} /> : null}
@@ -562,6 +577,11 @@ export function Table({
             onPlayNext={onDebugPlayNext}
             onStratFilter={onDebugStratFilter!}
             onReset={onDebugReset!}
+            trainNeural={debugTrainNeural}
+            nnInfo={debugNnInfo}
+            onTrainNeural={onDebugTrainNeural}
+            onNnSave={onDebugNnSave}
+            onNnClear={onDebugNnClear}
           />
         ) : (
           <aside className="hud">

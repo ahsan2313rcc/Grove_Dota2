@@ -4,7 +4,7 @@ export type Range = 'Melee' | 'Ranged'
 export type TerrainKind = 'river' | 'jungle' | 'lane'
 export type CardKind = 'hero' | 'item' | 'terrain' | 'rune' | 'neutral' | 'tower' | 'ancient'
 export type Timing = 'cast' | 'aura' | 'instant' | 'trap'
-export type AiStrat = 'balanced' | 'tempo' | 'architect' | 'spite'
+export type AiStrat = 'balanced' | 'tempo' | 'architect' | 'spite' | 'neural'
 
 export interface CardInst {
   uid: string

@@ -10,6 +10,7 @@ import {
   type StratFilter,
   type TurnGraphMetric,
 } from '../game/balance.ts'
+import type { NnMemoryInfo } from '../game/nnMemory.ts'
 import type { AiStrat } from '../game/types.ts'
 import { display } from '../game/catalog.ts'
 import { scoreState, scoreTeam } from '../game/flow.ts'
@@ -53,6 +54,11 @@ export function DebugRail({
   onPlayNext,
   onStratFilter,
   onReset,
+  trainNeural = false,
+  nnInfo,
+  onTrainNeural,
+  onNnSave,
+  onNnClear,
 }: {
   game: Game | null
   seed: number
@@ -77,6 +83,11 @@ export function DebugRail({
   onPlayNext?: () => void
   onStratFilter: (filter: StratFilter) => void
   onReset: () => void
+  trainNeural?: boolean
+  nnInfo?: NnMemoryInfo
+  onTrainNeural?: (on: boolean) => void
+  onNnSave?: () => void
+  onNnClear?: () => void
 }) {
   const active = game?.players[game.active]
   void _focus
@@ -170,6 +181,31 @@ export function DebugRail({
           {finishedCount} finished · {summary.matches} traced{runningBatch ? ' · running' : ''}
         </p>
       </div>
+
+      {onTrainNeural ? (
+        <div className="debug-block">
+          <h3>Neural memory</h3>
+          <label className="check-row">
+            <input
+              data-testid="debug-train-neural"
+              type="checkbox"
+              checked={trainNeural}
+              onChange={(event) => onTrainNeural(event.target.checked)}
+            />
+            Train enabled
+          </label>
+          <p className="quiet">
+            Challenge seats teach Neural each sim / watch tick.
+            {nnInfo
+              ? ` Memory: ${nnInfo.trainedGames} games · ${nnInfo.trainedSamples} samples${nnInfo.persisted ? ' · saved' : ''}.`
+              : ''}
+          </p>
+          <div className="debug-speeds" role="group" aria-label="Neural memory actions">
+            <button type="button" data-testid="debug-nn-save" onClick={() => onNnSave?.()}>Save</button>
+            <button type="button" data-testid="debug-nn-clear" onClick={() => onNnClear?.()}>Clear</button>
+          </div>
+        </div>
+      ) : null}
 
       <div className="debug-block">
         <h3>Strat filter</h3>
