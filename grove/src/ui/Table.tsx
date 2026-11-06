@@ -25,6 +25,7 @@ export function Table({
   game,
   seed,
   stuck,
+  tableGen = 0,
   debug = false,
   debugSpeed = 1,
   debugView = 'watch',
@@ -53,6 +54,8 @@ export function Table({
   game: Game | null
   seed: number
   stuck: boolean
+  /** Bumps when a new match starts; clears ephemeral UI without remounting the table. */
+  tableGen?: number
   debug?: boolean
   debugSpeed?: DebugSpeed
   debugView?: DebugView
@@ -94,6 +97,23 @@ export function Table({
   const [leaveArmed, setLeaveArmed] = useState(false)
   /** Hotseat: non-active human sits down to play Instant cards. */
   const [reactSeat, setReactSeat] = useState<PlayerId | null>(null)
+
+  // Soft-reset interaction state on a new match. Never remount via key={match} —
+  // that reloaded every card portrait and felt like the page was refreshing.
+  useEffect(() => {
+    setCombo([])
+    setFocus(null)
+    setPlacing(null)
+    setExtras([])
+    setMoving(null)
+    setPile(null)
+    setLogOpen(false)
+    setHandOpen(null)
+    setPage(0)
+    setAcked('')
+    setLeaveArmed(false)
+    setReactSeat(null)
+  }, [tableGen])
   const statsOnly = debug && debugView === 'stats'
   const emptySummary: BalanceSummary = debugSummary ?? {
     matches: 0,

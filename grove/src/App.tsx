@@ -264,6 +264,7 @@ export default function App() {
   }, [debug, debugView, debugSpeed, runs, runningFast])
 
   // Archive a finished watch match; if still watching with queue left, start the next live seed.
+  // Do not remount the table — bumping match as a React key was causing a full UI refresh.
   useEffect(() => {
     if (!debug || debugView !== 'watch' || runningFast || !live?.game.over) return
     const finished = live
@@ -398,7 +399,7 @@ export default function App() {
     setRuns([makeRun(seed, seatCount, debugStrats)])
   }
 
-  /** Run N matches in the background at full speed (one finished report at a time). */
+  /** Run N matches in the background at full speed; paint stats in batches so the rail doesn't thrash. */
   async function runFastQueue(fromSeed: number, count: number, seats: SeatCount, strats: AiStrat[]) {
     const token = ++queueToken.current
     watchAdvanceRef.current += 1
@@ -409,7 +410,9 @@ export default function App() {
     setRuns([])
     setQueueLeft(total)
     const chunk: MatchReport[] = []
-    const flushEvery = 1
+    const flushEvery = 12
+    const PAINT_MS = 250
+    let lastPaint = 0
     for (let index = 0; index < total; index += 1) {
       if (queueToken.current !== token) return
       if (watchRef.current) {
@@ -434,16 +437,22 @@ export default function App() {
         const finished = softFinishLive(stub.game, `Match halted (${reason}).`)
         chunk.push(stub.tracker.finish(finished))
       }
-      setQueueLeft(total - index - 1)
-      if (chunk.length >= flushEvery || index === total - 1) {
+      const done = index + 1
+      const now = typeof performance !== 'undefined' ? performance.now() : Date.now()
+      const shouldPaint = chunk.length >= flushEvery || done === total || now - lastPaint >= PAINT_MS
+      if (shouldPaint) {
         const batch = chunk.splice(0, chunk.length)
+        lastPaint = now
         setSeed(fromSeed + index)
-        setReports((current) => [...current, ...batch])
+        setQueueLeft(total - done)
+        if (batch.length > 0) setReports((current) => [...current, ...batch])
       }
-      // Yield so React can paint and cancel tokens stay responsive.
-      await new Promise<void>((resolve) => {
-        window.setTimeout(resolve, 0)
-      })
+      // Yield so React can paint and cancel tokens stay responsive — but not every micro-sim.
+      if (shouldPaint || done % 4 === 0) {
+        await new Promise<void>((resolve) => {
+          window.setTimeout(resolve, 0)
+        })
+      }
     }
     if (queueToken.current !== token) return
     setQueueLeft(0)
@@ -572,10 +581,10 @@ export default function App() {
   if (debug) {
     return (
       <Table
-        key={match}
         game={game}
         seed={seed}
         stuck={stuck}
+        tableGen={match}
         debug
         debugSpeed={debugSpeed}
         debugView={debugView}
@@ -605,10 +614,10 @@ export default function App() {
 
   return (
     <Table
-      key={match}
       game={game!}
       seed={seed}
       stuck={stuck}
+      tableGen={match}
       onAction={send}
       onLobby={leave}
     />
