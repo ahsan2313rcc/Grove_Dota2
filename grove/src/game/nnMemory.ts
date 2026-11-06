@@ -69,6 +69,27 @@ export function saveNnMemory(): NnMemoryInfo {
   return nnMemoryInfo()
 }
 
+/**
+ * Download current weights as `nn-value.json` for committing to git.
+ * Browser cannot push to git; drop the file at `grove/src/game/data/nn-value.json` and commit.
+ */
+export function downloadNnMemoryForGit(): NnMemoryInfo {
+  memory.note = `export for git ${new Date().toISOString()}`
+  setActiveModel(memory)
+  if (typeof document === 'undefined') return nnMemoryInfo()
+  const blob = new Blob([JSON.stringify(memory)], { type: 'application/json' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = 'nn-value.json'
+  a.rel = 'noopener'
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
+  URL.revokeObjectURL(url)
+  return nnMemoryInfo()
+}
+
 /** Wipe trained weights back to baked / fresh random. */
 export function clearNnMemory(fresh = false): NnMemoryInfo {
   if (typeof localStorage !== 'undefined') localStorage.removeItem(STORAGE_KEY)

@@ -58,6 +58,7 @@ export function DebugRail({
   nnInfo,
   onTrainNeural,
   onNnSave,
+  onNnExportGit,
   onNnClear,
 }: {
   game: Game | null
@@ -87,6 +88,7 @@ export function DebugRail({
   nnInfo?: NnMemoryInfo
   onTrainNeural?: (on: boolean) => void
   onNnSave?: () => void
+  onNnExportGit?: () => void
   onNnClear?: () => void
 }) {
   const active = game?.players[game.active]
@@ -195,13 +197,14 @@ export function DebugRail({
             Train enabled
           </label>
           <p className="quiet">
-            Challenge seats teach Neural each sim / watch tick (balance tracking on). Autosaves to this browser every 10 games; Save forces a write; Clear wipes localStorage. Not committed to git.
+            Challenge seats teach Neural each sim / watch tick (balance tracking on). Autosaves to this browser every 10 games. Save → localStorage. Export for git → downloads `nn-value.json` (put at `grove/src/game/data/` and commit). Clear wipes browser memory.
             {nnInfo
               ? ` Memory: ${nnInfo.trainedGames} games · ${nnInfo.trainedSamples} samples${nnInfo.persisted ? ' · saved locally' : ' · unsaved'}.`
               : ''}
           </p>
           <div className="debug-speeds" role="group" aria-label="Neural memory actions">
             <button type="button" data-testid="debug-nn-save" onClick={() => onNnSave?.()}>Save</button>
+            <button type="button" data-testid="debug-nn-export-git" onClick={() => onNnExportGit?.()}>Export for git</button>
             <button type="button" data-testid="debug-nn-clear" onClick={() => onNnClear?.()}>Clear</button>
           </div>
         </div>

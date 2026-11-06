@@ -51,6 +51,7 @@ export function Table({
   debugNnInfo,
   onDebugTrainNeural,
   onDebugNnSave,
+  onDebugNnExportGit,
   onDebugNnClear,
   onlineSeat = null,
   onAction,
@@ -86,6 +87,7 @@ export function Table({
   debugNnInfo?: import('../game/nnMemory.ts').NnMemoryInfo
   onDebugTrainNeural?: (on: boolean) => void
   onDebugNnSave?: () => void
+  onDebugNnExportGit?: () => void
   onDebugNnClear?: () => void
   /** When set, this seat is the networked player (no hotseat handoff). */
   onlineSeat?: PlayerId | null
@@ -250,6 +252,7 @@ export function Table({
             nnInfo={debugNnInfo}
             onTrainNeural={onDebugTrainNeural}
             onNnSave={onDebugNnSave}
+            onNnExportGit={onDebugNnExportGit}
             onNnClear={onDebugNnClear}
           />
         </div>
@@ -581,6 +584,7 @@ export function Table({
             nnInfo={debugNnInfo}
             onTrainNeural={onDebugTrainNeural}
             onNnSave={onDebugNnSave}
+            onNnExportGit={onDebugNnExportGit}
             onNnClear={onDebugNnClear}
           />
         ) : (

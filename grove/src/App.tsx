@@ -14,6 +14,7 @@ import {
   bootNnMemory,
   clearNnMemory,
   nnMemoryInfo,
+  downloadNnMemoryForGit,
   saveNnMemory,
   type NnMemoryInfo,
 } from './game/nnMemory.ts'
@@ -664,6 +665,7 @@ export default function App() {
         debugNnInfo={nnInfo}
         onDebugTrainNeural={setTrainNeural}
         onDebugNnSave={() => setNnInfo(saveNnMemory())}
+        onDebugNnExportGit={() => setNnInfo(downloadNnMemoryForGit())}
         onDebugNnClear={() => setNnInfo(clearNnMemory(false))}
         onAction={send}
         onLobby={leave}
