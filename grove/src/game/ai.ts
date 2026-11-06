@@ -64,9 +64,19 @@ export function cycleStrat(index: number): AiStrat {
 
 /**
  * `full` — watch / human-vs-AI quality (wide 1-ply tree).
- * `fast` — batch sims: pre-rank hand, search only top candidates (target ~20 games/sec).
+ * `fast` — batch sims: static pre-rank + budgeted 1-ply on top candidates (~20 games/sec).
+ *
+ * Limit is speculative `apply` cost: full mode can fire 20–50 applies per decision;
+ * fast caps that to a handful while still comparing realized score deltas.
  */
 export type AiSearchMode = 'full' | 'fast'
+
+/**
+ * Unique hand cards that get a real 1-ply try in batch sims.
+ * Each try costs a full cascade apply — this is the speed/quality knob.
+ * 1 ≈ ~15–20 games/sec; 2 ≈ ~6–8; full hand ≈ ~2–4.
+ */
+const FAST_PLY_CARDS = 1
 
 export function chooseAiAction(state: Game, mode: AiSearchMode = 'full'): Action {
   if (state.veil) return { type: 'ready' }
@@ -217,16 +227,19 @@ export function chooseAiAction(state: Game, mode: AiSearchMode = 'full'): Action
 }
 
 /**
- * Batch-sim policy: zero speculative apply/evaluate.
- * Static hand rank + one destination — engine apply happens only for the chosen action.
- * (1-ply search was ~80% of sim time; this targets ~20 games/sec.)
+ * Batch-sim policy: calculative but budgeted.
+ * Static pre-rank → 1-ply apply+eval on top cards only (1 team, optional 1 mate).
+ * Speculative applies stay ~3–5/decision instead of full's ~20–50.
  */
 function chooseAiActionFast(state: Game, actor: PlayerId, strat: AiStrat): Action {
-  void strat
   const undying = undyingRevive(state)
   if (undying.ok) {
     const discards = pickUndyingDiscards(state, actor)
-    if (discards.length >= 2) return { type: 'undying', team: 'new', discards }
+    if (discards.length >= 2) {
+      const action: Action = { type: 'undying', team: 'new', discards }
+      const next = apply({ ...state, autoAll: true }, action)
+      if (moved(state, next)) return action
+    }
   }
 
   const graveTop = playableFromGrave(state, actor)
@@ -235,33 +248,78 @@ function chooseAiActionFast(state: Game, actor: PlayerId, strat: AiStrat): Actio
       if (!plan.uids.includes(graveTop.uid)) continue
       return { type: 'combo', uids: plan.uids }
     }
-  } else if (graveTop && graveTop.kind !== 'terrain' && state.players[actor].actions > 0) {
-    const team = pickTeamOptions(state, graveTop.uid, graveTop.defId, graveTop.kind, true)[0]
-    if (team) return { type: 'play', uid: graveTop.uid, team: team.id }
   }
 
   const morph = morphCasts(state)[0]
   if (morph) return { type: 'morph', uid: morph.uid }
 
-  const hand = state.players[actor].hand
-  const ranked = rankHandForFast(state, actor, hand)
-  const top = ranked[0]
-  if (top) {
-    const team = pickTeamOptions(state, top.uid, top.defId, top.kind, true)[0]
-    if (!needsTeam(top.defId, top.kind) || team) {
-      return { type: 'play', uid: top.uid, team: team?.id ?? '' }
+  let best: Action = { type: 'end' }
+  let bestScore = evaluateFast(state, actor, strat) + endBias(state, actor, strat)
+
+  if (graveTop && graveTop.kind !== 'terrain' && state.players[actor].actions > 0) {
+    const team = pickTeamOptions(state, graveTop.uid, graveTop.defId, graveTop.kind, true)[0]
+    if (team) {
+      const action: Action = { type: 'play', uid: graveTop.uid, team: team.id }
+      const next = apply({ ...state, autoAll: true }, action)
+      if (moved(state, next)) {
+        const score = evaluateFast(next, actor, strat) + 2.2
+        if (score > bestScore) {
+          bestScore = score
+          best = action
+        }
+      }
     }
   }
 
-  // Dig only when the hand has nothing playable (don't burn actions drawing forever).
-  const playable = ranked.length > 0
-  if (!playable && state.players[actor].actions > 0 && state.deck.length > 0) {
-    return { type: 'draw' }
+  const hand = state.players[actor].hand
+  const ranked = rankHandForFast(state, actor, hand)
+
+  for (const card of ranked.slice(0, FAST_PLY_CARDS)) {
+    const team = pickTeamOptions(state, card.uid, card.defId, card.kind, true)[0]
+    if (needsTeam(card.defId, card.kind) && !team) continue
+    const teamId = team?.id ?? ''
+    // Stuff one companion when cheap — multi-drop fanout is the expensive part of full AI.
+    let extras: string[] | undefined
+    if (card.kind === 'hero' && !isTrapHero(card.defId) && teamId) {
+      const mate = rankMates(
+        state,
+        actor,
+        card.uid,
+        teamId,
+        hand.filter((c) => c.kind === 'hero' && !isTrapHero(c.defId)).map((c) => c.uid),
+      )[0]
+      if (mate) extras = [mate]
+    }
+    const action: Action = extras
+      ? { type: 'play', uid: card.uid, team: teamId, extras }
+      : { type: 'play', uid: card.uid, team: teamId }
+    const next = apply({ ...state, autoAll: true }, action)
+    if (!moved(state, next)) continue
+    let score = evaluateFast(next, actor, strat)
+    score += playBiasFast(state, next, actor, strat, card, teamId)
+    if (extras?.length) score += 0.35 * extras.length
+    if (score > bestScore) {
+      bestScore = score
+      best = action
+    }
   }
 
-  const stuck = stuckDiscardUid(state, actor)
-  if (stuck && state.players[actor].actions > 0 && !playable) return { type: 'discard', uid: stuck }
-  return { type: 'end' }
+  if (state.players[actor].actions > 0 && state.deck.length > 0) {
+    const next = apply({ ...state, autoAll: true }, { type: 'draw' })
+    if (moved(state, next)) {
+      const score = evaluateFast(next, actor, strat) + drawBias(state, actor, strat)
+      if (score > bestScore) {
+        bestScore = score
+        best = { type: 'draw' }
+      }
+    }
+  }
+
+  if (best.type === 'end' && state.players[actor].actions > 0) {
+    const uid = stuckDiscardUid(state, actor)
+    if (uid) return { type: 'discard', uid }
+  }
+  return best
 }
 
 function rankHandForFast(state: Game, actor: PlayerId, hand: CardInst[]): CardInst[] {
@@ -289,6 +347,74 @@ function rankHandForFast(state: Game, actor: PlayerId, hand: CardInst[]): CardIn
   }
   ranked.sort((a, b) => b.rank - a.rank)
   return ranked.map((entry) => entry.card)
+}
+
+/** Lean 1-ply scorer for batch sims — skips per-team scoreTeam loops. */
+function evaluateFast(state: Game, actor: PlayerId, strat: AiStrat): number {
+  if (state.over) {
+    const mine = state.over.scores[actor] ?? 0
+    const foe = state.over.scores[preferredFoeFromScores(state.over.scores, actor)] ?? 0
+    const win = mine > foe ? 80 : mine === foe ? 20 : -40
+    return win + mine * 4.2 + (mine - foe) * 3
+  }
+  const mine = scoreState(state, actor).total
+  const foeSeat = threatFocus(state, actor, strat)
+  const foe = scoreState(state, foeSeat).total
+  const hand = state.players[actor].hand
+  const teams = state.players[actor].teams
+  const heroes = teams.reduce((sum, team) => sum + team.heroes.length, 0)
+  const filled = teams.filter((team) => team.heroes.length >= 3).length
+  const nearly = teams.filter((team) => team.heroes.length === 2).length
+  const comboPts = state.players[actor].combos.reduce((sum, combo) => sum + combo.points, 0)
+  const denial = hand.reduce((sum, card) => sum + ((INTERRUPT_VALUE[card.defId] ?? 0) >= 7 ? 1 : 0), 0)
+  const traps = hand.reduce((sum, card) => sum + (isTrapHero(card.defId) ? 1 : 0), 0)
+  const foeFilled = enemyFilled(state, actor)
+  let score =
+    mine * 1.62 -
+    foe * 1.15 +
+    filled * 1.35 +
+    nearly * 0.55 +
+    comboPts * 0.78 +
+    denial * 0.55 +
+    traps * 0.45 +
+    heroes * 0.4 +
+    hand.length * 0.1 +
+    state.players[actor].actions * 0.22 -
+    foeFilled * 0.55
+  if (strat === 'tempo') score += heroes * 0.15 + nearly * 0.12
+  if (strat === 'architect') score += filled * 0.25 + comboPts * 0.15
+  if (strat === 'spite') score += traps * 0.35 + foeFilled * 0.35 - foe * 0.1
+  if (strat === 'balanced') score += denial * 0.3
+  return score
+}
+
+function playBiasFast(
+  before: Game,
+  after: Game,
+  actor: PlayerId,
+  strat: AiStrat,
+  card: CardInst,
+  teamId: string,
+): number {
+  const beforePts = scoreState(before, actor).total
+  const afterPts = scoreState(after, actor).total
+  const ptsGain = afterPts - beforePts
+  const trap = isTrapHero(card.defId)
+  const denial = INTERRUPT_VALUE[card.defId] ?? 0
+  const threat = threatScore(before, actor)
+  const behind = beforePts + 3 < rivalPts(before, actor)
+  let bonus = ptsGain * 0.9
+  if (trap) {
+    const dest = teamId !== 'new' && teamId !== '' ? teamById(after, teamId) : null
+    bonus += dest && dest.player.id !== actor ? (strat === 'spite' ? 2.1 : 1.5) : 0.3
+  }
+  if (card.kind === 'hero' && !trap) {
+    bonus += 0.9
+    if (teamId !== 'new') bonus += 0.9
+  }
+  if (denial >= 7) bonus += threat >= 5 || behind ? 1.2 : -1.6
+  if (strat === 'tempo' && card.kind === 'hero' && !trap) bonus += 0.25
+  return bonus
 }
 
 /** Smart answers for pending prompts (also used by engine settle for AI / autoAll). */
