@@ -813,8 +813,8 @@ function Lane({
             return (
               <article key={team.id} className="team" data-testid={mine ? `team-${index}` : undefined}>
                 <header>
-                  <strong className="team-points">{scored.points}</strong>
                   <span className="team-letter">{letter}</span>
+                  <strong className="team-points">{scored.points}</strong>
                   <span className="team-why">{scored.why}</span>
                 </header>
                 <div className="team-heroes">

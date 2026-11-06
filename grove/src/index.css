@@ -672,7 +672,7 @@ button.debug-mode-cycle:hover {
   align-items: baseline;
 }
 .team footer, .combo-chip { display: flex; gap: 4px 6px; align-items: baseline; flex-wrap: wrap; }
-.team-points {
+.team-letter {
   grid-column: 1;
   grid-row: 1;
   color: var(--gold);
@@ -680,7 +680,7 @@ button.debug-mode-cycle:hover {
   font-size: 1.15rem;
   line-height: 1;
 }
-.team-letter {
+.team-points {
   grid-column: 2;
   grid-row: 1;
   color: var(--gold);
