@@ -21,7 +21,7 @@ import { CardArt } from './CardArt.tsx'
 export type DebugSpeed = 0 | 0.5 | 1 | 2
 export type DebugView = 'watch' | 'stats'
 
-const MAX_QUEUE = 1024
+const MAX_QUEUE = 100_000
 
 const SPEEDS: { value: DebugSpeed; label: string }[] = [
   { value: 0, label: 'Pause' },

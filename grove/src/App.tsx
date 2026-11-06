@@ -55,8 +55,8 @@ export type SeatCount = 2 | 3 | 4 | 5 | 6 | 7 | 8
 
 const SEAT_OPTIONS: SeatCount[] = [2, 3, 4, 5, 6, 7, 8]
 const BASE_TICK_MS = 420
-/** Max background / sequential sims from lobby or debug rail. */
-const MAX_QUEUE = 1024
+/** Max background / sequential sims from lobby or debug rail (incl. Train Neural). */
+const MAX_QUEUE = 100_000
 
 function randomSeed(): number {
   return (Math.floor(Math.random() * 1_000_000_000) || Math.floor(Date.now() % 1_000_000_000) || 1)
