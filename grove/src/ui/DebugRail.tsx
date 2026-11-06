@@ -215,7 +215,7 @@ export function DebugRail({
           {summary.finished}/{summary.matches} done · avg T{fmt(summary.avgTurns)} · spread {fmt(summary.avgFinalSpread)} · win {fmt(summary.avgWinnerScore)}
         </p>
         <p className="quiet debug-legend">
-          Rel = mean score Δ vs opponents · Self = own score Δ · Impact = Rel (win contribution). Hover for removal mix. Win% = play-weighted seat wins.
+          Rel = mean score Δ vs opponents · Self = own score Δ · Impact = EV of deploy + disruption + economy (not Rel). Hover for effect mix. Win% = play-weighted seat wins.
         </p>
       </div>
 
@@ -615,7 +615,7 @@ function ImpactTable({ rows }: { rows: CardBalanceRow[] }) {
         </button>
       </h3>
       <p className="quiet debug-legend">
-        Ranked by Impact × √n. Impact = Rel — seat with most cumulative Impact should win.
+        Ranked by Impact × √n. EV of deploy/removal/tempo — not a Rel breakdown.
       </p>
       <CardSortTable
         rows={showAll ? rows : rows.slice(0, 16)}
@@ -833,8 +833,8 @@ function impactTooltip(row: CardBalanceRow): string {
     row.avgSteal ? `steal ${soft(row.avgSteal)}` : null,
     row.avgBounce ? `bounce ${soft(row.avgBounce)}` : null,
   ].filter(Boolean)
-  const mix = parts.length > 0 ? parts.join(' · ') : 'low typed removal'
-  return `Impact ${fmt(row.avgPressure)} (= Rel). Removal mix (${mix}).`
+  const mix = parts.length > 0 ? parts.join(' · ') : 'deploy / tempo / economy'
+  return `Impact ${fmt(row.avgPressure)} — EV bag (${mix}). Not Rel.`
 }
 
 function attrLabel(attr: string): string {

@@ -7,7 +7,6 @@ import {
   effectEv,
   DEFAULT_CALIBRATION,
   diffPlayEffects,
-  forwardEv,
   impactOf,
   pressureOf,
   trapEv,
@@ -69,15 +68,28 @@ describe('evModel', () => {
     expect(pressureOf(bag)).toBe(12.5)
   })
 
-  it('impactOf equals Rel so cumulative Impact tracks winners', () => {
+  it('impactOf is the EV bag, not Rel', () => {
     const bag = EMPTY_EFFECTS()
-    bag.destroy = 2
-    bag.silenceLock = 1
-    bag.trapPlant = 1
-    bag.ev = 99
-    const cal = { ...DEFAULT_CALIBRATION, alpha: 2, beta: 1, meanVBody: 3 }
-    expect(impactOf(4.5, bag, cal)).toBe(4.5)
-    expect(forwardEv(bag, cal)).toBeGreaterThan(0)
+    bag.ev = 11.5
+    expect(impactOf(4.5, bag)).toBe(11.5)
+    expect(impactOf(4.5, bag)).not.toBe(4.5)
+  })
+
+  it('deploy EV matches destroy scale (symmetric body value)', () => {
+    const cal = { ...DEFAULT_CALIBRATION, meanVBody: 3, meanVAbility: 2 }
+    expect(effectEv('deploy', cal, 3, 2)).toBeCloseTo(effectEv('destroy', cal, 3, 2), 5)
+  })
+
+  it('diffPlayEffects credits deploy when a hero seats onto the actor board', () => {
+    let game = apply(createGame({ seed: 19, mode: 'hotseat', names: ['A', 'B'] }), { type: 'ready' })
+    game = only(game, 0, ['mars'])
+    const before = game
+    game = apply(game, { type: 'play', uid: uid(game, 0, 'mars'), team: 'new' })
+    game = passInstants(game)
+    const effects = diffPlayEffects(before, game, 0, 'mars')
+    expect(effects.deploy).toBeGreaterThanOrEqual(1)
+    expect(effects.ev).toBeGreaterThan(0)
+    expect(impactOf(0, effects)).toBeCloseTo(effects.ev, 5)
   })
 
   it('diffPlayEffects values Anti-Mage destroys with full EV pressure', () => {

@@ -3,11 +3,10 @@
  *
  * Unit: expected points (same scale as scoreState totals).
  *
- * Impact (debug `avgPressure`) is the win-contribution of a play: the seat's
- * relative score swing (Rel). Builds, terrains, destroys, exiles, and control
- * all land there through scoreState. Typed effect EVs stay available for
- * tooltips / calibration, but using raw disruption EV as Impact let spite
- * removal outrank winning deploys (Mars/SF Impact≈0 while Enigma spiked).
+ * Impact (debug `avgPressure`) = sum of typed effect EVs on the play — NOT Rel.
+ * Rel is realized score Δ; Impact is the mechanical EV bag (destroy, exile,
+ * deploy, draw, silence, combo, …). Deploy was the inherent gap: scoring
+ * bodies used to contribute 0 Impact, so Win% could not track Impact.
  *
  * Building blocks
  * ───────────────
@@ -34,6 +33,7 @@ export type EffectKind =
   | 'toTopSelf'
   | 'toTopEnemy'
   | 'control'
+  | 'deploy'
   | 'discard'
   | 'draw'
   | 'dig'
@@ -117,6 +117,8 @@ export interface PlayEffects {
   exileSave: number
   exileTempo: number
   control: number
+  /** Heroes seated onto the actor's board (constructive Impact). */
+  deploy: number
   bounce: number
   toBottom: number
   toTop: number
@@ -143,6 +145,7 @@ export const EMPTY_EFFECTS = (): PlayEffects => ({
   exileSave: 0,
   exileTempo: 0,
   control: 0,
+  deploy: 0,
   bounce: 0,
   toBottom: 0,
   toTop: 0,
@@ -223,6 +226,10 @@ export function effectEv(
         vAbilityGained: 0.5 * vAbility,
         vAbilityDenied: 0.5 * vAbility,
       })
+    // Symmetric with destroy: seating a body is +V_body (shape included via marginal).
+    // Ability EV lands on the ability frame when it fires — not double-counted here.
+    case 'deploy':
+      return REMOVAL_MULT.destroy * vBody
     case 'discard':
       return DRAW_MULT.discard * hand
     case 'draw':
@@ -250,7 +257,7 @@ export function effectEv(
   }
 }
 
-/** Full typed-effect EV bag (disruption ledger / tooltips). Not the Impact column. */
+/** Full typed-effect EV — Impact column source (also tooltip ledger). */
 export function pressureOf(effects: PlayEffects, cal: EvCalibration = DEFAULT_CALIBRATION): number {
   if (effects.ev) return effects.ev
   // Fallback recompute from counts (legacy bags without running ev).
@@ -269,6 +276,7 @@ export function pressureOf(effects: PlayEffects, cal: EvCalibration = DEFAULT_CA
   total += effects.toBottom * effectEv('toBottom', cal)
   total += effects.toTop * effectEv('toTopEnemy', cal)
   total += effects.control * effectEv('control', cal)
+  total += effects.deploy * effectEv('deploy', cal)
   total += effects.discard * effectEv('discard', cal)
   total += effects.draw * effectEv('draw', cal)
   total += effects.dig * effectEv('dig', cal)
@@ -283,30 +291,13 @@ export function pressureOf(effects: PlayEffects, cal: EvCalibration = DEFAULT_CA
   return total
 }
 
-/**
- * Residual tempo-lock EV (silence / deny / immune / traps) for diagnostics.
- * Not folded into Impact — those rarely move the winner vs raw Rel, and traps
- * especially inflate spite seats.
- */
-export function forwardEv(effects: PlayEffects, cal: EvCalibration = DEFAULT_CALIBRATION): number {
-  let total = 0
-  total += effects.trapPlant * effectEv('trapPlant', cal)
-  total += effects.immune * effectEv('immune', cal)
-  total += effects.denyActions * effectEv('denyActions', cal)
-  total += effects.silenceLock * effectEv('silenceLock', cal)
-  return total
-}
-
-/**
- * Impact column = Rel (relative score edge of the play).
- * Seat with the highest cumulative Impact ≈ match winner (~90% in 2p AI sims).
- */
+/** Impact = calibrated EV bag (not Rel). */
 export function impactOf(
-  relativeSwing: number,
-  _effects?: PlayEffects,
-  _cal?: EvCalibration,
+  _relativeSwing: number,
+  effects: PlayEffects,
+  cal: EvCalibration = DEFAULT_CALIBRATION,
 ): number {
-  return relativeSwing
+  return pressureOf(effects, cal)
 }
 
 function credit(
@@ -352,6 +343,9 @@ function credit(
       break
     case 'control':
       effects.control += count
+      break
+    case 'deploy':
+      effects.deploy += count
       break
     case 'discard':
       effects.discard += count
@@ -559,6 +553,15 @@ export function diffPlayEffects(
     } else if (prior.controller === actor && next.controller !== actor) {
       credit(effects, 'control', cal, -1, vBody, vAbility)
     }
+  }
+
+  // --- Board deploys (constructive Impact — missing this broke Win% tracking) ---
+  for (const [uid, next] of afterBoard) {
+    if (beforeBoard.has(uid)) continue
+    if (next.controller !== actor) continue
+    const vBody = marginalBodyValue(after, uid, cal.meanVBody)
+    const vAbility = abilityValue(next.defId, cal)
+    credit(effects, 'deploy', cal, 1, vBody, vAbility)
   }
 
   // Grave→exile (AA ice blast conversion, etc.)

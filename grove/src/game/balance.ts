@@ -26,7 +26,7 @@ import { getScoreRules } from './scoring.ts'
 import type { Action, AiStrat, Attr, CardInst, CardKind, Game, Team } from './types.ts'
 
 export type { PlayEffects } from './evModel.ts'
-export { EMPTY_EFFECTS, impactOf, pressureOf, forwardEv, diffPlayEffects, addEffects } from './evModel.ts'
+export { EMPTY_EFFECTS, impactOf, pressureOf, diffPlayEffects, addEffects } from './evModel.ts'
 
 export type PlayKind = CardKind | 'combo' | 'draw' | 'morph' | 'move' | 'ability' | 'other'
 export type RelBucket = 'hero' | 'terrain' | 'loot' | 'ability' | 'other'
@@ -806,7 +806,7 @@ export class BalanceTracker {
       exile: effects.exile,
       control: effects.control,
       bounce: effects.bounce,
-      // Impact = Rel (win contribution). Typed EV stays on `effects` for tooltips.
+      // Impact = typed EV bag (deploy + disruption + economy) — not Rel.
       pressure: impactOf(relativeSwing, effects, DEFAULT_CALIBRATION),
     })
   }
