@@ -16,7 +16,7 @@ export function Rules({ onClose }: { onClose: () => void }) {
         </section>
         <section>
           <h3>Teams</h3>
-          <p>Heroes score in teams of up to five. A player can field at most 12 teams. One neutral may sit in a team. Neutrals have no ability, no attack type, and no flat points — they only help attribute and attack bonuses.</p>
+          <p>Heroes score in teams of up to five. A player can field at most 12 teams. One neutral may sit in a team. Neutrals have no ability and no flat points, but they do have Melee or Ranged and still help attribute and attack bonuses (Golem / Tormentor / Roshan are Melee; Thunderhide / Ice Shaman / Black Dragon are Ranged).</p>
           <p>Each hero scores 1. Neutrals score 0 flat but still count for attribute and attack. Labels look like STR x3, ATTR +3, ATK +1 (M3) — the numbers are hero counts (or ATK points). CORE needs three or more of the same attribute (+3 / +6 / +10) and blocks the attack bonus by default (the M/R chip still shows). MIXED needs three or more different attributes (+2 / +4) and stacks with CORE when both apply. ATK needs three or more Melee or three or more Ranged (+1 / +2 / +3), counted separately — mixed range still scores (e.g. 3 Ranged + 2 Melee → R3) — and only when there is no CORE. Universal is its own attribute. Meepo scores +1 for each terrain combo you control. Brewmaster counts as one of Strength, Agility, or Intelligence — whichever scores highest for that team.</p>
         </section>
         <section>

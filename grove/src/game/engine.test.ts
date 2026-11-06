@@ -112,26 +112,34 @@ describe('scoring', () => {
     expect(scoreBodies([{ attrs: ['STR', 'AGI', 'INT'], range: 'Melee', count: 1 }]).points).toBe(1)
     expect(scoreBodies([{ attrs: ['STR'], range: 'Melee', count: 2 }]).why).toMatch(/^Small/)
 
-    // Neutrals fill CORE and ATK counts (null range does not spoil Melee).
+    // Neutrals have a real range (e.g. Stone Golem Melee) and fill CORE / ATK.
     const withNeutral = scoreBodies([
       { attrs: ['STR'], range: 'Melee', count: 2, scoresFlat: true },
-      { attrs: ['STR'], range: null, count: 1, scoresFlat: false },
+      { attrs: ['STR'], range: 'Melee', count: 1, scoresFlat: false },
     ])
     expect(withNeutral.points).toBe(5) // 2 flat + core×3
     expect(withNeutral.why).toMatch(/STR x3/)
     expect(withNeutral.why).toContain('(M3)')
 
-    // 2 melee heroes + 1 neutral + 1 other melee attr → ATK count 4 including neutral.
+    // 3 melee heroes + 1 melee neutral → ATK count 4.
     const mixNeutral = scoreBodies([
       { attrs: ['STR'], range: 'Melee', count: 1, scoresFlat: true },
       { attrs: ['AGI'], range: 'Melee', count: 1, scoresFlat: true },
       { attrs: ['INT'], range: 'Melee', count: 1, scoresFlat: true },
-      { attrs: ['STR'], range: null, count: 1, scoresFlat: false },
+      { attrs: ['STR'], range: 'Melee', count: 1, scoresFlat: false },
     ])
     expect(mixNeutral.why).toContain('ATK +2')
     expect(mixNeutral.why).toContain('(M4)')
     expect(mixNeutral.points).toBe(7) // 3 flat + mix +2 + atk +2 (count 4)
     expect(mixNeutral.attack).toEqual({ tag: 'M', count: 4, points: 2 })
+
+    // Ranged neutral (Thunderhide) pads Ranged ATK, not Melee.
+    const rangedNeutral = scoreBodies([
+      { attrs: ['AGI'], range: 'Ranged', count: 2, scoresFlat: true },
+      { attrs: ['AGI'], range: 'Ranged', count: 1, scoresFlat: false },
+    ])
+    expect(rangedNeutral.why).toContain('(R3)')
+    expect(rangedNeutral.attack.tag).toBe('R')
 
     // CORE blocks ATK points but still shows the shared-range count.
     const coreMelee = scoreBodies([{ attrs: ['STR'], range: 'Melee', count: 3 }])

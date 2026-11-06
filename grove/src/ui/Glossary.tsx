@@ -195,6 +195,7 @@ export function Glossary({ onClose }: { onClose: () => void }) {
                     <strong>{reward.name}</strong>
                     <span className="glossary-marks">
                       {reward.attr ? <span className={`pill attr-${reward.attr}`}>{ATTR_LABEL[reward.attr]}</span> : null}
+                      {reward.range ? <span className="pill range">{reward.range}</span> : null}
                       <span className="pill muted">{reward.copies}× in pile</span>
                       {reward.instant ? <span className="type-pill inline timing-instant">Instant</span> : null}
                       {reward.token ? <span className="pill muted">Neutral body</span> : null}

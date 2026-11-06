@@ -214,7 +214,7 @@ export function attrsOf(state: Game, hero: BoardHero): Attr[] {
 }
 
 export function rangeOf(hero: BoardHero): Range | null {
-  if (hero.token) return null
+  if (hero.token) return REWARD_BY_ID[hero.defId]?.range ?? null
   return HERO_BY_ID[hero.defId]?.range ?? null
 }
 

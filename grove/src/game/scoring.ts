@@ -200,26 +200,21 @@ function maxMonoStack(bodies: ScoreBody[]): { attr: Attr; count: number } {
 
 /**
  * ATK = 3+ Melee **or** 3+ Ranged, counted separately — mixed teams still score
- * (e.g. 3 Ranged + 2 Melee → R3). Neutrals (`range: null`) pad both sides as
- * wildcards. Label uses the winning side's body count (e.g. `(R4)`), never points.
+ * (e.g. 3 Ranged + 2 Melee → R3). Neutrals carry a real Melee/Ranged type.
+ * Label uses the winning side's body count (e.g. `(R4)`), never points.
  */
 function attackInfoFor(bodies: ScoreBody[], rules: ScoreRules): { points: number; count: number; tag: string } {
   let melee = 0
   let ranged = 0
-  let nulls = 0
   for (const body of bodies) {
     if (body.range === 'Melee') melee += 1
     else if (body.range === 'Ranged') ranged += 1
-    else nulls += 1
   }
   if (melee === 0 && ranged === 0) return { points: 0, count: 0, tag: 'M' }
 
-  const meleeTotal = melee + nulls
-  const rangedTotal = ranged + nulls
-  // Prefer the larger stack; ties keep the side that already has more typed bodies, then Melee.
-  const useRanged =
-    rangedTotal > meleeTotal || (rangedTotal === meleeTotal && ranged > melee)
-  const count = useRanged ? rangedTotal : meleeTotal
+  // Prefer the larger stack; ties keep Melee.
+  const useRanged = ranged > melee
+  const count = useRanged ? ranged : melee
   const tag = useRanged ? 'R' : 'M'
   const capped = Math.min(count, 5)
   const points = capped >= SHAPE_MIN_HEROES ? (rules.attackBonus[capped - 1] ?? 0) : 0

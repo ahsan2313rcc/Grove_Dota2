@@ -299,9 +299,9 @@ Label format: `STR x3, ATTR +3, ATK +1 (M3)` — attr numbers are **hero counts*
 
 - Bonus by count 1..5: default `[0, 0, 1, 2, 3]`.
 - Mixed range is fine: 3 Ranged + 2 Melee still scores **R3** (and the reverse for Melee).
-- If both sides qualify, the larger count wins (tie → more typed bodies, then Melee).
+- If both sides qualify, the larger count wins (tie → Melee).
 - Applies only when there is **no CORE** (unless `attackOnCore`). Toggle `attackOnMix` gates ATK on non-core boards.
-- Neutrals have `range: null`: they pad **both** M and R counts as wildcards (and still fill attr stacks).
+- Neutrals have a real attack type and fill attr stacks: **Melee** — Stone Golem, Tormentor, Roshan; **Ranged** — Thunderhide, Ice Shaman, Black Dragon.
 
 **Open / small** — under 3 bodies, or 3+ with neither CORE nor MIXED: flat + ATK when eligible.
 
