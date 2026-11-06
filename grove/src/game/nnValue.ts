@@ -1,8 +1,8 @@
 /**
  * Tiny offline action-ranking / value net for Grove.
  *
- * Train with `npx tsx scripts/train-nn.mts` or the hillclimb arena
- * (`scripts/hillclimb-nn.mts`) which imitates Challenge then self-plays
+ * Train in-browser (Debug → Train Neural) via multi-horizon score outcomes,
+ * or offline with `npx tsx scripts/train-nn.mts` / `scripts/hillclimb-nn.mts`
  * until the net beats the heuristic brains.
  *
  * `chooseAiActionNeural` uses 1-ply apply + value(after) — quality over speed.
@@ -261,29 +261,83 @@ function bump(model: NnModel, stateFeats: Float64Array, actionFeats: Float64Arra
 }
 
 /**
- * Best neural play: 1-ply speculative apply, pick max value(after).
- * Also blends raw action score so the policy prior still matters.
+ * Neural play: 1-ply apply + value(after). Optional explore for training.
  */
-export function chooseAiActionNeural(state: Game, actor: PlayerId, _strat: AiStrat): Action {
+export function chooseAiActionNeural(
+  state: Game,
+  actor: PlayerId,
+  _strat: AiStrat,
+  opts: { explore?: number } = {},
+): Action {
   void _strat
   const net = loadModel()
   const stateFeats = encodeStateFeatures(state, actor)
   const candidates = listNeuralCandidates(state, actor)
   if (candidates.length === 0) return { type: 'end' }
-  let best = candidates[0]!
-  let bestScore = -Infinity
-  for (const action of candidates) {
+
+  const ranked = candidates.map((action) => {
     const prior = scoreAction(net, stateFeats, encodeActionFeatures(state, actor, action))
     const after = apply({ ...state, autoAll: true }, action)
     const leaf = valueOfState(net, after, actor)
-    // Prefer realized leaf value; keep a little policy prior for stability.
-    const score = leaf * 1.35 + prior * 0.35
-    if (score > bestScore) {
-      bestScore = score
-      best = action
-    }
+    return { action, score: leaf * 1.35 + prior * 0.35 }
+  }).sort((a, b) => b.score - a.score)
+
+  const explore = opts.explore ?? 0
+  if (explore > 0 && Math.random() < explore && ranked.length > 1) {
+    const top = ranked.slice(0, Math.min(4, ranked.length))
+    return top[Math.floor(Math.random() * top.length)]!.action
   }
-  return best
+  return ranked[0]!.action
+}
+
+/** Score pending choices with 1-ply value — targets, ability fire, instants, traps. */
+export function chooseAiPendingNeural(state: Game, opts: { explore?: number } = {}): string[] {
+  const pending = state.pending
+  if (!pending) return []
+  const actor = pending.actor
+  if (pending.choices.length <= 1) return pending.choices[0] ? [pending.choices[0].id] : []
+
+  const net = loadModel()
+  const take = Math.max(pending.min, Math.min(pending.max, 1))
+  const ids = pending.choices.map((c) => c.id)
+  const ranked: { ids: string[]; score: number }[] = []
+  for (const id of ids) {
+    if (id === 'pass' && pending.min > 0) continue
+    const pick = [id]
+    const after = apply({ ...state, autoAll: true }, { type: 'choose', ids: pick })
+    const score = valueOfState(net, after, actor)
+    ranked.push({ ids: pick, score })
+  }
+  if (pending.choices.some((c) => c.id === 'pass') && pending.min === 0) {
+    const after = apply({ ...state, autoAll: true }, { type: 'choose', ids: ['pass'] })
+    ranked.push({ ids: ['pass'], score: valueOfState(net, after, actor) })
+  }
+  ranked.sort((a, b) => b.score - a.score)
+  if (ranked.length === 0) return ids.slice(0, take)
+  const explore = opts.explore ?? 0
+  if (explore > 0 && Math.random() < explore && ranked.length > 1) {
+    const top = ranked.slice(0, Math.min(3, ranked.length))
+    return top[Math.floor(Math.random() * top.length)]!.ids
+  }
+  return ranked[0]!.ids
+}
+
+/** Encode a pending choice id for trajectory learning. */
+export function encodePendingChoiceFeatures(choiceId: string): Float64Array {
+  const feats = new Float64Array(NN_ACTION_SIZE)
+  // Slot 0–7 unused type one-hots; mark as "choose-like" in slot 5 (move-ish) + hash bits.
+  feats[5] = 1
+  let h = 0
+  for (let i = 0; i < choiceId.length; i += 1) h = (h * 33 + choiceId.charCodeAt(i)) >>> 0
+  feats[8] = (h & 255) / 255
+  feats[9] = ((h >>> 8) & 255) / 255
+  feats[10] = ((h >>> 16) & 255) / 255
+  feats[11] = choiceId.startsWith('hero:') || choiceId.startsWith('team:') ? 1 : 0
+  feats[12] = choiceId === 'pass' || choiceId === 'no' ? 1 : 0
+  feats[13] = choiceId === 'yes' || choiceId.startsWith('mode:') ? 1 : 0
+  feats[14] = /instant:|illu:|play:/.test(choiceId) ? 1 : 0
+  feats[15] = /trap|techies|riki|clock|mine/i.test(choiceId) ? 1 : 0
+  return feats
 }
 
 export function listNeuralCandidates(state: Game, actor: PlayerId): Action[] {

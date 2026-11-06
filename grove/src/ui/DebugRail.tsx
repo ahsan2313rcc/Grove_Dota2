@@ -233,7 +233,7 @@ export function DebugRail({
             Train enabled
           </label>
           <p className="quiet">
-            Challenge seats teach Neural each sim / watch tick (balance tracking on). Autosaves to this browser every 10 games. Save → localStorage. Export for git → downloads `nn-value.json` (put at `grove/src/game/data/` and commit). Clear wipes browser memory.
+            Outcome RL: Neural explores and learns from score differentials (single play, +3 turns, +5 turns, full game) — targets, silence vs activate, instants, traps. Autosaves every 10 games. Save → localStorage. Export for git → `nn-value.json` under `grove/src/game/data/`. Clear wipes browser memory.
             {nnInfo
               ? ` Memory: ${nnInfo.trainedGames} games · ${nnInfo.trainedSamples} samples${nnInfo.persisted ? ' · saved locally' : ' · unsaved'}.`
               : ''}

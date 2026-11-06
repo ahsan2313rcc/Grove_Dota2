@@ -27,7 +27,8 @@ import {
   saveNnMemory,
   type NnMemoryInfo,
 } from './game/nnMemory.ts'
-import { learnFromTeacher, runMatchWithOptionalTrain } from './game/nnTrainOnline.ts'
+import { learnFromImmediateOutcome, runMatchWithOptionalTrain } from './game/nnTrainOnline.ts'
+import { chooseAiActionNeural, chooseAiPendingNeural } from './game/nnValue.ts'
 import {
   ALL_STRAT_FILTER,
   aiRoster,
@@ -83,8 +84,9 @@ type LiveRun = {
   stall: number
 }
 
-/** Module flag so advanceTracked can optionally imitate Challenge → Neural. */
+/** Module flag: Watch ticks play Neural with explore and learn from score outcomes. */
 let liveTrainNeural = false
+const LIVE_TRAIN_EXPLORE = 0.12
 
 function defaultSeats(count: SeatCount): LobbySeat[] {
   return Array.from({ length: count }, (_, index) => {
@@ -151,10 +153,12 @@ function advanceTracked(run: LiveRun): LiveRun {
     }
     if (game.pending) {
       if (game.players[game.pending.actor]?.ai || game.autoAll) {
-        const mode = modeForSeat(game, game.pending.actor)
-        const ids = mode === 'challenge' || mode === 'neural'
-          ? chooseAiPendingChallenge(game)
-          : chooseAiPending(game)
+        const mode = liveTrainNeural ? 'neural' : modeForSeat(game, game.pending.actor)
+        const ids = liveTrainNeural || mode === 'neural'
+          ? chooseAiPendingNeural(game, liveTrainNeural ? { explore: LIVE_TRAIN_EXPLORE } : {})
+          : mode === 'challenge'
+            ? chooseAiPendingChallenge(game)
+            : chooseAiPending(game)
         let next = apply(game, { type: 'choose', ids })
         run.tracker.observe(game, { type: 'choose', ids }, next)
         if (next.pending && pendingMark(next.pending) === pendingMark(game.pending)) {
@@ -193,13 +197,13 @@ function advanceTracked(run: LiveRun): LiveRun {
       }
     }
 
-    const mode = modeForSeat(game, game.active)
-    const action = chooseAiAction(game, mode)
-    // Live train: imitate Challenge seats into Neural memory when enabled.
-    if (liveTrainNeural && mode === 'challenge') {
-      learnFromTeacher(game, game.active, action)
-    }
+    const mode = liveTrainNeural ? 'neural' : modeForSeat(game, game.active)
+    const strat = game.players[game.active]?.strat ?? DEFAULT_STRAT
+    const action = liveTrainNeural
+      ? chooseAiActionNeural(game, game.active, strat, { explore: LIVE_TRAIN_EXPLORE })
+      : chooseAiAction(game, mode)
     const next = apply(game, action)
+    if (liveTrainNeural) learnFromImmediateOutcome(game, next, game.active, action)
     run.tracker.observe(game, action, next)
     const same = next === game
       || (next.active === game.active
@@ -936,7 +940,7 @@ function Lobby({
                 Train Neural
               </label>
               <p className="quiet">
-                When enabled, Challenge seats teach Neural each sim with full balance tracking. Weights live in this browser (localStorage) — Save / Clear in the debug rail. Not written to git.
+                Outcome learning (not imitation): Neural plays with exploration and trains on play / +3 / +5 / full-game score differentials so it can beat heuristics. Weights stay in this browser — Save / Clear in the debug rail.
               </p>
               <button type="button" data-testid="lobby-scoring" onClick={() => setScoreOpen(true)}>
                 Scoring…

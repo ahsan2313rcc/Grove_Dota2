@@ -13,14 +13,14 @@ import {
 } from './flow.ts'
 import type { Action, AiStrat, CardInst, Game, PlayerId } from './types.ts'
 import { chooseAiActionChallenge, chooseAiPendingChallenge } from './aiChallenge.ts'
-import { chooseAiActionNeural } from './nnValue.ts'
+import { chooseAiActionNeural, chooseAiPendingNeural } from './nnValue.ts'
 
 export const AI_STRATS: { id: AiStrat; label: string; blurb: string }[] = [
   { id: 'balanced', label: 'Balanced', blurb: 'Scores first, holds answers, interrupts threats, and banks denial auras.' },
   { id: 'tempo', label: 'Tempo', blurb: 'Floods heroes, spends actions, and gates Chronosphere / Silence on real board threats.' },
   { id: 'architect', label: 'Architect', blurb: 'Builds cores and terrain paths, still removes filled enemy teams, ends only with empty denial.' },
   { id: 'spite', label: 'Spite', blurb: 'Pressure-first: hunts the highest threat seat with traps, steals, and removal without breaking own cores.' },
-  { id: 'neural', label: 'Neural', blurb: 'Offline-trained net (1-ply value search). Train from Debug → Train Neural.' },
+  { id: 'neural', label: 'Neural', blurb: 'Outcome-trained net (1-ply + value). Train Neural learns from score horizons to beat heuristics.' },
 ]
 
 /** Heuristic personalities (everything except Neural). */
@@ -101,11 +101,21 @@ export function chooseAiAction(state: Game, mode: AiSearchMode = 'full'): Action
   if (state.veil) return { type: 'ready' }
   if (state.over) return { type: 'end' }
   if (state.pending) {
+    const actor = state.pending.actor
+    const seatStrat = state.players[actor]?.strat ?? DEFAULT_STRAT
+    const pendingMode: AiSearchMode =
+      seatStrat === 'neural' || mode === 'neural'
+        ? 'neural'
+        : mode === 'challenge'
+          ? 'challenge'
+          : 'full'
     return {
       type: 'choose',
-      ids: mode === 'challenge' || mode === 'neural'
-        ? chooseAiPendingChallenge(state)
-        : chooseAiPending(state),
+      ids: pendingMode === 'neural'
+        ? chooseAiPendingNeural(state)
+        : pendingMode === 'challenge'
+          ? chooseAiPendingChallenge(state)
+          : chooseAiPending(state),
     }
   }
 
