@@ -57,6 +57,7 @@ import {
   type SavedLocalMatch,
 } from './local/save.ts'
 import { Glossary } from './ui/Glossary.tsx'
+import { Lab } from './ui/Lab.tsx'
 import { type DebugSpeed, type DebugView } from './ui/DebugRail.tsx'
 import { OnlinePlay } from './ui/OnlinePlay.tsx'
 import { ScoreRulesPanel } from './ui/ScoreRulesPanel.tsx'
@@ -627,6 +628,17 @@ export default function App() {
       <Lobby
         onOnline={() => setOnline(true)}
         onResumeLocal={resumeLocal}
+        onLab={(next, nextSeed) => {
+          setScoreRules(DEFAULT_SCORE_RULES)
+          setMatch((value) => value + 1)
+          setSeed(nextSeed)
+          setSeatCount(2)
+          setDebug(false)
+          const tracker = new BalanceTracker(nextSeed)
+          tracker.start(next)
+          setRuns([{ seed: nextSeed, game: next, tracker, stuck: false, stall: 0 }])
+          setFocus(0)
+        }}
         onStart={(next, nextSeed, nextDebug, seats, queue, strats, rules, train) => {
           setTrainNeural(train)
           trainNeuralRef.current = train
@@ -709,8 +721,10 @@ function Lobby({
   onStart,
   onOnline,
   onResumeLocal,
+  onLab,
 }: {
   onOnline: () => void
+  onLab: (game: Game, seed: number) => void
   onResumeLocal: (saved: SavedLocalMatch) => void
   onStart: (
     game: Game,
@@ -730,6 +744,7 @@ function Lobby({
   const [queue, setQueue] = useState(100)
   const [fault, setFault] = useState('')
   const [glossary, setGlossary] = useState(false)
+  const [lab, setLab] = useState(false)
   const [scoreOpen, setScoreOpen] = useState(false)
   const [lobbyRules, setLobbyRules] = useState<ScoreRules>(() => cloneRules(getScoreRules()))
   const [savedLocal, setSavedLocal] = useState<SavedLocalMatch | null>(() => loadLocalMatch())
@@ -996,6 +1011,7 @@ function Lobby({
         </button>
         <button type="button" className="block" data-testid="play-online" onClick={onOnline}>Play online (ranked)</button>
         <button type="button" className="block" data-testid="glossary-open" onClick={() => setGlossary(true)}>Glossary</button>
+        <button type="button" className="block" data-testid="lab-open" onClick={() => setLab(true)}>Ability Lab</button>
         <label>
           Seed
           <input
@@ -1008,6 +1024,7 @@ function Lobby({
         {fault ? <p className="warn">{fault}</p> : null}
       </form>
       {glossary ? <Glossary onClose={() => setGlossary(false)} /> : null}
+      {lab ? <Lab onClose={() => setLab(false)} onPlay={onLab} /> : null}
       {scoreOpen ? (
         <div className="scrim" onClick={() => setScoreOpen(false)}>
           <section
