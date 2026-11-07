@@ -42,7 +42,7 @@ export function WinConditionPanel({ value, onChange }: { value: ScoreRules; onCh
         Ancient endgame
       </label>
       <p className="quiet">
-        Drawing The Ancient starts the final round: each opponent takes one more turn. Whoever holds it at the end scores +10. Depth is how far down the deck it sits after the deal, ±5%.
+        The Ancient is a neutral. Drawing it starts the final round: each opponent takes one more turn. +10 goes to whoever controls it at the end. Depth is how far down the deck it sits after the deal, ±5%.
       </p>
       <table className="win-table">
         <thead>

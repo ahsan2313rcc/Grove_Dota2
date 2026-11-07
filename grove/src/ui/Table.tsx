@@ -386,12 +386,36 @@ export function Table({
       ?? you.hand.find((card) => card.uid === selectedUid)
       ?? null
     : null
+  const squadMates = selectedCard?.kind === 'hero'
+    ? extras
+      .map((uid) => you.hand.find((card) => card.uid === uid))
+      .filter((card): card is CardInst => !!card && card.uid !== selectedCard.uid)
+    : []
+  const playFree = !!selectedCard && (
+    selectedCard.kind === 'terrain'
+    || playsAsInstant(game, viewer, selectedCard)
+  )
+  const playLabel = !selectedCard
+    ? 'Play'
+    : selectedCard.kind === 'terrain'
+      ? `Play Combo ${chosen.length}/3`
+      : selectedCard.kind === 'hero'
+        ? (squadMates.length > 0 ? 'Play Squad' : 'Play Hero')
+        : selectedCard.kind === 'item' || selectedCard.kind === 'reward'
+          ? 'Play Item'
+          : 'Play'
   const playReason = !selectedCard
     ? 'Select a card'
-    : !canPlayCards
-      ? 'Cannot play now'
-      : (playBlock(game, viewer, selectedCard)
-        ?? (canInstant && !playsAsInstant(game, viewer, selectedCard) ? 'Only Instant cards now' : null))
+    : selectedCard.kind === 'terrain'
+      ? (!canAct
+        ? 'Cannot play now'
+        : comboReady
+          ? null
+          : `Need ${3 - chosen.length} more terrain${3 - chosen.length === 1 ? '' : 's'}`)
+      : !canPlayCards
+        ? 'Cannot play now'
+        : (playBlock(game, viewer, selectedCard)
+          ?? (canInstant && !playsAsInstant(game, viewer, selectedCard) ? 'Only Instant cards now' : null))
   const clinkzPlayable = canPlayCards ? game.clinkzExile.filter((card) => card.kind === 'item') : []
 
   function toggleTerrainCombo(card: CardInst, fromGrave = false) {
@@ -635,13 +659,21 @@ export function Table({
               </button>
               <button
                 type="button"
-                className="primary"
+                className={`primary play-selected${playFree ? ' has-free' : ''}`}
                 data-testid="play-selected"
                 disabled={!selectedCard || !!playReason}
                 title={playReason ?? (selectedCard ? display(selectedCard.defId).name : undefined)}
-                onClick={() => selectedUid && playFocused(selectedUid)}
+                onClick={() => {
+                  if (!selectedCard) return
+                  if (selectedCard.kind === 'terrain') {
+                    if (comboReady) onAction({ type: 'combo', uids: chosen.map((card) => card.uid) })
+                    return
+                  }
+                  if (selectedUid) playFocused(selectedUid)
+                }}
               >
-                Play{selectedCard ? ` · ${display(selectedCard.defId).name}` : ''}
+                <span className="play-label">{playLabel}</span>
+                {playFree ? <small className="play-free">Free</small> : null}
               </button>
               <button type="button" data-testid="end" disabled={!canAct && !stuck} onClick={() => onAction({ type: 'end' })}>
                 End turn
@@ -661,11 +693,6 @@ export function Table({
                   {plan.label} · free
                 </button>
               ))}
-              {comboReady ? (
-                <button type="button" className="combo" onClick={() => onAction({ type: 'combo', uids: chosen.map((card) => card.uid) })}>
-                  Place selected · free
-                </button>
-              ) : null}
               {canAct && morphCasts(game).map((cast) => (
                 <button key={cast.uid} type="button" onClick={() => onAction({ type: 'morph', uid: cast.uid })}>{cast.label}</button>
               ))}
@@ -708,14 +735,11 @@ export function Table({
                 game={game}
                 viewer={viewer}
                 canAct={canAct}
-                canInstant={canInstant}
                 focus={focus}
                 placing={placing}
                 extras={extras}
                 comboReady={comboReady}
                 chosen={chosen}
-                onPlay={playFocused}
-                onPlace={() => onAction({ type: 'combo', uids: chosen.map((card) => card.uid) })}
                 onTeam={(team) => {
                   if (placing) {
                     onAction({
@@ -969,14 +993,11 @@ function Detail({
   game,
   viewer,
   canAct,
-  canInstant,
   focus,
   placing,
   extras,
   comboReady,
   chosen,
-  onPlay,
-  onPlace,
   onTeam,
   onMorph,
   onCancel,
@@ -984,19 +1005,15 @@ function Detail({
   game: Game
   viewer: PlayerId
   canAct: boolean
-  canInstant: boolean
   focus: Focus | null
   placing: string | null
   extras: string[]
   comboReady: boolean
   chosen: CardInst[]
-  onPlay: (uid: string) => void
-  onPlace: () => void
   onTeam: (team: string) => void
   onMorph: (uid: string) => void
   onCancel: () => void
 }) {
-  const canPlayCards = canAct || canInstant
   if (placing) {
     const graveCard = playableFromGrave(game, viewer)
     const fromGrave = graveCard?.uid === placing ? graveCard : null
@@ -1006,10 +1023,18 @@ function Detail({
       .map((uid) => game.players[viewer].hand.find((entry) => entry.uid === uid))
       .filter((entry): entry is CardInst => !!entry)
     const trap = !!card && isTrapHero(card.defId)
+    const info = card ? display(card.defId) : null
     return (
-      <div className="detail">
+      <div className="detail" data-testid="card-detail">
+        {info ? (
+          <DetailHead
+            name={info.name}
+            timing={detailTiming(info.timing, info.kind)}
+            free={fromGrave || playsAsInstant(game, viewer, card!)}
+          />
+        ) : null}
         <p>
-          {fromGrave ? 'Exorcism' : trap ? 'Plant' : 'Active'} {card ? display(card.defId).name : 'hero'}
+          {fromGrave ? 'Exorcism' : trap ? 'Plant' : 'Active'} {info?.name ?? 'hero'}
           {!trap && mates.length > 0 ? ` + ${mates.map((entry) => display(entry.defId).name).join(', ')} (silent)` : ''}
           {' '}onto
         </p>
@@ -1022,6 +1047,8 @@ function Detail({
             ? 'Place onto an existing team or a new one. Ability targets resolve from the card text after seating.'
             : 'Click more heroes in hand to bring them in silently. Only the active ability fires.'}
         </p>
+        {info?.spell ? <p className="spell">{info.spell}</p> : null}
+        {info?.text ? <p>{info.text}</p> : null}
         <div className="inline-choices">
           {options.map((option) => (
             <button key={option.id} type="button" disabled={!option.ok} data-testid={option.id === 'new' ? 'team-new' : `team-pick-${option.id}`} onClick={() => onTeam(option.id)}>
@@ -1037,8 +1064,8 @@ function Detail({
   if (focus.kind === 'card') {
     const info = display(focus.defId)
     return (
-      <div className="detail">
-        <h3>{info.name}</h3>
+      <div className="detail" data-testid="card-detail">
+        <DetailHead name={info.name} timing={detailTiming(info.timing, info.kind)} free={!!info.instant} />
         {info.spell ? <p className="spell">{info.spell}</p> : null}
         <p>{info.text}</p>
       </div>
@@ -1051,8 +1078,8 @@ function Detail({
     const scored = scoreTeam(game, loc.team)
     const morph = morphCasts(game).find((cast) => cast.uid === loc.hero.uid)
     return (
-      <div className="detail">
-        <h3>{info.name}</h3>
+      <div className="detail" data-testid="card-detail">
+        <DetailHead name={info.name} timing={detailTiming(info.timing, info.kind)} free={!!info.instant} />
         <p className="spell">{loc.player.name} · {scored.why} · {scored.points}</p>
         {info.spell ? <p className="spell">{info.spell}</p> : null}
         <p>{info.text}</p>
@@ -1071,35 +1098,65 @@ function Detail({
       .filter((entry): entry is CardInst => !!entry && entry.uid !== card.uid)
     : []
   const asInstant = playsAsInstant(game, viewer, card)
-  const offTurnInstant = canInstant && asInstant
-  const playable = canPlayCards && !block && (canAct || offTurnInstant)
+  const timing = card.kind === 'terrain' ? 'combo' as const : detailTiming(info.timing, info.kind)
+  const free = card.kind === 'terrain' || asInstant
   return (
-    <div className="detail">
-      <h3>{info.name}</h3>
+    <div className="detail" data-testid="card-detail">
+      <DetailHead name={info.name} timing={timing} free={free} />
       {info.spell ? <p className="spell">{info.spell}</p> : null}
       <p>{info.text}</p>
       {mates.length > 0 ? (
         <p className="quiet">Companions: {mates.map((entry) => display(entry.defId).name).join(', ')} (silent)</p>
       ) : null}
       {canAct && card.kind === 'hero' ? (
-        <p className="quiet">Click other heroes to add silent companions, then play — one action for the squad.</p>
+        <p className="quiet">Click other heroes to add silent companions, then use Play Squad — one action.</p>
       ) : null}
-      <div className="inline-choices">
-        {card.kind === 'terrain' ? (
-          <button type="button" className="combo" disabled={!canAct || !comboReady} onClick={onPlace}>
-            {comboReady ? 'Place these three · free' : `Selected ${chosen.length}/3`}
-          </button>
-        ) : (
-          <button type="button" className="primary" data-testid="play-card" disabled={!playable} onClick={() => onPlay(card.uid)}>
-            {asInstant
-              ? `Play ${info.name} · Instant`
-              : mates.length > 0
-                ? `Play squad · 1 action`
-                : `Play ${info.name} · 1 action`}
-          </button>
-        )}
-        {block ? <span className="quiet">{block}</span> : null}
-      </div>
+      {card.kind === 'terrain' ? (
+        <p className="quiet">{comboReady ? 'Combo ready — use Play Combo.' : `Selected ${chosen.length}/3 terrains.`}</p>
+      ) : null}
+      {block && card.kind !== 'terrain' ? <p className="quiet">{block}</p> : null}
+    </div>
+  )
+}
+
+const DETAIL_TIMING: Record<'aura' | 'instant' | 'trap' | 'combo', string> = {
+  aura: 'Aura',
+  instant: 'Instant',
+  trap: 'Trap',
+  combo: 'Combo',
+}
+
+function detailTiming(
+  timing: string | undefined,
+  kind: string,
+): keyof typeof DETAIL_TIMING | null {
+  if (kind === 'terrain') return 'combo'
+  if (timing === 'aura' || timing === 'instant' || timing === 'trap') return timing
+  return null
+}
+
+function DetailHead({
+  name,
+  timing,
+  free,
+}: {
+  name: string
+  timing: keyof typeof DETAIL_TIMING | null
+  free: boolean
+}) {
+  return (
+    <div className="detail-head">
+      <h3>{name}</h3>
+      {(timing || free) ? (
+        <span className="detail-meta">
+          {timing ? (
+            <span className={`type-pill inline timing-${timing}`} data-testid="detail-timing">
+              {DETAIL_TIMING[timing]}
+            </span>
+          ) : null}
+          {free ? <small className="detail-free" data-testid="detail-free">Free</small> : null}
+        </span>
+      ) : null}
     </div>
   )
 }
@@ -1128,7 +1185,7 @@ function WinConditionSheet({
         <h2 id="win-live-title">Win condition</h2>
         <p data-testid="win-final-rule">
           {game.ancientEnabled
-            ? 'Drawing The Ancient starts the final round: each player gets one more turn, then the highest score wins (+10 to whoever holds The Ancient).'
+            ? 'The Ancient is a neutral. Drawing it starts the final round: each player gets one more turn, then the highest score wins — +10 to whoever controls The Ancient.'
             : 'When the shared deck empties, the final round begins: each player gets one more turn, then the highest score wins.'}
         </p>
         {target ? (
