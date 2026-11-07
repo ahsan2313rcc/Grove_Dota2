@@ -734,7 +734,7 @@ describe('heroes', () => {
     expect(game.grave.some((card) => card.defId === 'sven')).toBe(true)
   })
 
-  it('exiles under Razor without copying the attribute or the ability', () => {
+  it('exiles any hero with Razor and grants an action', () => {
     let game = ready()
     game = only(game, 0, ['razor'])
     game = only(game, 1, ['sven'])
@@ -745,17 +745,13 @@ describe('heroes', () => {
     game = apply(game, { type: 'end' })
     game = apply(game, { type: 'ready' })
     const sven = game.players[1].teams.flatMap((team) => team.heroes).find((hero) => hero.defId === 'sven')
+    const actions = game.players[0].actions
     game = apply(game, { type: 'play', uid: uid(game, 0, 'razor'), team: 'new' })
     game = passInstants(game)
     game = apply(game, { type: 'choose', ids: [`hero:${sven?.uid ?? ''}`] })
-    const razor = game.players[0].teams.flatMap((team) => team.heroes).find((hero) => hero.defId === 'razor')
-    expect(razor?.held?.card.defId).toBe('sven')
-    expect(razor?.held?.mode).toBe('razor')
-    expect(attrsOf(game, razor!).includes('STR')).toBe(false)
-    expect(morphCasts(game)).toEqual([])
+    expect(game.players[0].actions).toBe(actions - 1 + 1)
     expect(game.players[1].teams.flatMap((team) => team.heroes)).toEqual([])
-    expect(game.exile.some((card) => card.defId === 'sven')).toBe(false)
-    expect(game.grave.some((card) => card.defId === 'sven')).toBe(false)
+    expect(game.exile.some((card) => card.defId === 'sven')).toBe(true)
   })
 
   it('lets Morphling switch attribute to match the exiled hero', () => {
@@ -795,9 +791,23 @@ describe('heroes', () => {
     expect(game.pending?.resume.kind).toBe('instant-window')
     const nyx = game.pending?.choices.find((choice) => choice.id.startsWith('instant:'))?.id ?? ''
     game = apply(game, { type: 'choose', ids: [nyx] })
-    expect(game.players[0].teams).toEqual([])
-    expect(game.grave.map((card) => card.defId).sort()).toEqual(['nyx_assassin', 'primal_beast'])
+    // Strength caster: countered but stays on the board.
+    expect(game.players[0].teams.flatMap((team) => team.heroes).map((hero) => hero.defId)).toEqual(['primal_beast'])
+    expect(game.primalItems).toBeFalsy()
+    expect(game.grave.map((card) => card.defId)).toEqual(['nyx_assassin'])
     expect(game.players[0].actions).toBe(1)
+  })
+
+  it('destroys an Intelligence caster countered by Nyx', () => {
+    let game = ready()
+    game = only(game, 0, ['invoker'])
+    game = only(game, 1, ['nyx_assassin'])
+    game = apply(game, { type: 'play', uid: uid(game, 0, 'invoker'), team: 'new' })
+    expect(game.pending?.resume.kind).toBe('instant-window')
+    const nyx = game.pending?.choices.find((choice) => choice.id.startsWith('instant:'))?.id ?? ''
+    game = apply(game, { type: 'choose', ids: [nyx] })
+    expect(game.players[0].teams).toEqual([])
+    expect(game.grave.map((card) => card.defId).sort()).toEqual(['invoker', 'nyx_assassin'])
   })
 
   it('locks an opponent with Orchid so they cannot activate abilities', () => {

@@ -155,3 +155,89 @@ describe('terrain sets', () => {
     expect(game.players[0].hand.length).toBe(hand - 1 + 2)
   })
 })
+
+function pick(prefix: string) {
+  return (game: Game) => {
+    const choice = game.pending?.choices.find((entry) => entry.id.startsWith(prefix))
+    return choice ? [choice.id] : null
+  }
+}
+
+describe('reworked heroes', () => {
+  it('Io tethers an ally into its team and keeps it alive this turn', () => {
+    let game = toHand(ready(), 0, ['io', 'lion'])
+    let home = ''
+    ;[game, home] = team(game, 0, ['axe'])
+    ;[game] = team(game, 0, ['sven'])
+    const sven = game.players[0].teams[1]!.heroes[0]!.uid
+    game = drain(apply(game, { type: 'play', uid: uidOf(game, 0, 'io'), team: home }), pick(`hero:${sven}`))
+    expect(findTeamOf(game, sven)).toBe(home)
+    const tethered = allLocs(game).find((loc) => loc.hero.uid === sven)!.hero
+    expect(tethered.tether).toBe(game.turn)
+  })
+
+  it('Tusk moves an enemy hero to another team its controller owns', () => {
+    let game = toHand(ready(), 0, ['tusk'])
+    ;[game] = team(game, 1, ['axe', 'sven'])
+    let other = ''
+    ;[game, other] = team(game, 1, ['lina'])
+    const axe = game.players[1].teams[0]!.heroes[0]!.uid
+    game = drain(apply(game, { type: 'play', uid: uidOf(game, 0, 'tusk'), team: 'new' }), (current) => {
+      if (current.pending?.choices.some((choice) => choice.id === `hero:${axe}`)) return [`hero:${axe}`]
+      return pick(`team:${other}`)(current)
+    })
+    expect(findTeamOf(game, axe)).toBe(other)
+    expect(allLocs(game).find((loc) => loc.hero.uid === axe)?.player.id).toBe(1)
+  })
+
+  it('Earth Spirit pushes an enemy into another of their teams and destroys a hero there', () => {
+    let game = toHand(ready(), 0, ['earth_spirit'])
+    ;[game] = team(game, 1, ['axe'])
+    let other = ''
+    ;[game, other] = team(game, 1, ['lina', 'zeus'])
+    const axe = game.players[1].teams[0]!.heroes[0]!.uid
+    const zeus = game.players[1].teams[1]!.heroes[1]!.uid
+    game = drain(apply(game, { type: 'play', uid: uidOf(game, 0, 'earth_spirit'), team: 'new' }), (current) => {
+      const ids = current.pending?.choices.map((choice) => choice.id) ?? []
+      if (ids.includes(`hero:${axe}`)) return [`hero:${axe}`]
+      if (ids.includes(`team:${other}`)) return [`team:${other}`]
+      if (ids.includes(`kill:${zeus}`)) return [`kill:${zeus}`]
+      return null
+    })
+    expect(findTeamOf(game, axe)).toBe(other)
+    expect(allLocs(game).some((loc) => loc.hero.uid === zeus)).toBe(false)
+  })
+
+  it('Spirit Breaker redirects an enemy ability onto itself', () => {
+    let game = toHand(ready(), 0, ['lina'])
+    game = toHand(game, 1, ['spirit_breaker'])
+    ;[game] = team(game, 1, ['axe'])
+    const axe = game.players[1].teams[0]!.heroes[0]!.uid
+    game = apply(game, { type: 'play', uid: uidOf(game, 0, 'lina'), team: 'new' })
+    game = drain(game, (current) => {
+      const pending = current.pending!
+      if (pending.resume.kind === 'instant-window') {
+        return [pending.choices.find((choice) => choice.defId === 'spirit_breaker')!.id]
+      }
+      if (pending.choices.some((choice) => choice.id === `hero:${axe}`)) return [`hero:${axe}`]
+      return null
+    })
+    expect(allLocs(game).some((loc) => loc.hero.uid === axe)).toBe(true)
+    expect(allLocs(game).some((loc) => loc.hero.defId === 'spirit_breaker')).toBe(false)
+    expect(game.grave.some((card) => card.defId === 'spirit_breaker')).toBe(true)
+  })
+
+  it('Marci hands one card from the deck to each player', () => {
+    let game = toHand(ready(), 0, ['marci'])
+    game = toHand(game, 1, [])
+    game = drain(apply(game, { type: 'play', uid: uidOf(game, 0, 'marci'), team: 'new' }), (current) =>
+      current.pending?.mode === 'assign' ? current.pending.choices.map((choice, index) => `${index}:${choice.id}`) : null,
+    )
+    expect(game.players[1].hand.length).toBe(1)
+    expect(game.players[0].hand.length).toBe(1)
+  })
+})
+
+function findTeamOf(game: Game, uid: string): string | undefined {
+  return allLocs(game).find((loc) => loc.hero.uid === uid)?.team.id
+}

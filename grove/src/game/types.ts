@@ -36,6 +36,8 @@ export interface BoardHero {
   ward: Timed | null
   hidden: Timed | null
   bkb: Timed | null
+  /** Io Tether: cannot be destroyed during this game turn. */
+  tether: number | null
   muted: boolean
   dawn: { caster: PlayerId; turn: number } | null
   wk: boolean

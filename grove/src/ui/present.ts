@@ -21,13 +21,14 @@ export function isCombo(cards: CardInst[]): boolean {
 
 export function heroMarks(hero: BoardHero, team: Team): string[] {
   const marks: string[] = []
-  if (hero.defId === 'meepo') marks.push('+1 / combo')
+  if (hero.defId === 'meepo') marks.push('+1 / terrain type')
   if (hero.token) marks.push('Neutral')
   if (hero.roshan) marks.push('Roshan')
   if (hero.shield) marks.push('Shield')
   if (hero.ward) marks.push('Ward')
   if (hero.hidden) marks.push('Hidden')
   if (hero.bkb) marks.push('Black King Bar')
+  if (hero.tether !== null) marks.push('Tether')
   if (hero.muted) marks.push('Orchid')
   if (hero.rupture) marks.push('Rupture')
   if (hero.dawn) marks.push('Dawn')

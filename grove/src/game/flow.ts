@@ -427,6 +427,7 @@ export function makeHero(card: CardInst, owner: PlayerId, controller: PlayerId, 
     ward: null,
     hidden: null,
     bkb: null,
+    tether: null,
     muted: false,
     dawn: null,
     wk: card.defId === 'wraith_king',
@@ -950,6 +951,7 @@ function prevented(state: Game, loc: Loc, force: boolean, by: PlayerId | null): 
   if (loc.team.glyph) return `Glyph protects ${name}.`
   if (loc.hero.shield) return `Shield protects ${name}.`
   if (loc.hero.ward) return `${name} cannot be destroyed.`
+  if (loc.hero.tether === state.turn) return `Tether keeps ${name} safe this turn.`
   if (
     loc.team.heroes.some((mate) => mate.defId === 'omniknight' && mate.controller === loc.hero.controller) &&
     !aurasSuppressed(state, loc.hero.controller)
@@ -1362,7 +1364,7 @@ function expireBoards(state: Game): Game {
       mailTurn: null,
       teams: player.teams.map((team) => ({
         ...team,
-        heroes: team.heroes.map((hero) => ({ ...hero, dawn: null })),
+        heroes: team.heroes.map((hero) => ({ ...hero, dawn: null, tether: null })),
       })),
     })),
   }

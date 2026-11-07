@@ -6,6 +6,7 @@ import {
   addHand,
   allLocs,
   arrived,
+  attrsOf,
   ask,
   askCoupContinue,
   cardsLocked,
@@ -54,7 +55,7 @@ import {
   toGrave,
   viperDue,
 } from './flow.ts'
-import type { Action, AiStrat, CardInst, CardKind, Game, Player, PlayerId, Resume } from './types.ts'
+import type { Action, AiStrat, CardInst, CardKind, CastResume, Game, Player, PlayerId, Resume } from './types.ts'
 
 export type SeatSpec = { name: string; ai: boolean; strat?: AiStrat }
 
@@ -976,11 +977,17 @@ function satisfy(state: Game, ids: string[]): Game {
     if (!card) {
       return offerInstantWindow(next, resume.heroUid, resume.cast, resume.seats, resume.index + 1)
     }
-    // Nyx from hand: counter this ability and destroy the hero (do not put Nyx on the board).
+    // Nyx from hand: counter this ability; Intelligence casters are also destroyed.
     if (card.defId === 'nyx_assassin') {
       let dumped = discardUid(next, pending.actor, cardUid)
-      dumped = enqueue(dumped, resume.heroUid, 'Spiked Carapace', false, true, pending.actor)
+      const caster = findHero(dumped, resume.heroUid)
+      if (caster && attrsOf(dumped, caster.hero).includes('INT')) {
+        dumped = enqueue(dumped, resume.heroUid, 'Spiked Carapace', false, true, pending.actor)
+      }
       return log(dumped, 'Spiked Carapace counters the ability.')
+    }
+    if (card.defId === 'spirit_breaker' && redirectable(resume.cast)) {
+      return charge(next, pending.actor, card, resume.heroUid, resume.cast)
     }
     // Orchid from interrupt: nullify the ability about to fire (target = that opponent).
     if (card.defId === 'orchid') {
@@ -1138,6 +1145,28 @@ function slark(state: Game, player: PlayerId, draws: number): Game {
   }
   if (draws > 1) return queueDraw(log(next, 'Shadow Dance.'), player, draws - 1)
   return log(next, 'Shadow Dance.')
+}
+
+function redirectable(resume: CastResume): boolean {
+  return resume.picked.some((id) => id.startsWith('hero:') || id.startsWith('team:'))
+}
+
+/** Spirit Breaker enters a new team, then every hero / team the ability targets becomes it. */
+function charge(state: Game, seat: PlayerId, card: CardInst, heroUid: string, resume: CastResume): Game {
+  let next = removeHand(state, seat, card.uid)
+  let teamId = ''
+  ;[next, teamId] = seatTeam(next, seat)
+  next = putOnTeam(next, seat, teamId, makeHero(card, seat, seat, next))
+  next = arrived(next, card.uid).state
+  const home = findHero(next, card.uid)
+  if (!home) return log(next, 'Charge of Darkness falls short.')
+  const picked = resume.picked.map((id) => {
+    if (id.startsWith('hero:')) return `hero:${card.uid}`
+    if (id.startsWith('team:')) return `team:${home.team.id}`
+    return id
+  })
+  next = log(next, `Charge of Darkness pulls ${display(resume.defId).name} onto Spirit Breaker.`)
+  return { ...next, after: { kind: 'alive', uid: heroUid, cast: { ...resume, picked: [...new Set(picked)] } } }
 }
 
 function answerSave(state: Game, uid: string, dying: string, cause: string, force: boolean): Game {

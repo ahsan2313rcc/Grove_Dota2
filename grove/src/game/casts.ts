@@ -593,6 +593,7 @@ function questions(state: Game, resume: CastResume): Ask {
     }
     case 'enchantress':
     case 'force_staff':
+    case 'tusk':
       if (at === 0) {
         if (resume.defId === 'enchantress') {
           return pose(actor, 'Choose an enemy Strength hero.', enemyHeroes(state, actor, kind, (uid) => {
@@ -607,6 +608,14 @@ function questions(state: Game, resume: CastResume): Ask {
         const uid = heroIds(resume.picked)[0]
         const loc = uid ? findHero(state, uid) : null
         if (!loc) return fizzle('That hero is gone.')
+        if (resume.defId === 'tusk') {
+          const holder = loc.hero.controller
+          const choices = teamChoices(state, actor, kind, (team, player) => player.id === holder && team.id !== loc.team.id)
+          if (state.players[holder].teams.length < TEAM_CAP) {
+            choices.push({ id: `new:${holder}`, label: `New team for ${pname(state, holder)}` })
+          }
+          return pose(actor, 'Choose another team its controller owns.', choices)
+        }
         if (resume.defId === 'force_staff') {
           const choices = teamChoices(state, actor, kind, (team, player) => player.id === loc.hero.owner && team.id !== loc.team.id)
           if (state.players[loc.hero.owner].teams.length < TEAM_CAP) {
@@ -651,21 +660,13 @@ function questions(state: Game, resume: CastResume): Ask {
         const choices = ownTeams(state, actor, true).filter((choice) => choice.id !== `team:${loc?.team.id}`)
         return pose(actor, 'Choose another team.', choices)
       }
-    case 'marci':
-      if (at === 0) {
-        return pose(actor, 'Choose an allied hero.', ownHeroes(state, actor, kind).filter((choice) => {
-          const uid = choice.id.slice(5)
-          return uid !== resume.sourceUid
-        }))
-      }
-      if (at > 1) return ready()
-      {
-        const uid = heroIds(resume.picked)[0]
-        const loc = uid ? findHero(state, uid) : null
-        if (!loc || !home) return fizzle('That hero is gone.')
-        if (loc.team.id === home.team.id) return pose(actor, 'Choose a team to send them to.', ownTeams(state, actor, true).filter((choice) => choice.id !== `team:${home.team.id}`))
-        return ready()
-      }
+    case 'io':
+      if (at > 0) return ready()
+      if (!home) return fizzle('Io is gone.')
+      return pose(actor, 'Choose an allied hero to tether.', ownHeroes(state, actor, kind).filter((choice) => {
+        const uid = choice.id.slice(5)
+        return uid !== resume.sourceUid && findHero(state, uid)?.team.id !== home.team.id
+      }))
     case 'hoodwink': {
       if (at > 0) return ready()
       if (terrainCount(state, actor, 'jungle') === 0) {
@@ -712,9 +713,32 @@ function questions(state: Game, resume: CastResume): Ask {
       if (at > 1) return ready()
       return pose(actor, 'Take control of an enemy team.', teamChoices(state, actor, kind, (_team, player) => player.id !== actor))
     }
+    case 'earth_spirit': {
+      if (at === 0) return pose(actor, 'Choose an enemy hero.', enemyHeroes(state, actor, kind))
+      const uid = heroIds(resume.picked)[0]
+      const loc = uid ? findHero(state, uid) : null
+      if (!loc) return fizzle('That hero is gone.')
+      if (at === 1) {
+        const holder = loc.hero.controller
+        const choices = teamChoices(state, actor, kind, (team, player) =>
+          player.id === holder && team.id !== loc.team.id && !enterReason(state, team, heroWeight(loc.hero), loc.hero.token),
+        )
+        if (choices.length === 0) return fizzle(`${pname(state, holder)} has no other team to take it.`)
+        return pose(actor, 'Send it to which of their teams?', choices)
+      }
+      if (at > 2) return ready()
+      const dest = rawTeams(resume.picked)[0]
+      const found = dest ? teamById(state, dest) : null
+      if (!found) return fizzle('That team is gone.')
+      const pool = [loc.hero, ...found.team.heroes]
+      return pose(actor, 'Destroy a hero in that team.', pool.map((hero) => ({
+        id: `kill:${hero.uid}`,
+        label: display(hero.defId).name,
+        defId: hero.defId,
+      })))
+    }
     case 'monkey_king':
     case 'disruptor':
-    case 'earth_spirit':
     case 'shadow_demon':
     case 'oracle':
       if (resume.defId === 'disruptor') {
@@ -732,7 +756,6 @@ function questions(state: Game, resume: CastResume): Ask {
         ? heroChoices(state, actor, kind, () => true)
         : enemyHeroes(state, actor, kind))
     case 'omniknight':
-    case 'tusk':
     case 'dazzle':
     case 'dawnbreaker':
     case 'shield':
@@ -949,8 +972,10 @@ function questions(state: Game, resume: CastResume): Ask {
       if (board.length === 0) return ready()
       return pose(target, 'Destroy one hero you control.', board)
     }
-    case 'morphling':
     case 'razor':
+      if (at > 0) return ready()
+      return pose(actor, 'Exile a hero.', heroChoices(state, actor, kind, (loc) => loc.hero.uid !== resume.sourceUid))
+    case 'morphling':
       if (at > 0) return ready()
       return pose(actor, 'Choose an enemy hero.', enemyHeroes(state, actor, kind))
     default:
@@ -1002,8 +1027,16 @@ function effect(state: Game, resume: CastResume): Game {
       return log(state, 'Doom is an aura.')
     case 'scythe':
       return exileBoard(state, heroes[0])
-    case 'earth_spirit':
-      return toDeck(state, heroes[0], 'bottom')
+    case 'earth_spirit': {
+      const uid = heroes[0]
+      const dest = teams[0]
+      const victim = resume.picked.find((id) => id.startsWith('kill:'))?.slice(5)
+      const loc = uid ? findHero(state, uid) : null
+      if (!loc || !dest) return state
+      let next = moveOnto(state, loc.hero.uid, loc.hero.controller, dest)
+      if (victim && findHero(next, victim)) next = kill(next, victim, 'Boulder Smash')
+      return log(next, 'Boulder Smash.')
+    }
     case 'disruptor':
       return toDeck(state, heroes[0], resume.picked.includes('deck:bottom') ? 'bottom' : 'top')
     case 'earthshaker':
@@ -1074,13 +1107,8 @@ function effect(state: Game, resume: CastResume): Game {
       const rivers = terrainCount(state, actor, 'river')
       return queueDraw(log(state, `Corrosive Haze draws ${rivers}.`), actor, rivers)
     }
-    case 'spirit_breaker': {
-      const last = state.lastPlayedHero
-      if (!last || last.player === actor) return log(state, 'Charge of Darkness finds no recent enemy play.')
-      if (findHero(state, last.uid)) return kill(state, last.uid, 'Charge of Darkness')
-      // Already left the board — nothing to destroy.
-      return log(state, 'Charge of Darkness is too late.')
-    }
+    case 'spirit_breaker':
+      return log(state, 'Charge of Darkness waits for an enemy ability.')
     case 'tidehunter': {
       let next = log(state, 'Ravage.')
       // One team per enemy — prefer picked teams, else each opponent's first team.
@@ -1109,8 +1137,17 @@ function effect(state: Game, resume: CastResume): Game {
       return blinkPlay(state, resume)
     case 'force_staff':
     case 'tp_scroll':
-    case 'marci':
+    case 'tusk':
       return relocate(state, resume)
+    case 'io': {
+      const uid = heroes[0]
+      if (!uid || !home) return state
+      let next = state
+      if (findHero(next, uid)?.team.id !== home.team.id) next = moveOnto(next, uid, actor, home.team.id)
+      if (findHero(next, uid)?.team.id !== home.team.id) return log(next, 'Tether cannot pull them in.')
+      next = editFlag(next, uid, (hero) => ({ ...hero, tether: next.turn }))
+      return log(next, 'Tether: they cannot be destroyed this turn.')
+    }
     case 'underlord': {
       if (!home || !teams[0]) return state
       let next = state
@@ -1152,10 +1189,6 @@ function effect(state: Game, resume: CastResume): Game {
     }
     case 'treant_protector':
       return log(state, 'Living Armor is an aura.')
-    case 'tusk':
-      state = editFlag(state, resume.sourceUid, (hero) => ({ ...hero, bkb: stamp }))
-      if (heroes[0]) state = editFlag(state, heroes[0], (hero) => ({ ...hero, bkb: stamp }))
-      return log(state, 'Snowball.')
     case 'undying':
       return log(state, 'Flesh Golem is an aura.')
     case 'heart': {
@@ -1243,8 +1276,12 @@ function effect(state: Game, resume: CastResume): Game {
     case 'monkey_king':
       return strike(state, heroes[0], actor)
     case 'morphling':
-    case 'razor':
       return imprison(state, resume, heroes[0])
+    case 'razor': {
+      if (!heroes[0]) return state
+      const next = exileBoard(state, heroes[0])
+      return log(setPlayer(next, actor, (player) => ({ ...player, actions: player.actions + 1 })), 'Static Link: +1 action.')
+    }
     case 'naga_siren':
       return log({ ...state, naga: stamp }, 'Song of the Siren. Heroes cannot be destroyed.')
     case 'shadow_fiend':
@@ -1413,7 +1450,7 @@ function effect(state: Game, resume: CastResume): Game {
     case 'dawnbreaker':
       if (!heroes[0]) return state
       return log(editFlag(state, heroes[0], (hero) => ({ ...hero, dawn: { caster: actor, turn: state.turn } })), 'Solar Guardian.')
-    case 'io':
+    case 'marci':
       return startIo(state, actor)
     case 'magnus':
       return polarity(state, enemy, heroes)
@@ -1761,20 +1798,14 @@ function relocate(state: Game, resume: CastResume): Game {
     if (!dest) return state
     return heroes.reduce((current, uid) => moveOnto(current, uid, resume.actor, dest), state)
   }
-  if (resume.defId === 'marci') {
-    const uid = heroes[0]
-    const home = here(state, resume)
-    if (!uid || !home) return state
-    const loc = findHero(state, uid)
-    if (!loc) return state
-    const dest = loc.team.id === home.team.id ? destinations[0] : `team:${home.team.id}`
-    if (!dest) return state
-    return moveOnto(state, uid, resume.actor, dest.startsWith('team:') ? dest.slice(5) : dest)
-  }
   const uid = heroes[0]
   const dest = destinations[0]
   if (!uid || !dest) return state
-  const owner = resume.defId === 'force_staff' ? findHero(state, uid)?.hero.owner ?? resume.actor : resume.actor
+  const loc = findHero(state, uid)
+  const owner =
+    resume.defId === 'force_staff' ? loc?.hero.owner ?? resume.actor
+      : resume.defId === 'tusk' ? loc?.hero.controller ?? resume.actor
+        : resume.actor
   return moveOnto(state, uid, owner, dest.startsWith('team:') ? dest.slice(5) : dest)
 }
 
@@ -1897,7 +1928,7 @@ function imprison(state: Game, resume: CastResume, uid: string | undefined): Gam
   const removed = removeHero(state, uid)
   if (!removed.hero) return state
   const card: CardInst = { uid: removed.hero.uid, defId: removed.hero.defId, kind: 'hero' }
-  const mode = resume.defId === 'razor' ? 'razor' : 'morph'
+  const mode = 'morph' as const
   const copied = HERO_BY_ID[card.defId]?.attr ?? null
   return log(
     editFlag(removed.state, resume.sourceUid, (hero) => ({
@@ -2343,6 +2374,7 @@ function hook(state: Game, resume: CastResume): Game {
     ward: null,
     hidden: null,
     bkb: null,
+    tether: null,
     muted: false,
     dawn: null,
     wk: card.defId === 'wraith_king',
@@ -2598,6 +2630,9 @@ export function offerInstantWindow(
     if (card.kind === 'terrain') return false
     // Illusion counters plays, not abilities.
     if (card.defId === 'illusion') return false
+    if (card.defId === 'spirit_breaker') {
+      return resume.picked.some((id) => id.startsWith('hero:') || id.startsWith('team:'))
+    }
     return true
   })
   if (instantsLocked(state, seat)) {
