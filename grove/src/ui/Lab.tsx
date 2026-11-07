@@ -1,8 +1,9 @@
 import { useMemo, useState } from 'react'
 import { buildLab, LAB_BROKEN, LAB_FLAGGED, labCards, labSetup, runLab, type LabResult } from '../game/lab.ts'
-import { display } from '../game/catalog.ts'
+import { display, NEUTRAL_RULE_STEPS, TRAP_RULE_STEPS } from '../game/catalog.ts'
 import type { Game } from '../game/types.ts'
 import { CardArt } from './CardArt.tsx'
+import { HoverRulesHint } from './HoverRules.tsx'
 
 type Sweep = { ran: number; broken: LabResult[]; flagged: LabResult[] }
 
@@ -135,6 +136,12 @@ export function Lab({ onClose, onPlay }: { onClose: () => void; onPlay: (game: G
                 <CardArt defId={card.defId} size="icon" className="glossary-art" />
                 <div className="glossary-body">
                   <strong>{card.name}</strong>
+                  {card.kind === 'neutral' ? (
+                    <HoverRulesHint label="Neutral rules" steps={NEUTRAL_RULE_STEPS} testId="neutral-hint" />
+                  ) : null}
+                  {card.timing === 'trap' ? (
+                    <HoverRulesHint label="Trap rules" steps={TRAP_RULE_STEPS} testId="trap-hint" />
+                  ) : null}
                   <p>{card.text}</p>
                 </div>
               </header>

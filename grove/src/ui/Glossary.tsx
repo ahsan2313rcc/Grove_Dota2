@@ -1,7 +1,8 @@
 import { useMemo, useState } from 'react'
-import { ANCIENT, HEROES, ITEMS, REWARDS, TERRAINS } from '../game/catalog.ts'
+import { ANCIENT, HEROES, ITEMS, NEUTRAL_RULE_STEPS, REWARDS, TERRAINS } from '../game/catalog.ts'
 import type { Attr } from '../game/types.ts'
 import { CardArt } from './CardArt.tsx'
+import { HoverRulesHint } from './HoverRules.tsx'
 
 type Tab = 'heroes' | 'items' | 'terrains' | 'runes' | 'neutrals' | 'towers' | 'ancient'
 
@@ -182,6 +183,12 @@ export function Glossary({ onClose }: { onClose: () => void }) {
           </ul>
         ) : null}
 
+        {tab === 'neutrals' ? (
+          <div className="glossary-tools">
+            <HoverRulesHint label="Neutral rules" steps={NEUTRAL_RULE_STEPS} testId="neutral-hint" />
+          </div>
+        ) : null}
+
         {tab === 'runes' || tab === 'neutrals' || tab === 'towers' ? (
           <ul className="glossary-list">
             {rewards.map((reward) => (
@@ -195,9 +202,14 @@ export function Glossary({ onClose }: { onClose: () => void }) {
                       {reward.range ? <span className="pill range">{reward.range}</span> : null}
                       <span className="pill muted">{reward.copies}× in pile</span>
                       {reward.instant ? <span className="type-pill inline timing-instant">Instant</span> : null}
-                      {reward.token ? <span className="pill muted">Neutral body</span> : null}
+                      {reward.timing && !reward.instant ? (
+                        <span className={`type-pill inline timing-${reward.timing}`}>
+                          {TIMING_LABEL[reward.timing]}
+                        </span>
+                      ) : null}
                     </span>
                   </header>
+                  {reward.spell ? <p className="spell">{reward.spell}</p> : null}
                   <p>{reward.text}</p>
                 </div>
               </li>

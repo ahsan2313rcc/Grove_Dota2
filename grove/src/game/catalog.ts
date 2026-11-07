@@ -90,6 +90,14 @@ export const RECAST_IDS = new Set([
   'arcane',
 ])
 
+/** Shared neutral body rules — shown via the Neutral rules hover hint. */
+export const NEUTRAL_RULE_STEPS = [
+  'Neutral bodies score 0 flat points, but still count for attribute and attack bonuses.',
+  'One neutral per team.',
+  'Each neutral has an attribute and Melee or Ranged as printed on the card.',
+  'Taken from the Jungle pile (three Jungles). Used neutrals exile after leaving play.',
+] as const
+
 export const HEROES: HeroDef[] = [
   // —— Strength ——
   hero('alchemist', 'Alchemist', 'STR', 'Melee', "Greevil's Greed", 'Whenever you play an item card, draw a card.', 'aura'),
@@ -410,7 +418,7 @@ export const REWARDS: RewardDef[] = [
     range: 'Melee',
     timing: 'aura',
     spell: 'Granite Form',
-    text: 'A Melee Strength body with no flat points. One neutral to a team. Stone Golem is immune to all ability effects. Aura.',
+    text: 'Immune to all ability effects.',
   },
   {
     id: 'thunderhide',
@@ -423,7 +431,7 @@ export const REWARDS: RewardDef[] = [
     range: 'Ranged',
     timing: 'instant',
     spell: 'Static Charge',
-    text: 'A Ranged Agility body with no flat points. One neutral to a team. Draw 1. Instant.',
+    text: 'Draw 1.',
   },
   {
     id: 'ice_shaman',
@@ -436,7 +444,7 @@ export const REWARDS: RewardDef[] = [
     range: 'Ranged',
     timing: 'instant',
     spell: 'Frost Bind',
-    text: 'A Ranged Intelligence body with no flat points. One neutral to a team. Return target hero to its owner\'s hand (without activating its ability). Instant.',
+    text: 'Return target hero to its owner\'s hand (without activating its ability).',
   },
   {
     id: 'black_dragon',
@@ -449,7 +457,7 @@ export const REWARDS: RewardDef[] = [
     range: 'Ranged',
     timing: 'instant',
     spell: 'Fireball',
-    text: 'A Ranged Universal body with no flat points. One neutral to a team. Target opponent discards 1 card from hand. Instant.',
+    text: 'Target opponent discards 1 card from hand.',
   },
   {
     id: 'tormentor',
@@ -462,7 +470,7 @@ export const REWARDS: RewardDef[] = [
     range: 'Melee',
     timing: 'aura',
     spell: 'Retaliate',
-    text: 'A Melee Universal body. Whenever Tormentor is destroyed, destroy the source hero. Aura.',
+    text: 'Whenever Tormentor is destroyed, destroy the source hero.',
   },
   {
     id: 'roshan',
@@ -475,7 +483,7 @@ export const REWARDS: RewardDef[] = [
     range: 'Melee',
     timing: 'cast',
     spell: 'Bash',
-    text: 'A Melee Universal body. Whenever another hero in this team is destroyed, destroy Roshan instead. On play: until your next turn, opponents cannot activate ability effects. Aura.',
+    text: 'Whenever another hero in this team is destroyed, destroy Roshan instead. On play: until your next turn, opponents cannot activate ability effects.',
   },
   { id: 'lotus', name: 'Lotus of Purification', kind: 'tower', copies: 2, instant: false, token: false, text: 'Draw cards from the deck until your hand has 7 cards.' },
   { id: 'glyph', name: 'Glyph of Fortification', kind: 'tower', copies: 2, instant: true, token: false, text: 'Until your next turn, all heroes in target allied team become immune to all effects. Instant.' },

@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react'
-import { createPortal } from 'react-dom'
-import { display, RECAST_IDS, RECAST_RULE, TRAP_RULE_STEPS } from '../game/catalog.ts'
+import { useEffect, useState, type ReactNode } from 'react'
+import { display, NEUTRAL_RULE_STEPS, RECAST_IDS, RECAST_RULE, TRAP_RULE_STEPS } from '../game/catalog.ts'
+import { HoverRulesHint } from './HoverRules.tsx'
 import { comboPlans, morphCasts, needsTeam, playableFromGrave, teamsFor, undyingRevive } from '../game/engine.ts'
 import { allLocs, findHero, isTrapHero, scoreState, scoreTeam } from '../game/flow.ts'
 import { teamShapes } from '../game/scoring.ts'
@@ -1040,7 +1040,12 @@ function Detail({
           {' — pick a team above.'}
         </p>
         {info?.spell ? <p className="spell">{info.spell}</p> : null}
-        {trap ? <TrapRulesHint /> : null}
+        {trap ? (
+          <HoverRulesHint label="Trap rules" steps={TRAP_RULE_STEPS} testId="trap-hint" />
+        ) : null}
+        {info?.kind === 'neutral' ? (
+          <HoverRulesHint label="Neutral rules" steps={NEUTRAL_RULE_STEPS} testId="neutral-hint" />
+        ) : null}
         {info?.text ? <p>{info.text}</p> : null}
       </div>
     )
@@ -1052,6 +1057,9 @@ function Detail({
       <div className="detail" data-testid="card-detail">
         <DetailHead name={info.name} timing={detailTiming(info.timing, info.kind)} free={!!info.instant} />
         {info.spell ? <p className="spell">{info.spell}</p> : null}
+        {info.kind === 'neutral' ? (
+          <HoverRulesHint label="Neutral rules" steps={NEUTRAL_RULE_STEPS} testId="neutral-hint" />
+        ) : null}
         <p>{info.text}</p>
         {RECAST_IDS.has(focus.defId) ? (
           <p className="trap-blurb">
@@ -1074,6 +1082,9 @@ function Detail({
         <DetailHead name={info.name} timing={detailTiming(info.timing, info.kind)} free={!!info.instant} />
         <p className="spell">{loc.player.name} · {scored.why} · {scored.points}</p>
         {info.spell ? <p className="spell">{info.spell}</p> : null}
+        {info.kind === 'neutral' ? (
+          <HoverRulesHint label="Neutral rules" steps={NEUTRAL_RULE_STEPS} testId="neutral-hint" />
+        ) : null}
         <p>{info.text}</p>
         {RECAST_IDS.has(loc.hero.defId) ? (
           <p className="trap-blurb">
@@ -1103,7 +1114,12 @@ function Detail({
     <div className="detail" data-testid="card-detail">
       <DetailHead name={info.name} timing={timing} free={free} />
       {info.spell ? <p className="spell">{info.spell}</p> : null}
-      {timing === 'trap' ? <TrapRulesHint /> : null}
+      {timing === 'trap' ? (
+        <HoverRulesHint label="Trap rules" steps={TRAP_RULE_STEPS} testId="trap-hint" />
+      ) : null}
+      {info.kind === 'neutral' ? (
+        <HoverRulesHint label="Neutral rules" steps={NEUTRAL_RULE_STEPS} testId="neutral-hint" />
+      ) : null}
       <p>{info.text}</p>
       {RECAST_IDS.has(card.defId) ? (
         <p className="trap-blurb">
@@ -1163,81 +1179,6 @@ function DetailHead({
           {free ? <small className="detail-free" data-testid="detail-free">Free</small> : null}
         </span>
       ) : null}
-    </div>
-  )
-}
-
-function TrapRulesHint() {
-  const buttonRef = useRef<HTMLButtonElement>(null)
-  const closeTimer = useRef<number | null>(null)
-  const [open, setOpen] = useState(false)
-  const [pos, setPos] = useState({ top: 0, left: 0 })
-
-  function show() {
-    if (closeTimer.current !== null) {
-      window.clearTimeout(closeTimer.current)
-      closeTimer.current = null
-    }
-    setOpen(true)
-  }
-
-  function hide() {
-    if (closeTimer.current !== null) window.clearTimeout(closeTimer.current)
-    closeTimer.current = window.setTimeout(() => {
-      setOpen(false)
-      closeTimer.current = null
-    }, 140)
-  }
-
-  useEffect(() => {
-    if (!open || !buttonRef.current) return
-    const place = () => {
-      const rect = buttonRef.current!.getBoundingClientRect()
-      const width = 280
-      const left = Math.min(rect.left, window.innerWidth - width - 8)
-      setPos({ top: rect.bottom + 4, left: Math.max(8, left) })
-    }
-    place()
-    window.addEventListener('scroll', place, true)
-    window.addEventListener('resize', place)
-    return () => {
-      window.removeEventListener('scroll', place, true)
-      window.removeEventListener('resize', place)
-    }
-  }, [open])
-
-  useEffect(() => () => {
-    if (closeTimer.current !== null) window.clearTimeout(closeTimer.current)
-  }, [])
-
-  return (
-    <div className="trap-blurb" data-testid="trap-hint">
-      <button
-        ref={buttonRef}
-        type="button"
-        className="trap-hint"
-        onMouseEnter={show}
-        onMouseLeave={hide}
-        onFocus={show}
-        onBlur={hide}
-      >
-        Trap rules
-      </button>
-      {open
-        ? createPortal(
-            <ol
-              className="trap-rules-list trap-rules-float"
-              style={{ top: pos.top, left: pos.left }}
-              onMouseEnter={show}
-              onMouseLeave={hide}
-            >
-              {TRAP_RULE_STEPS.map((step) => (
-                <li key={step}>{step}</li>
-              ))}
-            </ol>,
-            document.body,
-          )
-        : null}
     </div>
   )
 }

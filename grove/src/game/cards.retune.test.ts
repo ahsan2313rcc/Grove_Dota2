@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { HERO_BY_ID, ITEM_BY_ID, RECAST_IDS, RECAST_RULE, REWARD_BY_ID, TRAP_IDS } from './catalog.ts'
+import { HERO_BY_ID, ITEM_BY_ID, NEUTRAL_RULE_STEPS, RECAST_IDS, RECAST_RULE, REWARD_BY_ID, TRAP_IDS } from './catalog.ts'
 import { preferredFoe, scoreState } from './flow.ts'
 import { createGame } from './engine.ts'
 
@@ -79,6 +79,16 @@ describe('card retunes', () => {
     expect(REWARD_BY_ID.thunderhide?.range).toBe('Ranged')
     expect(REWARD_BY_ID.ice_shaman?.range).toBe('Ranged')
     expect(REWARD_BY_ID.black_dragon?.range).toBe('Ranged')
+    for (const id of ['stone_golem', 'thunderhide', 'ice_shaman', 'black_dragon', 'tormentor', 'roshan']) {
+      const text = REWARD_BY_ID[id]?.text ?? ''
+      expect(text).not.toMatch(/no flat points/i)
+      expect(text).not.toMatch(/One neutral/i)
+      expect(text).not.toMatch(/\bInstant\.\s*$/i)
+      expect(text).not.toMatch(/\bAura\.\s*$/i)
+    }
+    expect(NEUTRAL_RULE_STEPS.length).toBeGreaterThanOrEqual(3)
+    expect(NEUTRAL_RULE_STEPS.join(' ')).toMatch(/One neutral per team/i)
+    expect(NEUTRAL_RULE_STEPS.join(' ')).toMatch(/0 flat points/i)
   })
 
   it('retunes key board / hand / item lines from the sheet', () => {
