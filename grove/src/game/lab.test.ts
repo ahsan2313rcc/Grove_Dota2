@@ -10,7 +10,13 @@ describe('ability lab', () => {
 
   it('plants trap cards on your first team and hands you an entrant', () => {
     const { game, team } = buildLab('techies')
-    expect(game.players[0].teams.find((entry) => entry.id === team)?.trap?.defId).toBe('techies')
+    const trapped = game.players[0].teams.find((entry) => entry.id === team)
+    expect(trapped?.trap?.defId).toBe('techies')
+    expect(trapped?.heroes).toHaveLength(2)
+  })
+
+  it('reports heroes moving between your own teams', () => {
+    expect(runLab('tp_scroll').changes.some((line) => line.startsWith('You teams:'))).toBe(true)
   })
 
   for (const card of labCards()) {

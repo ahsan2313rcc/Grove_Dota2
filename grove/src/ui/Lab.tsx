@@ -102,7 +102,7 @@ export function Lab({ onClose, onPlay }: { onClose: () => void; onPlay: (game: G
                     {' · hand '}{seat.hand.map((entry) => display(entry.defId).name).join(', ') || 'empty'}
                   </li>
                 ))}
-                {setup?.entrant ? <li>Entrant: {display(setup.entrant).name}</li> : null}
+                {card.timing === 'trap' ? <li>Trap face down on your first team; you then play {display(setup?.entrant ?? 'axe').name} into it.</li> : null}
               </ul>
 
               <h3>What changed</h3>

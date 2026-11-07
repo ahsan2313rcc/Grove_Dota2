@@ -1343,7 +1343,7 @@ button.debug-mode-cycle:hover {
   .card { transition: none; }
 }
 
-.lab { width: min(1040px, 100%); }
+.lab { width: min(1040px, 100%); background: rgba(8, 16, 13, 0.96); }
 .lab-seed { flex: 0 0 90px; }
 .lab-sweep { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 8px 0; }
 .lab-chip { padding: 0.2rem 0.6rem; font-size: 0.78rem; }

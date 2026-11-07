@@ -125,7 +125,9 @@ export function buildLab(defId: string, seed = 7): { game: Game; uid: string; te
     deck: [...game.deck, ...game.players.flatMap((seat) => seat.hand)],
     players: game.players.map((seat) => ({ ...seat, hand: [], actions: 2 })) as Game['players'],
   }
-  const used = new Set<string>([defId, ...(setup.entrant ? [setup.entrant] : [])])
+  const trapCard = isTrap(defId)
+  const entrant = trapCard ? setup.entrant ?? 'axe' : null
+  const used = new Set<string>([defId, ...(entrant ? [entrant] : [])])
   const take = (want: string): [Game, CardInst] | null => {
     const card = game.deck.find((entry) => entry.defId === want)
     if (!card) return null
@@ -133,8 +135,15 @@ export function buildLab(defId: string, seed = 7): { game: Game; uid: string; te
     return [{ ...game, deck: game.deck.filter((entry) => entry.uid !== card.uid) }, card]
   }
   const stand = (want: string): string => {
-    if (want !== defId && want !== setup.entrant) return want
-    return FILLERS.find((id) => !used.has(id) && !Object.values(setup.seats).some((seat) => seat.teams?.flat().includes(id))) ?? want
+    if (want !== defId && want !== entrant) return want
+    return (
+      FILLERS.find(
+        (id) =>
+          !used.has(id) &&
+          game.deck.some((card) => card.defId === id) &&
+          !setup.seats.some((seat) => seat.teams?.flat().includes(id) || seat.hand?.includes(id)),
+      ) ?? want
+    )
   }
   const toHand = (seat: PlayerId, want: string) => {
     const got = take(want)
@@ -142,8 +151,7 @@ export function buildLab(defId: string, seed = 7): { game: Game; uid: string; te
     game = { ...got[0], players: got[0].players.map((entry) => (entry.id === seat ? { ...entry, hand: [...entry.hand, got[1]] } : entry)) as Game['players'] }
   }
 
-  const trapCard = isTrap(defId)
-  toHand(0, trapCard ? setup.entrant ?? 'axe' : defId)
+  toHand(0, entrant ?? defId)
   const teamIds: string[][] = [[], []]
   for (const seat of [0, 1] as PlayerId[]) {
     const spec = setup.seats[seat]
@@ -211,7 +219,7 @@ export function buildLab(defId: string, seed = 7): { game: Game; uid: string; te
   const ancient = game.deck.filter((card) => card.kind === 'ancient')
   game = { ...game, deck: [...top, ...game.deck.filter((card) => card.kind !== 'ancient'), ...ancient], log: [`Ability Lab: ${display(defId).name}.`] }
 
-  const lead = trapCard ? setup.entrant ?? 'axe' : defId
+  const lead = entrant ?? defId
   const uid = game.players[0].hand.find((card) => card.defId === lead)?.uid ?? ''
   const target = trapCard ? { seat: 0 as PlayerId, team: 0 } : setup.target ?? (needsTeam(defId, display(defId).kind) ? 'new' : 'none')
   const team = target === 'new' ? 'new' : target === 'none' ? '' : teamIds[target.seat]?.[target.team] ?? 'new'
@@ -303,6 +311,9 @@ function summarize(before: Game, after: Game): string[] {
       seat.orchid && !was.orchid ? 'abilities locked' : '',
     ].filter(Boolean)
     if (parts.length > 0) lines.push(`${seat.name}: ${parts.join(', ')}`)
+    const layout = (teams: Game['players'][number]['teams']) =>
+      teams.map((team) => `[${team.heroes.map((hero) => display(hero.defId).name).join(', ')}${team.trap ? ' + trap' : ''}]`).join(' ')
+    if (layout(was.teams) !== layout(seat.teams)) lines.push(`${seat.name} teams: ${layout(was.teams)} → ${layout(seat.teams)}`)
   }
   if (after.grave.length !== before.grave.length) lines.push(`Grave ${before.grave.length} → ${after.grave.length}`)
   if (after.exile.length !== before.exile.length) lines.push(`Exile ${before.exile.length} → ${after.exile.length}`)
