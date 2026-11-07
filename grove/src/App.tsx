@@ -27,7 +27,7 @@ import {
   saveNnMemory,
   type NnMemoryInfo,
 } from './game/nnMemory.ts'
-import { learnFromImmediateOutcome, runMatchWithOptionalTrain } from './game/nnTrainOnline.ts'
+import { NnGameRecorder, runMatchWithOptionalTrain } from './game/nnTrainOnline.ts'
 import { chooseAiActionNeural, chooseAiPendingNeural } from './game/nnValue.ts'
 import {
   ALL_STRAT_FILTER,
@@ -86,9 +86,11 @@ type LiveRun = {
   stuck: boolean
   /** Consecutive no-op advances — escalate escapes so Watch never freezes forever. */
   stall: number
+  /** Neural training recorder for this Watch game (only while Train is on). */
+  recorder?: NnGameRecorder
 }
 
-/** Module flag: Watch ticks play Neural with explore and learn from score outcomes. */
+/** Module flag: Watch games feed every seat's decisions to the Neural net; Neural seats explore. */
 let liveTrainNeural = false
 const LIVE_TRAIN_EXPLORE = 0.12
 
@@ -146,6 +148,13 @@ function softFinishLive(game: Game, reason: string): Game {
   }
 }
 
+function learnLive(run: LiveRun, next: Game, actor: number) {
+  if (!liveTrainNeural) return
+  run.recorder ??= new NnGameRecorder()
+  run.recorder.observe(next, actor)
+  if (next.over) run.recorder.finish(next)
+}
+
 function advanceTracked(run: LiveRun): LiveRun {
   const game = run.game
   if (game.over) return run
@@ -157,8 +166,7 @@ function advanceTracked(run: LiveRun): LiveRun {
     }
     if (game.pending) {
       if (game.players[game.pending.actor]?.ai || game.autoAll) {
-        const seatStrat = game.players[game.pending.actor]?.strat ?? DEFAULT_STRAT
-        const mode = liveTrainNeural || seatStrat === 'neural' ? 'neural' : modeForSeat(game, game.pending.actor)
+        const mode = modeForSeat(game, game.pending.actor)
         const ids = mode === 'neural'
           ? chooseAiPendingNeural(game, liveTrainNeural ? { explore: LIVE_TRAIN_EXPLORE } : {})
           : mode === 'challenge'
@@ -166,6 +174,7 @@ function advanceTracked(run: LiveRun): LiveRun {
             : chooseAiPending(game)
         let next = apply(game, { type: 'choose', ids })
         run.tracker.observe(game, { type: 'choose', ids }, next)
+        learnLive(run, next, game.pending.actor)
         if (next.pending && pendingMark(next.pending) === pendingMark(game.pending)) {
           const stall = run.stall + 1
           if (stall >= 2) {
@@ -203,13 +212,13 @@ function advanceTracked(run: LiveRun): LiveRun {
     }
 
     const seatStrat = game.players[game.active]?.strat ?? DEFAULT_STRAT
-    const mode = liveTrainNeural || seatStrat === 'neural' ? 'neural' : modeForSeat(game, game.active)
+    const mode = modeForSeat(game, game.active)
     const action = mode === 'neural'
       ? chooseAiActionNeural(game, game.active, seatStrat, liveTrainNeural ? { explore: LIVE_TRAIN_EXPLORE } : {})
       : chooseAiAction(game, mode)
     const next = apply(game, action)
-    if (liveTrainNeural && mode === 'neural') learnFromImmediateOutcome(game, next, game.active, action)
     run.tracker.observe(game, action, next)
+    learnLive(run, next, game.active)
     const same = next === game
       || (next.active === game.active
         && next.turn === game.turn
@@ -497,7 +506,7 @@ export default function App() {
       try {
         if (trainNeuralRef.current) {
           const roster = aiRoster(seats, strats, fromSeed + index)
-          const { report } = runMatchWithOptionalTrain(fromSeed + index, roster, true)
+          const { report } = runMatchWithOptionalTrain(fromSeed + index, roster, { train: true, fast: true })
           chunk.push(report)
           setNnInfo(nnMemoryInfo())
         } else {

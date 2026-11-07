@@ -88,7 +88,7 @@ describe('card retunes', () => {
     expect(HERO_BY_ID.storm_spirit?.text).toMatch(/up to 2/i)
     expect(HERO_BY_ID.visage?.timing).toBe('cast')
     expect(HERO_BY_ID.visage?.text).toMatch(/discard up to 2/i)
-    expect(HERO_BY_ID.weaver?.text).toMatch(/Shuffle the grave into the deck/i)
+    expect(HERO_BY_ID.weaver?.text).toMatch(/Shuffle the grave and put it under the deck/i)
     expect(HERO_BY_ID.anti_mage?.text).toMatch(/target enemy team/i)
     expect(HERO_BY_ID.timbersaw?.text).toMatch(/target enemy team/i)
     expect(HERO_BY_ID.earthshaker?.text).toMatch(/4 or more/i)

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { AI_STRATS, stratLabel } from '../game/ai.ts'
 import {
   buildTurnGraph,
+  IMPACT_HORIZONS,
   summarizeShapesAtTurn,
   type BalanceSummary,
   type CardBalanceRow,
@@ -233,9 +234,9 @@ export function DebugRail({
             Train enabled
           </label>
           <p className="quiet">
-            Outcome RL: Neural explores and learns from score differentials (single play, +3 turns, +5 turns, full game) — targets, silence vs activate, instants, traps. Autosaves every 10 games. Save → localStorage. Export for git → `nn-value.json` under `grove/src/game/data/`. Clear wipes browser memory.
+            Every AI-vs-AI game run here (Stats or Watch) trains the Neural value net from all seats' decisions; seats keep their own strat and only Neural seats explore. Each position is scored by the rel change it led to now and +1/+3/+5/+10 turns later, plus the final placement. Autosaves every 10 games. Save → localStorage. Export for git → `nn-value.json` under `grove/src/game/data/`. Clear returns to the shipped checkpoint.
             {nnInfo
-              ? ` Memory: ${nnInfo.trainedGames} games · ${nnInfo.trainedSamples} samples${nnInfo.persisted ? ' · saved locally' : ' · unsaved'}.`
+              ? ` Memory: ${nnInfo.trainedGames} games · ${nnInfo.trainedSamples.toLocaleString()} samples · fit error ±${(Math.sqrt(nnInfo.recentLoss) * 20).toFixed(1)} rel pts${nnInfo.persisted ? ' · saved locally' : ' · unsaved'}.`
               : ''}
           </p>
           <div className="debug-speeds" role="group" aria-label="Neural memory actions">
@@ -290,7 +291,7 @@ export function DebugRail({
           {summary.finished}/{summary.matches} games done · avg length T{fmt(summary.avgTurns)} · final spread {fmt(summary.avgFinalSpread)} pts · winner avg {fmt(summary.avgWinnerScore)} pts
         </p>
         <p className="quiet debug-legend">
-          Rel = mean score Δ vs opponents · Self = own score Δ · Impact = EV of deploy + disruption + economy (not Rel). Hover for effect mix. Win% = play-weighted seat wins.
+          Rel = score Δ vs the mean opponent while the play resolves · Self = own score Δ · Impact = how much more Rel the seat gained over the next +1/+3/+5/+10 turns than an average play at the same stage (so auras, traps, engines and discard count when they pay off) · Rel +5 = raw Rel change five turns on. Hover Impact for every horizon. Win% = play-weighted seat wins.
         </p>
       </div>
 
@@ -690,12 +691,12 @@ function ImpactTable({ rows }: { rows: CardBalanceRow[] }) {
         </button>
       </h3>
       <p className="quiet debug-legend">
-        Ranked by Impact × √n. EV of deploy/removal/tempo — not a Rel breakdown.
+        Ranked by |Impact| × √n, so the biggest measured swings in either direction surface.
       </p>
       <CardSortTable
         rows={showAll ? rows : rows.slice(0, 16)}
         empty="No impact samples yet."
-        defaultSort={{ key: 'pressure', dir: 'desc' }}
+        defaultSort={{ key: 'impact', dir: 'desc' }}
       />
     </div>
   )
@@ -852,14 +853,21 @@ function CardSortTable({
         { key: 'rel', label: 'Rel', get: (row) => signed(row.avgRelativeSwing), sortValue: (row) => row.avgRelativeSwing, className: 'debug-num' },
         { key: 'self', label: 'Self', get: (row) => signed(row.avgActorSwing), sortValue: (row) => row.avgActorSwing, className: 'debug-num' },
         {
-          key: 'pressure',
+          key: 'impact',
           label: 'Impact',
           get: (row) => (
             <span title={impactTooltip(row)} className="debug-impact">
-              {fmt(row.avgPressure)}
+              {signed(row.avgImpact)}
             </span>
           ),
-          sortValue: (row) => row.avgPressure,
+          sortValue: (row) => row.avgImpact,
+          className: 'debug-num',
+        },
+        {
+          key: 'h5',
+          label: 'Rel +5',
+          get: (row) => signed(row.avgHorizon[2] ?? 0),
+          sortValue: (row) => row.avgHorizon[2] ?? 0,
           className: 'debug-num',
         },
         ...winCols,
@@ -896,8 +904,9 @@ function soft(value: number): string {
   return value >= 10 ? String(Math.round(value)) : fmt(value)
 }
 
-/** Hover detail: effect mix that feeds Impact (separate from Rel/Self). */
+/** Hover detail: measured horizons behind Impact, plus the mechanical EV bag for reference. */
 function impactTooltip(row: CardBalanceRow): string {
+  const horizons = IMPACT_HORIZONS.map((offset, index) => `+${offset}: ${signed(row.avgHorizon[index] ?? 0)}`).join(' · ')
   const parts = [
     row.avgDestroy ? `destroy ${soft(row.avgDestroy)}` : null,
     row.avgExile ? `exile ${soft(row.avgExile)}` : null,
@@ -906,7 +915,7 @@ function impactTooltip(row: CardBalanceRow): string {
     row.avgBounce ? `bounce ${soft(row.avgBounce)}` : null,
   ].filter(Boolean)
   const mix = parts.length > 0 ? parts.join(' · ') : 'deploy / tempo / economy'
-  return `Impact ${fmt(row.avgPressure)} — EV bag (${mix}). Not Rel.`
+  return `Impact ${signed(row.avgImpact)} vs an average play at the same stage. Rel change after ${horizons} turns. Mechanical EV ${fmt(row.avgPressure)} (${mix}).`
 }
 
 function attrLabel(attr: string): string {

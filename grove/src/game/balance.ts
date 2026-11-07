@@ -95,8 +95,18 @@ export interface SwingEvent {
   exile: number
   control: number
   bounce: number
+  /** Mechanical EV bag of the play (fixed per-effect values). */
   pressure: number
+  /** Actor rel (own score − mean opponent) when the play started. */
+  startRel?: number
+  /** Rel change from the play's start to the start of turn +1, +3, +5, +10 (final scores past the end). */
+  horizon?: number[]
 }
+
+/** Game-turn offsets measured for every play. */
+export const IMPACT_HORIZONS = [1, 3, 5, 10] as const
+/** Blend of horizon advantages that makes up Impact. */
+export const IMPACT_WEIGHTS = [0.25, 0.3, 0.25, 0.2] as const
 
 export interface RoundEvent {
   seed: number
@@ -240,8 +250,15 @@ export interface CardBalanceRow {
   silencedWins: number
   /** Win rate among silenced plays. */
   silencedWinRate: number
-  /** Mean weighted disruption (destroy/exile/discard/steal/bounce). */
+  /** Mean mechanical EV bag (fixed per-effect values) — shown as EV. */
   avgPressure: number
+  /**
+   * Measured Impact: rel change over +1/+3/+5/+10 turns after the play, minus what an
+   * average play at the same stage of the game gained, blended by IMPACT_WEIGHTS.
+   */
+  avgImpact: number
+  /** Mean rel change at each horizon (not baseline-adjusted). */
+  avgHorizon: number[]
   avgDestroy: number
   avgDiscard: number
   avgExile: number
@@ -457,6 +474,8 @@ export class BalanceTracker {
   private abilitySplit: AbilitySplit | null = null
   private playSeq = 0
   private shapeHistory: ShapeSnapshot[] = []
+  /** Scores at the start of each game turn, for play horizons. */
+  private turnTotals = new Map<number, number[]>()
 
   constructor(seed: number, opts: { lite?: boolean } = {}) {
     this.seed = seed
@@ -469,6 +488,7 @@ export class BalanceTracker {
     this.turnNo = game.turn
     this.turnCards = 0
     this.turnStartScores = totals(game)
+    this.turnTotals = new Map([[game.turn, this.turnStartScores.slice()]])
     this.seatEvents = game.players.map(() => EMPTY_EVENTS())
     this.seatPlaySets = game.players.map(() => new Set())
     this.shapeHistory = []
@@ -489,6 +509,7 @@ export class BalanceTracker {
       this.turnNo = after.turn
       this.turnCards = 0
       this.turnStartScores = totals(after)
+      if (!this.turnTotals.has(after.turn)) this.turnTotals.set(after.turn, this.turnStartScores.slice())
     }
 
     // Keep event tallies (cheap); shapeHistory is the heavy optional graph feed.
@@ -708,7 +729,13 @@ export class BalanceTracker {
       finalScores: scores,
       winner: winners.length === 1 ? winners[0]! : null,
       winnerStrat: winners.length === 1 ? (seatStrats[winners[0]!] ?? null) : null,
-      swings: this.swings.slice(),
+      swings: this.swings.map((swing) => ({
+        ...swing,
+        horizon: IMPACT_HORIZONS.map((offset) => {
+          const at = this.turnTotals.get(swing.turn + offset) ?? scores
+          return relOf(at, swing.actor) - (swing.startRel ?? 0)
+        }),
+      })),
       seatPlays: game.players.map((_, index) => [...(this.seatPlaySets[index] ?? [])]),
       rounds,
       shapeHistory: this.shapeHistory.slice(),
@@ -830,8 +857,8 @@ export class BalanceTracker {
       exile: effects.exile,
       control: effects.control,
       bounce: effects.bounce,
-      // Impact = typed EV bag (deploy + disruption + economy) — not Rel.
       pressure: impactOf(relativeSwing, effects, DEFAULT_CALIBRATION),
+      startRel: relOf(beforeTotals, actor),
     })
   }
 }
@@ -885,6 +912,8 @@ export function summarizeReports(reports: MatchReport[], filter: StratFilter = A
     control: number
     bounce: number
     pressure: number
+    impact: number
+    horizon: number[]
   }
   const cardMap = new Map<string, CardAgg>()
   const presenceMap = new Map<string, { presence: number; wins: number }>()
@@ -897,6 +926,7 @@ export function summarizeReports(reports: MatchReport[], filter: StratFilter = A
   const eventTotals = EMPTY_EVENTS()
   const shapeTotals = EMPTY_SHAPES()
   const filteringPlays = filter.strats.length > 0
+  const impactFor = impactBaseline(scoped, filter)
 
   for (const report of scoped) {
     const seatAbilityTypes: Set<AbilityEffectType>[] = report.seatStrats.map(() => new Set())
@@ -957,6 +987,8 @@ export function summarizeReports(reports: MatchReport[], filter: StratFilter = A
         control: 0,
         bounce: 0,
         pressure: 0,
+        impact: 0,
+        horizon: IMPACT_HORIZONS.map(() => 0),
       }
       row.plays += 1
       row.actor += swing.actorSwing
@@ -969,6 +1001,10 @@ export function summarizeReports(reports: MatchReport[], filter: StratFilter = A
       row.control += swing.control
       row.bounce += swing.bounce
       row.pressure += swing.pressure
+      row.impact += impactFor(swing)
+      swing.horizon?.forEach((value, index) => {
+        row.horizon[index] = (row.horizon[index] ?? 0) + value
+      })
       cardMap.set(key, row)
 
       const kind = kindMap.get(swing.kind) ?? { plays: 0, actor: 0, relative: 0 }
@@ -1041,6 +1077,8 @@ export function summarizeReports(reports: MatchReport[], filter: StratFilter = A
       relative: row.relative,
       abs: row.abs,
       pressure: row.pressure,
+      impact: row.impact,
+      horizon: row.horizon,
       destroy: row.destroy,
       discard: row.discard,
       exile: row.exile,
@@ -1069,7 +1107,7 @@ export function summarizeReports(reports: MatchReport[], filter: StratFilter = A
   const allLootRows = cards.filter((row) => row.bucket === 'loot')
 
   // Combined body+ability swings per hero play (playId), for total / silenced / open modes.
-  const heroPlayModes = buildHeroPlayModes(scoped, filter, presenceMap)
+  const heroPlayModes = buildHeroPlayModes(scoped, filter, presenceMap, impactFor)
 
   const spreads = finished.map((report) => Math.max(...report.finalScores) - Math.min(...report.finalScores))
   const winnerScores = finished.map((report) => Math.max(...report.finalScores))
@@ -1111,7 +1149,7 @@ export function summarizeReports(reports: MatchReport[], filter: StratFilter = A
     lootHigh: rankHigh(lootRows),
     lootLow: rankLow(lootRows),
     contested: [...ranked]
-      .sort((a, b) => b.avgPressure * Math.sqrt(b.plays) - a.avgPressure * Math.sqrt(a.plays) || b.plays - a.plays)
+      .sort((a, b) => Math.abs(b.avgImpact) * Math.sqrt(b.plays) - Math.abs(a.avgImpact) * Math.sqrt(a.plays) || b.plays - a.plays)
       .slice(0, 48),
     avgPtsByTurn: turnSeries.pts,
     avgCardsByTurn: turnSeries.cards,
@@ -1707,6 +1745,7 @@ function buildHeroPlayModes(
   reports: MatchReport[],
   filter: StratFilter,
   presenceMap: Map<string, { presence: number; wins: number }>,
+  impactFor: (swing: SwingEvent) => number,
 ): { total: CardBalanceRow[]; silenced: CardBalanceRow[]; open: CardBalanceRow[] } {
   type PlayAgg = {
     defId: string
@@ -1726,6 +1765,8 @@ function buildHeroPlayModes(
     control: number
     bounce: number
     pressure: number
+    impact: number
+    horizon: number[]
   }
   const plays: PlayAgg[] = []
   for (const report of reports) {
@@ -1757,6 +1798,9 @@ function buildHeroPlayModes(
         control: group.reduce((sum, swing) => sum + swing.control, 0),
         bounce: group.reduce((sum, swing) => sum + swing.bounce, 0),
         pressure: group.reduce((sum, swing) => sum + swing.pressure, 0),
+        // Horizons run from the body placement, so the ability frame is not counted twice.
+        impact: impactFor(head),
+        horizon: head.horizon ?? IMPACT_HORIZONS.map(() => 0),
       })
     }
   }
@@ -1776,6 +1820,8 @@ function buildHeroPlayModes(
     control: number
     bounce: number
     pressure: number
+    impact: number
+    horizon: number[]
     playWins: number
     abilityPlays: number
     abilityWins: number
@@ -1801,6 +1847,8 @@ function buildHeroPlayModes(
         control: 0,
         bounce: 0,
         pressure: 0,
+        impact: 0,
+        horizon: IMPACT_HORIZONS.map(() => 0),
         playWins: 0,
         abilityPlays: 0,
         abilityWins: 0,
@@ -1817,6 +1865,10 @@ function buildHeroPlayModes(
       row.control += play.control
       row.bounce += play.bounce
       row.pressure += play.pressure
+      row.impact += play.impact
+      play.horizon.forEach((value, index) => {
+        row.horizon[index] = (row.horizon[index] ?? 0) + value
+      })
       if (play.won) row.playWins += 1
       // Always accumulate ability/silenced partitions from the full play flags,
       // even when the subset is already filtered (mode tables stay comparable).
@@ -1848,6 +1900,8 @@ function buildHeroPlayModes(
         relative: row.relative,
         abs: row.abs,
         pressure: row.pressure,
+        impact: row.impact,
+        horizon: row.horizon,
         destroy: row.destroy,
         discard: row.discard,
         exile: row.exile,
@@ -1889,6 +1943,8 @@ type CardRowParts = {
   relative: number
   abs: number
   pressure: number
+  impact: number
+  horizon: number[]
   destroy: number
   discard: number
   exile: number
@@ -1929,6 +1985,8 @@ function finishCardRow(parts: CardRowParts): CardBalanceRow {
     silencedWins: parts.silencedWins,
     silencedWinRate: parts.silencedPlays ? parts.silencedWins / parts.silencedPlays : 0,
     avgPressure: plays ? parts.pressure / plays : 0,
+    avgImpact: plays ? parts.impact / plays : 0,
+    avgHorizon: parts.horizon.map((value) => (plays ? value / plays : 0)),
     avgDestroy: plays ? parts.destroy / plays : 0,
     avgDiscard: plays ? parts.discard / plays : 0,
     avgExile: plays ? parts.exile / plays : 0,
@@ -1988,6 +2046,38 @@ function addShapes(target: ShapeCounts, source: ShapeCounts) {
 
 function totals(game: Game): number[] {
   return game.players.map((player) => scoreState(game, player.id).total)
+}
+
+/** Seat score minus the mean opponent (the Rel used throughout Stats). */
+function relOf(scores: number[], seat: number): number {
+  return (scores[seat] ?? 0) - mean(scores.filter((_, id) => id !== seat))
+}
+
+/**
+ * Per-play Impact: each horizon's rel change minus the mean change of every play at the
+ * same stage of the game (4-turn buckets), blended by IMPACT_WEIGHTS. Positive = the play
+ * left its seat better off over the following turns than a typical play did.
+ */
+function impactBaseline(reports: MatchReport[], filter: StratFilter): (swing: SwingEvent) => number {
+  const sums = new Map<number, { n: number; h: number[] }>()
+  const bucketOf = (turn: number) => Math.min(15, Math.floor(Math.max(0, turn - 1) / 4))
+  for (const report of reports) {
+    for (const swing of report.swings) {
+      if (!swing.horizon || !allowsStrat(filter, swing.actorStrat)) continue
+      const bucket = sums.get(bucketOf(swing.turn)) ?? { n: 0, h: IMPACT_HORIZONS.map(() => 0) }
+      bucket.n += 1
+      swing.horizon.forEach((value, index) => {
+        bucket.h[index] = (bucket.h[index] ?? 0) + value
+      })
+      sums.set(bucketOf(swing.turn), bucket)
+    }
+  }
+  return (swing) => {
+    if (!swing.horizon) return 0
+    const bucket = sums.get(bucketOf(swing.turn))
+    if (!bucket || bucket.n === 0) return 0
+    return swing.horizon.reduce((sum, value, index) => sum + IMPACT_WEIGHTS[index]! * (value - bucket.h[index]! / bucket.n), 0)
+  }
 }
 
 function mean(values: number[]): number {

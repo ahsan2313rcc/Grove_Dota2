@@ -1,0 +1,179 @@
+{
+  "startedAt": "2026-11-07T16:48:31.031Z",
+  "power": 5,
+  "evalGamesPerFoe": 12,
+  "startGames": 0,
+  "curve": [
+    {
+      "games": 1000,
+      "overall": 0.5416666666666666,
+      "rows": [
+        {
+          "foe": "balanced",
+          "games": 6,
+          "wins": 3,
+          "losses": 3,
+          "draws": 0,
+          "winRate": 0.5,
+          "avgMargin": -8.5
+        },
+        {
+          "foe": "tempo",
+          "games": 6,
+          "wins": 3,
+          "losses": 3,
+          "draws": 0,
+          "winRate": 0.5,
+          "avgMargin": 6.666666666666667
+        },
+        {
+          "foe": "architect",
+          "games": 6,
+          "wins": 4,
+          "losses": 2,
+          "draws": 0,
+          "winRate": 0.6666666666666666,
+          "avgMargin": 5.166666666666667
+        },
+        {
+          "foe": "spite",
+          "games": 6,
+          "wins": 3,
+          "losses": 3,
+          "draws": 0,
+          "winRate": 0.5,
+          "avgMargin": -11.666666666666666
+        }
+      ]
+    },
+    {
+      "games": 2000,
+      "overall": 0.375,
+      "rows": [
+        {
+          "foe": "balanced",
+          "games": 6,
+          "wins": 2,
+          "losses": 4,
+          "draws": 0,
+          "winRate": 0.3333333333333333,
+          "avgMargin": -39.333333333333336
+        },
+        {
+          "foe": "tempo",
+          "games": 6,
+          "wins": 1,
+          "losses": 5,
+          "draws": 0,
+          "winRate": 0.16666666666666666,
+          "avgMargin": -30.166666666666668
+        },
+        {
+          "foe": "architect",
+          "games": 6,
+          "wins": 4,
+          "losses": 2,
+          "draws": 0,
+          "winRate": 0.6666666666666666,
+          "avgMargin": -1.5
+        },
+        {
+          "foe": "spite",
+          "games": 6,
+          "wins": 2,
+          "losses": 4,
+          "draws": 0,
+          "winRate": 0.3333333333333333,
+          "avgMargin": -22.166666666666668
+        }
+      ]
+    },
+    {
+      "games": 3000,
+      "overall": 0.4791666666666667,
+      "rows": [
+        {
+          "foe": "balanced",
+          "games": 6,
+          "wins": 4,
+          "losses": 2,
+          "draws": 0,
+          "winRate": 0.6666666666666666,
+          "avgMargin": 4.833333333333333
+        },
+        {
+          "foe": "tempo",
+          "games": 6,
+          "wins": 2,
+          "losses": 3,
+          "draws": 1,
+          "winRate": 0.4166666666666667,
+          "avgMargin": -4.5
+        },
+        {
+          "foe": "architect",
+          "games": 6,
+          "wins": 1,
+          "losses": 5,
+          "draws": 0,
+          "winRate": 0.16666666666666666,
+          "avgMargin": -29
+        },
+        {
+          "foe": "spite",
+          "games": 6,
+          "wins": 4,
+          "losses": 2,
+          "draws": 0,
+          "winRate": 0.6666666666666666,
+          "avgMargin": 3.6666666666666665
+        }
+      ]
+    }
+  ],
+  "trainedGames": 3000,
+  "trainedSamples": 1889644,
+  "recentLoss": 0.058866572151704114,
+  "final": {
+    "rows": [
+      {
+        "foe": "balanced",
+        "games": 12,
+        "wins": 9,
+        "losses": 3,
+        "draws": 0,
+        "winRate": 0.75,
+        "avgMargin": 11.833333333333334
+      },
+      {
+        "foe": "tempo",
+        "games": 12,
+        "wins": 4,
+        "losses": 7,
+        "draws": 1,
+        "winRate": 0.375,
+        "avgMargin": -11.333333333333334
+      },
+      {
+        "foe": "architect",
+        "games": 12,
+        "wins": 5,
+        "losses": 7,
+        "draws": 0,
+        "winRate": 0.4166666666666667,
+        "avgMargin": -15.5
+      },
+      {
+        "foe": "spite",
+        "games": 12,
+        "wins": 9,
+        "losses": 3,
+        "draws": 0,
+        "winRate": 0.75,
+        "avgMargin": 8.25
+      }
+    ],
+    "overall": 0.5729166666666666
+  },
+  "finishedAt": "2026-11-07T17:23:31.895Z"
+}

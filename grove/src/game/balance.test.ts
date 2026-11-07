@@ -32,6 +32,12 @@ describe('balance', () => {
     expect(report.seatPlays.some((plays) => plays.length > 0)).toBe(true)
     const summary = summarizeReports([report])
     expect(summary.finished).toBe(1)
+    // Every play carries measured horizons; Impact is relative to an average play, so it centres on 0.
+    expect(report.swings.every((swing) => swing.horizon?.length === 4)).toBe(true)
+    const all = [...summary.heroes, ...summary.abilities, ...summary.terrains, ...summary.loot, ...summary.cards.filter((row) => row.kind === 'draw')]
+    const weighted = all.reduce((sum, row) => sum + row.avgImpact * row.plays, 0)
+    const plays = all.reduce((sum, row) => sum + row.plays, 0)
+    expect(Math.abs(weighted / Math.max(1, plays))).toBeLessThan(1.5)
     expect(summary.heroHigh.length + summary.terrainHigh.length + summary.lootHigh.length).toBeGreaterThan(0)
     const sample = [...summary.heroHigh, ...summary.terrainHigh, ...summary.lootHigh][0]
     if (sample) {
