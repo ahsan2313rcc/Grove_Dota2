@@ -65,6 +65,7 @@ export function statusLines(game: Game, viewer: PlayerId): string[] {
   if (game.lockPlay && game.lockPlay.caster !== viewer) lines.push('Chronosphere: you cannot play cards.')
   if (game.silence) lines.push('Global Silence: hero abilities do not fire.')
   if (me.orchid) lines.push('Orchid: you cannot activate abilities.')
+  if (game.disarm && game.disarm.caster !== viewer) lines.push('Disarmed: you cannot activate abilities.')
   if (game.naga) lines.push('Song of the Siren: heroes cannot be destroyed.')
   if (itemsLocked(game, viewer)) lines.push('Doom: you cannot play items.')
   if (instantsLocked(game, viewer)) lines.push('Battle Trance: you cannot play Instant cards.')

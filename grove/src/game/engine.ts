@@ -224,6 +224,7 @@ function blank(seed: number, mode: 'hotseat' | 'ai' | 'online', seats: SeatSpec[
     naga: null,
     lockPlay: null,
     frost: null,
+    disarm: null,
     troll: null,
     viper: [],
     maledict: [],
@@ -938,9 +939,18 @@ function playToken(state: Game, actor: PlayerId, card: CardInst, team: string): 
   if (!dest) return state
   const reason = enterReason(based, dest.team, 1, true)
   if (reason) return log(based, reason)
+  const trapped = !!dest.team.trap
   const hero = makeHero(card, actor, actor, based)
   const placed = putOnTeam(removeHand(based, actor, card.uid), actor, teamId, hero)
-  return log(arrived(placed, card.uid).state, `${pname(placed, actor)} calls ${display(card.defId).name}.`)
+  const landed = arrived(placed, card.uid)
+  const verb = actor === state.active ? 'calls' : 'calls Instant'
+  let next = log(landed.state, `${pname(placed, actor)} ${verb} ${display(card.defId).name}.`)
+  const fires = firesAbility(card.defId) && !silenced(next, card.uid)
+  if (!fires) return next
+  const resume = { kind: 'cast' as const, actor, sourceUid: card.uid, defId: card.defId, picked: [], steps: 0 }
+  if (landed.mined) return { ...next, after: { kind: 'alive', uid: card.uid, cast: resume } }
+  if (trapped) return holdCast(next, resume)
+  return cast(next, resume)
 }
 
 function playItem(state: Game, actor: PlayerId, card: CardInst, fromGrave = false): Game {
@@ -1045,7 +1055,8 @@ function morphCast(state: Game, uid: string): Game {
     loc.hero.castTurn === state.turn ||
     loc.hero.muted ||
     silenced(state, uid) ||
-    (state.frost && state.frost.caster !== state.active)
+    (state.frost && state.frost.caster !== state.active) ||
+    (state.disarm && state.disarm.caster !== state.active)
   ) {
     return state
   }
@@ -1603,6 +1614,6 @@ export function morphCasts(_state: Game): { uid: string; label: string }[] {
 
 export function needsTeam(defId: string, kind: CardKind): boolean {
   if (kind === 'hero') return true
-  if (kind === 'neutral' && defId !== 'tormentor') return true
+  if (kind === 'neutral') return true
   return false
 }

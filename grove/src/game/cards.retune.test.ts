@@ -60,19 +60,25 @@ describe('card retunes', () => {
     expect(ITEM_BY_ID.refresher?.text).toMatch(/extra turn/i)
   })
 
-  it('makes Haste Instant and neutrals Aura bodies', () => {
+  it('makes Haste Instant and neutrals carry real abilities', () => {
     expect(REWARD_BY_ID.haste?.instant).toBe(true)
-    expect(REWARD_BY_ID.stone_golem?.instant).toBe(false)
-    expect(REWARD_BY_ID.tormentor?.instant).toBe(false)
-    expect(REWARD_BY_ID.roshan?.instant).toBe(false)
+    expect(REWARD_BY_ID.stone_golem?.timing).toBe('aura')
+    expect(REWARD_BY_ID.stone_golem?.text).toMatch(/immune to all ability effects/i)
+    expect(REWARD_BY_ID.thunderhide?.instant).toBe(true)
+    expect(REWARD_BY_ID.thunderhide?.text).toMatch(/Draw 1/i)
+    expect(REWARD_BY_ID.ice_shaman?.instant).toBe(true)
+    expect(REWARD_BY_ID.ice_shaman?.text).toMatch(/return target hero/i)
+    expect(REWARD_BY_ID.black_dragon?.instant).toBe(true)
+    expect(REWARD_BY_ID.black_dragon?.text).toMatch(/discards 1/i)
+    expect(REWARD_BY_ID.roshan?.timing).toBe('cast')
+    expect(REWARD_BY_ID.roshan?.text).toMatch(/disarm all enemies/i)
+    expect(REWARD_BY_ID.tormentor?.timing).toBe('aura')
     expect(REWARD_BY_ID.stone_golem?.range).toBe('Melee')
     expect(REWARD_BY_ID.tormentor?.range).toBe('Melee')
     expect(REWARD_BY_ID.roshan?.range).toBe('Melee')
     expect(REWARD_BY_ID.thunderhide?.range).toBe('Ranged')
     expect(REWARD_BY_ID.ice_shaman?.range).toBe('Ranged')
     expect(REWARD_BY_ID.black_dragon?.range).toBe('Ranged')
-    expect(REWARD_BY_ID.stone_golem?.text).toMatch(/Aura/i)
-    expect(REWARD_BY_ID.tormentor?.text).toMatch(/Aura/i)
   })
 
   it('retunes key board / hand / item lines from the sheet', () => {

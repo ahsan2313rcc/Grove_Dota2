@@ -1,12 +1,22 @@
 import { describe, expect, it } from 'vitest'
 import { apply } from './engine.ts'
-import { buildLab, census, labCards, runLab } from './lab.ts'
+import { buildLab, census, LAB_BROKEN, LAB_FLAGGED, labCards, runLab } from './lab.ts'
 
 describe('ability lab', () => {
+  it('explains broken vs flagged criteria', () => {
+    expect(LAB_BROKEN).toMatch(/refused|prompt stayed open|vanished/i)
+    expect(LAB_FLAGGED).toMatch(/suspicious|fizzle|Instant window/i)
+  })
+
   it('deals a board where every card is in exactly one place', () => {
     const { game, uid } = buildLab('lina')
     expect(uid).not.toBe('')
     expect([...census(game).values()].every((count) => count === 1)).toBe(true)
+  })
+
+  it('includes neutrals in the lab list', () => {
+    expect(labCards().some((card) => card.defId === 'roshan' && card.kind === 'neutral')).toBe(true)
+    expect(buildLab('roshan').uid).not.toBe('')
   })
 
   it('attaches ability context to targeting prompts', () => {

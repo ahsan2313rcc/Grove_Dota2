@@ -1,7 +1,13 @@
-import { HEROES, ITEMS, display, firesAbility } from './catalog.ts'
+import { HEROES, ITEMS, REWARDS, display, firesAbility } from './catalog.ts'
 import { apply, createGame, needsTeam } from './engine.ts'
 import { allLocs, makeHero, newTeam, putOnTeam, scoreState } from './flow.ts'
 import type { CardInst, Game, PlayerId } from './types.ts'
+
+/** Criteria shown in Ability Lab for "Run every card" verdicts. */
+export const LAB_BROKEN =
+  'Broken means the auto-play failed: the card never reached your hand, the play was refused, a prompt stayed open, or a card was duplicated / vanished / invented.'
+export const LAB_FLAGGED =
+  'Flagged means the play finished cleanly but looks suspicious: nothing visible changed, the log looks like a fizzle, or the card only reacts from an Instant window.'
 
 /** One seat of a lab board. Card ids are catalog ids; teams list heroes in order. */
 export interface LabSeat {
@@ -26,7 +32,7 @@ export interface LabSetup {
 export interface LabCard {
   defId: string
   name: string
-  kind: 'hero' | 'item'
+  kind: 'hero' | 'item' | 'neutral'
   timing: string
   text: string
 }
@@ -102,7 +108,14 @@ export function labCards(): LabCard[] {
     timing: item.instant ? 'instant' : 'cast',
     text: item.text,
   }))
-  return [...heroes, ...items].sort((a, b) => a.name.localeCompare(b.name))
+  const neutrals: LabCard[] = REWARDS.filter((reward) => reward.kind === 'neutral').map((reward) => ({
+    defId: reward.id,
+    name: reward.name,
+    kind: 'neutral',
+    timing: reward.timing ?? (reward.instant ? 'instant' : 'aura'),
+    text: reward.text,
+  }))
+  return [...heroes, ...items, ...neutrals].sort((a, b) => a.name.localeCompare(b.name))
 }
 
 export function labSetup(defId: string): LabSetup {
@@ -137,10 +150,27 @@ export function buildLab(defId: string, seed = 7): { game: Game; uid: string; te
   const entrant = trapCard ? setup.entrant ?? 'axe' : null
   const used = new Set<string>([defId, ...(entrant ? [entrant] : [])])
   const take = (want: string): [Game, CardInst] | null => {
-    const card = game.deck.find((entry) => entry.defId === want)
-    if (!card) return null
-    used.add(want)
-    return [{ ...game, deck: game.deck.filter((entry) => entry.uid !== card.uid) }, card]
+    const fromDeck = game.deck.find((entry) => entry.defId === want)
+    if (fromDeck) {
+      used.add(want)
+      return [{ ...game, deck: game.deck.filter((entry) => entry.uid !== fromDeck.uid) }, fromDeck]
+    }
+    const fromNeutrals = game.neutrals.find((entry) => entry.defId === want)
+    if (fromNeutrals) {
+      used.add(want)
+      return [{ ...game, neutrals: game.neutrals.filter((entry) => entry.uid !== fromNeutrals.uid) }, fromNeutrals]
+    }
+    const fromRunes = game.runes.find((entry) => entry.defId === want)
+    if (fromRunes) {
+      used.add(want)
+      return [{ ...game, runes: game.runes.filter((entry) => entry.uid !== fromRunes.uid) }, fromRunes]
+    }
+    const fromTowers = game.towers.find((entry) => entry.defId === want)
+    if (fromTowers) {
+      used.add(want)
+      return [{ ...game, towers: game.towers.filter((entry) => entry.uid !== fromTowers.uid) }, fromTowers]
+    }
+    return null
   }
   const stand = (want: string): string => {
     if (want !== defId && want !== entrant) return want
@@ -294,7 +324,7 @@ function fingerprint(game: Game, skip: string, spend = 0): string {
       actions: seat.id === game.active ? seat.actions - spend : seat.actions,
     })),
     globals: [
-      game.silence, game.naga, game.lockPlay, game.frost, game.noDraw, game.primalItems, game.rupture, game.taxAction,
+      game.silence, game.naga, game.lockPlay, game.frost, game.disarm, game.noDraw, game.primalItems, game.rupture, game.taxAction,
       game.attrBan, game.darkSeer, game.troll, game.bonds, game.sdBan, game.maledict, game.soulbind, game.viper,
       game.reveal, game.freeItems, game.clinkzExile, game.freePlay, game.spellNullify, game.extraTurn, game.lassos,
       game.phased, game.medusaHold, game.infests, game.multicast,
@@ -346,12 +376,17 @@ export function runLab(defId: string, seed = 7): LabResult {
   }
   issues.push(...conservation(before, after))
   const log = after.log.slice(before.log.length)
-  const timing = HEROES.find((hero) => hero.id === defId)?.timing
-  const instant = timing === 'instant' || ITEMS.some((item) => item.id === defId && item.instant)
+  const shown = display(defId)
+  const timing = shown.timing ?? HEROES.find((hero) => hero.id === defId)?.timing
+  const instant = timing === 'instant' || shown.instant || ITEMS.some((item) => item.id === defId && item.instant)
   const quiet = fingerprint(before, built.uid, instant ? 0 : 1) === fingerprint(after, built.uid)
   if (REACTIVE.has(defId)) {
-    warnings.push('Reacts to another ability; test it from the instant window in a live game.')
-  } else if (quiet && timing !== 'aura' && (firesAbility(defId) || display(defId).kind === 'item' || isTrap(defId))) {
+    warnings.push('Reacts to another ability; test it from the Instant window in a live game.')
+  } else if (
+    quiet &&
+    timing !== 'aura' &&
+    (firesAbility(defId) || shown.kind === 'item' || shown.kind === 'neutral' || isTrap(defId))
+  ) {
     warnings.push('Nothing visible changed on this board.')
   }
   const fizzled = log.find((line) => /fizzle|finds no|needs \d|needs a|no enemy|nothing to|is gone|no legal|no other|no hero card|no hero in|no traps/i.test(line))

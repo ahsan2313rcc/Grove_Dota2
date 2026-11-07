@@ -1694,7 +1694,13 @@ button.debug-mode-cycle:hover {
 .lab { width: min(1040px, 100%); background: #0c1611; }
 .lab-seed { flex: 0 0 90px; }
 .lab-run-hint { margin: 0; font-size: 0.82rem; }
-.lab-sweep { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 8px 0; }
+.lab-sweep { display: flex; flex-direction: column; gap: 10px; margin: 8px 0; }
+.lab-sweep > strong { display: block; }
+.lab-sweep-group { display: flex; flex-direction: column; gap: 4px; }
+.lab-sweep-label { margin: 0; font-weight: 600; }
+.lab-sweep-why { margin: 0; font-size: 0.8rem; }
+.lab-sweep-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.lab-sweep-list > li { display: flex; flex-direction: column; gap: 4px; align-items: flex-start; }
 .lab-chip { padding: 0.2rem 0.6rem; font-size: 0.78rem; }
 .lab-chip[data-bad='true'] { border-color: var(--danger, #d0645a); color: var(--danger, #d0645a); }
 .lab-split { display: grid; grid-template-columns: minmax(160px, 220px) 1fr; gap: 12px; align-items: start; }

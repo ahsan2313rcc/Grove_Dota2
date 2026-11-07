@@ -480,6 +480,15 @@ export function canTargetHero(state: Game, actor: PlayerId, hero: BoardHero, sou
   if (hero.bkb && hero.controller !== actor) return false
   if (hero.controller === actor) return true
   if (hero.hidden) return false
+  // Stone Golem: immune to ability effects while it remains.
+  if (
+    source === 'ability' &&
+    hero.defId === 'stone_golem' &&
+    hero.controller !== actor &&
+    !aurasSuppressed(state, hero.controller)
+  ) {
+    return false
+  }
   // Omniknight: allies in this team are immune.
   if (
     hero.controller !== actor &&
@@ -513,6 +522,7 @@ export function immuneFrom(state: Game, uid: string, by: PlayerId | null): boole
   if (!loc) return false
   if (by !== null && by === loc.hero.controller) return false
   if (loc.hero.bkb || loc.player.bkb || loc.hero.shield || loc.team.glyph) return true
+  if (loc.hero.defId === 'stone_golem' && !aurasSuppressed(state, loc.hero.controller)) return true
   return (
     loc.team.heroes.some((mate) => mate.defId === 'omniknight' && mate.controller === loc.hero.controller) &&
     !aurasSuppressed(state, loc.hero.controller)
@@ -1468,6 +1478,7 @@ export function expireStart(state: Game): Game {
     naga: drop(next.naga),
     lockPlay: drop(next.lockPlay),
     frost: drop(next.frost),
+    disarm: drop(next.disarm),
     noDraw: drop(next.noDraw),
     primalItems: drop(next.primalItems),
     rupture: drop(next.rupture),

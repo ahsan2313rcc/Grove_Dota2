@@ -29,6 +29,9 @@ export interface RewardDef {
   range?: Range
   instant: boolean
   token: boolean
+  /** Neutral bodies with on-play / Instant abilities use the same timing kinds as heroes. */
+  timing?: Timing
+  spell?: string
 }
 
 export interface TerrainDef {
@@ -396,12 +399,84 @@ export const REWARDS: RewardDef[] = [
   { id: 'illusion', name: 'Illusion Rune', kind: 'rune', copies: 1, instant: true, token: false, text: 'Counter target hero or item card (it goes to the grave without activating). Instant.' },
   { id: 'regen', name: 'Regeneration Rune', kind: 'rune', copies: 1, instant: false, token: false, text: 'Take any card from the grave into your hand.' },
   { id: 'double_damage', name: 'Amplify Rune', kind: 'rune', copies: 1, instant: false, token: false, text: 'You may play up to 2 item cards from your hand for free this turn.' },
-  { id: 'stone_golem', name: 'Stone Golem', kind: 'neutral', copies: 1, instant: false, token: true, attr: 'STR', range: 'Melee', text: 'A Melee Strength body with no ability and no flat points. One neutral to a team. Aura.' },
-  { id: 'thunderhide', name: 'Thunderhide', kind: 'neutral', copies: 1, instant: false, token: true, attr: 'AGI', range: 'Ranged', text: 'A Ranged Agility body with no ability and no flat points. One neutral to a team. Aura.' },
-  { id: 'ice_shaman', name: 'Ice Shaman', kind: 'neutral', copies: 1, instant: false, token: true, attr: 'INT', range: 'Ranged', text: 'A Ranged Intelligence body with no ability and no flat points. One neutral to a team. Aura.' },
-  { id: 'black_dragon', name: 'Black Dragon', kind: 'neutral', copies: 1, instant: false, token: true, attr: 'UNI', range: 'Ranged', text: 'A Ranged Universal body with no ability and no flat points. One neutral to a team. Aura.' },
-  { id: 'tormentor', name: 'Tormentor', kind: 'neutral', copies: 1, instant: false, token: true, attr: 'UNI', range: 'Melee', text: 'A Melee Universal body. Whenever Tormentor is destroyed, destroy the source hero. Aura.' },
-  { id: 'roshan', name: 'Roshan', kind: 'neutral', copies: 1, instant: false, token: true, attr: 'UNI', range: 'Melee', text: 'A Melee Universal body. Whenever another hero in this team is destroyed, destroy Roshan instead. Aura.' },
+  {
+    id: 'stone_golem',
+    name: 'Stone Golem',
+    kind: 'neutral',
+    copies: 1,
+    instant: false,
+    token: true,
+    attr: 'STR',
+    range: 'Melee',
+    timing: 'aura',
+    spell: 'Granite Form',
+    text: 'A Melee Strength body with no flat points. One neutral to a team. Stone Golem is immune to all ability effects. Aura.',
+  },
+  {
+    id: 'thunderhide',
+    name: 'Thunderhide',
+    kind: 'neutral',
+    copies: 1,
+    instant: true,
+    token: true,
+    attr: 'AGI',
+    range: 'Ranged',
+    timing: 'instant',
+    spell: 'Static Charge',
+    text: 'A Ranged Agility body with no flat points. One neutral to a team. Draw 1. Instant.',
+  },
+  {
+    id: 'ice_shaman',
+    name: 'Ice Shaman',
+    kind: 'neutral',
+    copies: 1,
+    instant: true,
+    token: true,
+    attr: 'INT',
+    range: 'Ranged',
+    timing: 'instant',
+    spell: 'Frost Bind',
+    text: 'A Ranged Intelligence body with no flat points. One neutral to a team. Return target hero to its owner\'s hand (without activating its ability). Instant.',
+  },
+  {
+    id: 'black_dragon',
+    name: 'Black Dragon',
+    kind: 'neutral',
+    copies: 1,
+    instant: true,
+    token: true,
+    attr: 'UNI',
+    range: 'Ranged',
+    timing: 'instant',
+    spell: 'Fireball',
+    text: 'A Ranged Universal body with no flat points. One neutral to a team. Target opponent discards 1 card from hand. Instant.',
+  },
+  {
+    id: 'tormentor',
+    name: 'Tormentor',
+    kind: 'neutral',
+    copies: 1,
+    instant: false,
+    token: true,
+    attr: 'UNI',
+    range: 'Melee',
+    timing: 'aura',
+    spell: 'Retaliate',
+    text: 'A Melee Universal body. Whenever Tormentor is destroyed, destroy the source hero. Aura.',
+  },
+  {
+    id: 'roshan',
+    name: 'Roshan',
+    kind: 'neutral',
+    copies: 1,
+    instant: false,
+    token: true,
+    attr: 'UNI',
+    range: 'Melee',
+    timing: 'cast',
+    spell: 'Bash',
+    text: 'A Melee Universal body. Whenever another hero in this team is destroyed, destroy Roshan instead. On play: disarm all enemies until your next turn (they cannot activate abilities). Aura.',
+  },
   { id: 'lotus', name: 'Lotus of Purification', kind: 'tower', copies: 2, instant: false, token: false, text: 'Draw cards from the deck until your hand has 7 cards.' },
   { id: 'glyph', name: 'Glyph of Fortification', kind: 'tower', copies: 2, instant: true, token: false, text: 'Until your next turn, all heroes in target allied team become immune to all effects. Instant.' },
   { id: 'gate', name: "Fiend's Gate", kind: 'tower', copies: 2, instant: false, token: false, text: 'Move up to 5 heroes you own to form a new team you control.' },
@@ -426,9 +501,9 @@ export const TRAP_IDS = new Set(HEROES.filter((entry) => entry.timing === 'trap'
 /** Traps that reward the team's controller; the rest punish them. */
 export const WARD_IDS = new Set(['kez', 'ogre_magi', 'bounty_hunter', 'templar_assassin'])
 
-/** True when the hero's ability can fire on play / via reactivate (not aura or trap). */
+/** True when the hero or neutral's ability can fire on play / via reactivate (not aura or trap). */
 export function firesAbility(defId: string): boolean {
-  const timing = HERO_BY_ID[defId]?.timing
+  const timing = HERO_BY_ID[defId]?.timing ?? REWARD_BY_ID[defId]?.timing
   return timing === 'cast' || timing === 'instant'
 }
 
@@ -471,14 +546,16 @@ export function display(defId: string): {
   if (item) return { name: item.name, text: item.text, kind: 'item', instant: item.instant, timing: item.instant ? 'instant' : undefined }
   const reward = REWARD_BY_ID[defId]
   if (reward) {
+    const timing = reward.timing ?? (reward.instant ? 'instant' : undefined)
     return {
       name: reward.name,
       text: reward.text,
+      spell: reward.spell,
       attr: reward.attr,
       range: reward.range,
       kind: reward.kind,
-      instant: reward.instant,
-      timing: reward.instant ? 'instant' : undefined,
+      instant: reward.instant || timing === 'instant',
+      timing,
     }
   }
   const terrain = TERRAINS.find((entry) => entry.id === defId)

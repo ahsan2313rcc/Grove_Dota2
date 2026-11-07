@@ -171,11 +171,14 @@ function ownTeams(state: Game, actor: PlayerId, withNew: boolean): Choice[] {
 }
 
 export function cast(state: Game, resume: CastResume): Game {
-  if (HERO_BY_ID[resume.defId]) {
+  if (firesAbility(resume.defId) && findHero(state, resume.sourceUid)) {
     const shielded = (by: PlayerId) => immuneFrom(state, resume.sourceUid, by)
     const spell = `${heroTag(state, resume.sourceUid, display(resume.defId).name)}'s ability`
     if (state.silence && !shielded(state.silence.caster)) return log(state, `Global Silence stops ${spell}.`)
     if (abilitiesLocked(state, resume.actor) && !shielded(state.frost!.caster)) return log(state, `Shiva's Guard stops ${spell}.`)
+    if (state.disarm && state.disarm.caster !== resume.actor && !shielded(state.disarm.caster)) {
+      return log(state, `Disarm stops ${spell}.`)
+    }
     const orchid = state.players[resume.actor]?.orchid
     if (orchid && !shielded(orchid.caster)) return log(state, `Orchid stops ${spell}.`)
     const source = findHero(state, resume.sourceUid)
@@ -213,8 +216,8 @@ export function cast(state: Game, resume: CastResume): Game {
       state = countered.state
     }
     resume = armed
-    // Hero abilities: choose targets first, then open Instant interrupt announcing those targets.
-    if (HERO_BY_ID[resume.defId] && !resume.echo && !resume.windowed) {
+    // Board abilities: choose targets first, then open Instant interrupt announcing those targets.
+    if (firesAbility(resume.defId) && findHero(state, resume.sourceUid) && !resume.echo && !resume.windowed) {
       return offerInstantWindow(state, resume.sourceUid, { ...resume, windowed: true })
     }
   }
@@ -529,7 +532,16 @@ function questions(state: Game, resume: CastResume): Ask {
       if (at === 2) return pose(actor, 'Fire that ability now?', [{ id: 'yes', label: 'Fire it' }, { id: 'no', label: 'Leave it' }])
       return ready()
     case 'tormentor':
+    case 'stone_golem':
+    case 'thunderhide':
+    case 'roshan':
       return ready()
+    case 'black_dragon':
+      if (at > 0) return ready()
+      return pose(actor, 'Choose an opponent to discard 1.', opponentChoices(state, actor))
+    case 'ice_shaman':
+      if (at > 0) return ready()
+      return pose(actor, 'Return a hero to its owner\'s hand.', heroChoices(state, actor, kind, () => true))
     case 'earthshaker':
     case 'sven':
     case 'enigma':
@@ -1295,6 +1307,21 @@ function effect(state: Game, resume: CastResume): Game {
       return state
     case 'tormentor':
       return log(state, 'Tormentor waits on the board.')
+    case 'stone_golem':
+      return log(state, 'Granite Form: Stone Golem is immune to ability effects.')
+    case 'thunderhide':
+      return queueDraw(log(state, 'Static Charge draws 1.'), actor, 1)
+    case 'black_dragon': {
+      const target = pickedEnemy(state, resume, actor)
+      return queueDiscard(log(state, `Fireball: ${pname(state, target)} discards 1.`), target, 1, 'Fireball')
+    }
+    case 'ice_shaman': {
+      const uid = heroes[0]
+      if (!uid) return state
+      return bounce(state, uid, 'Frost Bind', false, actor)
+    }
+    case 'roshan':
+      return log({ ...state, disarm: stamp }, 'Roshan disarms all enemies — they cannot activate abilities until your next turn.')
     case 'bloodseeker':
       return log({ ...state, rupture: stamp }, 'Rupture: leavers are destroyed until your next turn.')
     case 'huskar': {
@@ -2880,7 +2907,8 @@ function gateAbility(state: Game, heroUid: string, resume: CastResume): Game {
   if (
     loc.hero.muted ||
     (state.silence && !immuneFrom(state, heroUid, state.silence.caster)) ||
-    (orchid && !immuneFrom(state, heroUid, orchid.caster))
+    (orchid && !immuneFrom(state, heroUid, orchid.caster)) ||
+    (state.disarm && state.disarm.caster !== resume.actor && !immuneFrom(state, heroUid, state.disarm.caster))
   ) {
     return log(state, 'The ability is nullified.')
   }
