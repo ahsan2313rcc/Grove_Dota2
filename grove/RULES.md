@@ -161,9 +161,9 @@ Combos remain as scored terrain piles; some effects destroy/protect them (Hoodwi
 
 ### 6.2 Counters (Instant)
 
-**Nyx Assassin** is an Instant. Play it in the Instant window before an ability fires to counter that ability; the firing hero is destroyed only if it is **Intelligence**.
+**Nyx Assassin** is an Instant. Play it in the Instant window before an ability fires: seat it onto a team you control, then counter that ability. The firing hero is destroyed only if it is **Intelligence**.
 
-**Spirit Breaker** is an Instant. Play it in the same window to redirect the ability to itself: a hero target becomes Spirit Breaker, a team target becomes Spirit Breaker’s team.
+**Spirit Breaker** is an Instant. Play it in the same window: seat it onto a team you control, then redirect the ability onto itself (a hero target becomes Spirit Breaker; a team target becomes Spirit Breaker’s team). Destroy abilities redirected this way kill Spirit Breaker.
 
 ### 6.3 Heroes — multi-drop
 

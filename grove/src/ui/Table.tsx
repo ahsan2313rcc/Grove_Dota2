@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react'
-import { display, TRAP_BLURB, TRAP_RULES } from '../game/catalog.ts'
+import { display, RECAST_IDS, RECAST_RULE, TRAP_BLURB, TRAP_RULES } from '../game/catalog.ts'
 import { comboPlans, morphCasts, needsTeam, playableFromGrave, teamsFor, undyingRevive } from '../game/engine.ts'
 import { allLocs, findHero, isTrapHero, scoreState, scoreTeam } from '../game/flow.ts'
 import { teamShapes } from '../game/scoring.ts'
@@ -1019,6 +1019,13 @@ function Detail({
         <DetailHead name={info.name} timing={detailTiming(info.timing, info.kind)} free={!!info.instant} />
         {info.spell ? <p className="spell">{info.spell}</p> : null}
         <p>{info.text}</p>
+        {RECAST_IDS.has(focus.defId) ? (
+          <p className="trap-blurb">
+            <button type="button" className="trap-hint" title={RECAST_RULE} data-testid="recast-hint">
+              Recast rule
+            </button>
+          </p>
+        ) : null}
       </div>
     )
   }
@@ -1034,6 +1041,13 @@ function Detail({
         <p className="spell">{loc.player.name} · {scored.why} · {scored.points}</p>
         {info.spell ? <p className="spell">{info.spell}</p> : null}
         <p>{info.text}</p>
+        {RECAST_IDS.has(loc.hero.defId) ? (
+          <p className="trap-blurb">
+            <button type="button" className="trap-hint" title={RECAST_RULE} data-testid="recast-hint">
+              Recast rule
+            </button>
+          </p>
+        ) : null}
         {heroMarks(loc.hero, loc.team).length > 0 ? <p className="quiet">{heroMarks(loc.hero, loc.team).join(' · ')}</p> : null}
         {canAct && morph ? <button type="button" onClick={() => onMorph(loc.hero.uid)}>{morph.label}</button> : null}
       </div>
@@ -1064,6 +1078,13 @@ function Detail({
         </p>
       ) : null}
       <p>{info.text}</p>
+      {RECAST_IDS.has(card.defId) ? (
+        <p className="trap-blurb">
+          <button type="button" className="trap-hint" title={RECAST_RULE} data-testid="recast-hint">
+            Recast rule
+          </button>
+        </p>
+      ) : null}
       {mates.length > 0 ? (
         <p className="quiet">Companions: {mates.map((entry) => display(entry.defId).name).join(', ')} (silent)</p>
       ) : null}

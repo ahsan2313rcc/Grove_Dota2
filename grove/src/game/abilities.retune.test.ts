@@ -90,7 +90,7 @@ describe('retuned abilities', () => {
   })
 
   it('blocks stolen ability chaining', () => {
-    expect(HERO_BY_ID.lifestealer?.text).toMatch(/Stolen and copied abilities cannot/i)
+    expect(HERO_BY_ID.lifestealer?.text).not.toMatch(/Stolen and copied abilities cannot/i)
     let game = ready()
     game = only(game, 0, ['lifestealer'])
     game = only(game, 1, ['vengeful_spirit'])

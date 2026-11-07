@@ -208,7 +208,7 @@ describe('reworked heroes', () => {
     expect(allLocs(game).some((loc) => loc.hero.uid === zeus)).toBe(false)
   })
 
-  it('Spirit Breaker redirects an enemy ability onto itself', () => {
+  it('Spirit Breaker seats, then redirects an enemy ability onto itself', () => {
     let game = toHand(ready(), 0, ['lina'])
     game = toHand(game, 1, ['spirit_breaker'])
     ;[game] = team(game, 1, ['axe'])
@@ -219,9 +219,13 @@ describe('reworked heroes', () => {
       if (pending.resume.kind === 'instant-window') {
         return [pending.choices.find((choice) => choice.defId === 'spirit_breaker')!.id]
       }
+      if (pending.resume.kind === 'spirit-place') {
+        return [pending.choices.find((choice) => choice.id === 'seat:new')?.id ?? pending.choices[0]!.id]
+      }
       if (pending.choices.some((choice) => choice.id === `hero:${axe}`)) return [`hero:${axe}`]
       return null
     })
+    // Laguna Blade is redirected onto Spirit Breaker, so Axe lives and SB dies tanking it.
     expect(allLocs(game).some((loc) => loc.hero.uid === axe)).toBe(true)
     expect(allLocs(game).some((loc) => loc.hero.defId === 'spirit_breaker')).toBe(false)
     expect(game.grave.some((card) => card.defId === 'spirit_breaker')).toBe(true)

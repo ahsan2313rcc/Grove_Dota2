@@ -782,7 +782,7 @@ describe('heroes', () => {
     expect(attrsOf(game, later!)).toEqual(['STR'])
   })
 
-  it('discards Nyx to send the countered card to the grave', () => {
+  it('seats Nyx onto a team and counters the ability', () => {
     let game = ready()
     // Primal Beast fires with no targets — Instant window opens after arming.
     game = only(game, 0, ['primal_beast'])
@@ -792,14 +792,15 @@ describe('heroes', () => {
     expect(game.pending?.resume.kind).toBe('instant-window')
     const nyx = game.pending?.choices.find((choice) => choice.id.startsWith('instant:'))?.id ?? ''
     game = apply(game, { type: 'choose', ids: [nyx] })
-    // Strength caster: countered but stays on the board.
+    // Strength caster: countered but stays on the board; Nyx enters the interrupter's team.
     expect(game.players[0].teams.flatMap((team) => team.heroes).map((hero) => hero.defId)).toEqual(['primal_beast'])
+    expect(game.players[1].teams.flatMap((team) => team.heroes).map((hero) => hero.defId)).toEqual(['nyx_assassin'])
     expect(game.primalItems).toBeFalsy()
-    expect(game.grave.map((card) => card.defId)).toEqual(['nyx_assassin'])
+    expect(game.grave.map((card) => card.defId)).toEqual([])
     expect(game.players[0].actions).toBe(1)
   })
 
-  it('destroys an Intelligence caster countered by Nyx', () => {
+  it('destroys an Intelligence caster countered by Nyx while Nyx stays seated', () => {
     let game = ready()
     game = only(game, 0, ['invoker'])
     game = only(game, 1, ['nyx_assassin'])
@@ -808,7 +809,8 @@ describe('heroes', () => {
     const nyx = game.pending?.choices.find((choice) => choice.id.startsWith('instant:'))?.id ?? ''
     game = apply(game, { type: 'choose', ids: [nyx] })
     expect(game.players[0].teams).toEqual([])
-    expect(game.grave.map((card) => card.defId).sort()).toEqual(['invoker', 'nyx_assassin'])
+    expect(game.players[1].teams.flatMap((team) => team.heroes).map((hero) => hero.defId)).toEqual(['nyx_assassin'])
+    expect(game.grave.map((card) => card.defId)).toEqual(['invoker'])
   })
 
   it('locks an opponent with Orchid so they cannot activate abilities', () => {

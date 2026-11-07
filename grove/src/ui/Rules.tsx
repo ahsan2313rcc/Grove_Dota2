@@ -31,7 +31,7 @@ const MECHANICS: Block[] = [
     detail: [
       'Instant cards do not spend an action.',
       'After an opponent draws, plays, or sets a combo — and before a hero ability fires — you may interrupt with one Instant, pass this action, or pass this turn.',
-      'Nyx Assassin counters an ability (and destroys the caster if it is Intelligence). Spirit Breaker redirects an ability to itself. Tormentor destroys a hero that just entered. Troll Warlord’s Battle Trance stops opponents from playing Instants.',
+      'Nyx Assassin seats onto your team and counters an ability (and destroys the caster if it is Intelligence). Spirit Breaker seats, then redirects the ability onto itself — so a destroy ability kills Spirit Breaker. Tormentor destroys a hero that just entered. Troll Warlord’s Battle Trance stops opponents from playing Instants.',
     ],
   },
   {

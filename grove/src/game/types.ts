@@ -138,6 +138,10 @@ export type Resume =
   | { kind: 'instant-window'; cast: CastResume; heroUid: string; seats: PlayerId[]; index: number }
   /** Instant hero from interrupt — pick a team before seating. */
   | { kind: 'instant-place'; cast: CastResume; heroUid: string; seats: PlayerId[]; index: number; cardUid: string }
+  /** Nyx Assassin — seat, then counter (and destroy INT). */
+  | { kind: 'nyx-place'; cast: CastResume; heroUid: string; cardUid: string }
+  /** Spirit Breaker — seat, then redirect the pending ability onto it. */
+  | { kind: 'spirit-place'; cast: CastResume; heroUid: string; cardUid: string }
   | { kind: 'free-play-offer'; uid: string; actor: PlayerId }
   | { kind: 'torment'; heroUid: string; cast: CastResume | null }
   | { kind: 'slark-trap'; owner: PlayerId; card: CardInst }

@@ -68,9 +68,19 @@ export const TRAP_BLURB =
 export const TRAP_RULES =
   'Play face-down on any team with room for another hero (yours or an enemy\'s) — one trap per team, never on a full or closed team. While face down, that team scores no attribute bonus. When another hero enters, reveal and resolve this before that hero\'s ability (the controller is whoever controls the team). Afterwards a trap that does not sacrifice itself joins the team if there is room; otherwise it goes to the grave. Snares hurt the controller; wards help them.'
 
-/** Anti-loop reminder on steal / copy / reactivate cards. */
-const NO_CHAIN =
-  ' Stolen and copied abilities cannot steal, swap control, copy, or fire another stolen ability.'
+/** Anti-loop reminder — shown via the Recast rule hint in the UI, not pasted onto every card. */
+export const RECAST_RULE =
+  'Stolen and copied abilities cannot steal, swap control, copy, or fire another stolen ability.'
+export const RECAST_IDS = new Set([
+  'lifestealer',
+  'vengeful_spirit',
+  'enchantress',
+  'keeper_of_the_light',
+  'rubick',
+  'blink',
+  'satanic',
+  'arcane',
+])
 
 export const HEROES: HeroDef[] = [
   // —— Strength ——
@@ -96,7 +106,7 @@ export const HEROES: HeroDef[] = [
     'STR',
     'Melee',
     'Infest',
-    'Exile Lifestealer and take control of target enemy hero into this team. You may activate its ability immediately. Lifestealer stays exiled while that hero is on the board; when it leaves, Lifestealer returns in its place.' + NO_CHAIN,
+    'Exile Lifestealer and take control of target enemy hero into this team. You may activate its ability immediately. Lifestealer stays exiled while that hero is on the board; when it leaves, Lifestealer returns in its place.',
     'cast',
   ),
   hero('lycan', 'Lycan', 'STR', 'Melee', 'Shapeshift', 'Whenever an ally enters this team, draw 1.', 'aura'),
@@ -116,7 +126,7 @@ export const HEROES: HeroDef[] = [
   hero('primal_beast', 'Primal Beast', 'STR', 'Melee', 'Uproar', 'Until your next turn, you cannot play hero cards, but you may play item cards as if they were instants.', 'cast'),
   hero('pudge', 'Pudge', 'STR', 'Melee', 'Meat Hook', 'Take control of target enemy hero. That opponent discards a card.', 'cast'),
   hero('slardar', 'Slardar', 'STR', 'Melee', 'Corrosive Haze', 'Draw a card for each River terrain you control.', 'cast'),
-  hero('spirit_breaker', 'Spirit Breaker', 'STR', 'Melee', 'Charge of Darkness', "Redirect a hero's ability to Spirit Breaker: the hero or team it targets becomes Spirit Breaker or its team. Instant.", 'instant'),
+  hero('spirit_breaker', 'Spirit Breaker', 'STR', 'Melee', 'Charge of Darkness', "Enter a team you control and redirect the ability about to fire onto Spirit Breaker or its team. Instant.", 'instant'),
   hero('sven', 'Sven', 'STR', 'Melee', "God's Strength", 'If this team has 3 or more Strength heroes, destroy target enemy team.', 'cast'),
   hero('tidehunter', 'Tidehunter', 'STR', 'Melee', 'Ravage', 'Return a team from each enemy to their hand. They each discard 5 cards.', 'cast'),
   hero('timbersaw', 'Timbersaw', 'STR', 'Melee', 'Whirling Death', 'Destroy all Strength heroes in target enemy team.', 'cast'),
@@ -183,7 +193,7 @@ export const HEROES: HeroDef[] = [
     'cast',
   ),
   hero('naga_siren', 'Naga Siren', 'AGI', 'Melee', 'Song of the Siren', 'Heroes cannot be destroyed until your next turn.', 'cast'),
-  hero('nyx_assassin', 'Nyx Assassin', 'AGI', 'Melee', 'Spiked Carapace', "Counter target hero's ability. If that hero is Intelligence, destroy it. Instant.", 'instant'),
+  hero('nyx_assassin', 'Nyx Assassin', 'AGI', 'Melee', 'Spiked Carapace', "Enter a team you control and counter the ability about to fire. If that hero is Intelligence, destroy it. Instant.", 'instant'),
   hero('phantom_assassin', 'Phantom Assassin', 'AGI', 'Melee', 'Coup de Grace', "Whenever an enemy hero returns to its owner's hand, exile it instead.", 'aura'),
   hero('phantom_lancer', 'Phantom Lancer', 'AGI', 'Melee', 'Juxtapose', 'Whenever Phantom Lancer would be destroyed, return him to your hand instead.', 'aura'),
   hero('razor', 'Razor', 'AGI', 'Ranged', 'Static Link', 'Exile target hero. You gain +1 action.', 'cast'),
@@ -226,7 +236,7 @@ export const HEROES: HeroDef[] = [
     'AGI',
     'Ranged',
     'Nether Swap',
-    'Swap control of Vengeful Spirit and target enemy hero. You may activate that hero\'s ability immediately.' + NO_CHAIN,
+    'Swap control of Vengeful Spirit and target enemy hero. You may activate that hero\'s ability immediately.',
     'cast',
   ),
   hero('viper', 'Viper', 'AGI', 'Ranged', 'Nethertoxin', "Nullify all enemy heroes' Aura abilities.", 'aura'),
@@ -263,7 +273,7 @@ export const HEROES: HeroDef[] = [
     'INT',
     'Ranged',
     'Enchant',
-    'Take control of target Strength hero. You may reactivate its ability immediately.' + NO_CHAIN,
+    'Take control of target Strength hero. You may reactivate its ability immediately.',
     'cast',
   ),
   hero('grimstroke', 'Grimstroke', 'INT', 'Ranged', 'Soulbind', 'Sacrifice a terrain combo to take control of target enemy team.', 'cast'),
@@ -275,7 +285,7 @@ export const HEROES: HeroDef[] = [
     'INT',
     'Ranged',
     'Chakra Magic',
-    'Reactivate the ability effect of a hero you own.' + NO_CHAIN,
+    'Reactivate the ability effect of a hero you own.',
     'cast',
   ),
   hero('leshrac', 'Leshrac', 'INT', 'Ranged', 'Pulse Nova', 'Put cards from the top of the deck into the grave until you reveal an item. Put that item into your hand.', 'cast'),
@@ -296,7 +306,7 @@ export const HEROES: HeroDef[] = [
     'INT',
     'Ranged',
     'Spell Steal',
-    'Copy target enemy hero\'s ability and cast it. Nullify that hero\'s ability this turn. Instant.' + NO_CHAIN,
+    'Copy target enemy hero\'s ability and cast it. Nullify that hero\'s ability this turn. Instant.',
     'instant',
   ),
   hero('shadow_demon', 'Shadow Demon', 'INT', 'Ranged', 'Disruption', 'Exile target hero. Return it to your hand when Shadow Demon is removed from the board. Instant.', 'instant'),
@@ -347,7 +357,7 @@ export const ITEMS: ItemDef[] = [
     name: 'Blink Dagger',
     copies: 2,
     instant: true,
-    text: 'Play a hero card from your hand into a team you control. You may activate its ability immediately. Instant.' + NO_CHAIN,
+    text: 'Play a hero card from your hand into a team you control. You may activate its ability immediately. Instant.',
   },
   { id: 'orchid', name: 'Orchid Malevolence', copies: 2, instant: true, text: 'Target opponent cannot activate ability effects until your next turn (including the ability being interrupted). Instant.' },
   { id: 'euls', name: "Eul's Scepter", copies: 2, instant: true, text: 'Exile target hero, then return it at the end of this turn. Instant.' },
@@ -365,7 +375,7 @@ export const ITEMS: ItemDef[] = [
     name: 'Satanic',
     copies: 1,
     instant: false,
-    text: 'Until the end of this turn, take control of target enemy hero and reactivate its ability effect.' + NO_CHAIN,
+    text: 'Until the end of this turn, take control of target enemy hero and reactivate its ability effect.',
   },
   { id: 'greaves', name: 'Guardian Greaves', copies: 1, instant: false, text: "Remove all Trap cards from a player's teams." },
   { id: 'shivas', name: "Shiva's Guard", copies: 1, instant: true, text: 'Until your next turn, opponents cannot reactivate abilities or add new heroes to their current teams. Instant.' },
@@ -375,7 +385,7 @@ export const ITEMS: ItemDef[] = [
 ]
 
 export const REWARDS: RewardDef[] = [
-  { id: 'arcane', name: 'Arcane Rune', kind: 'rune', copies: 1, instant: true, token: false, text: 'Reactivate the ability of a hero you own. Instant.' + NO_CHAIN },
+  { id: 'arcane', name: 'Arcane Rune', kind: 'rune', copies: 1, instant: true, token: false, text: 'Reactivate the ability of a hero you own. Instant.' },
   { id: 'haste', name: 'Haste Rune', kind: 'rune', copies: 1, instant: true, token: false, text: "Steal a card from each opponent's hand at random. Instant." },
   { id: 'shield', name: 'Shield Rune', kind: 'rune', copies: 1, instant: true, token: false, text: 'Until your next turn, target hero becomes immune to all effects. Instant.' },
   { id: 'illusion', name: 'Illusion Rune', kind: 'rune', copies: 1, instant: true, token: false, text: 'Counter target hero or item card (it goes to the grave without activating). Instant.' },

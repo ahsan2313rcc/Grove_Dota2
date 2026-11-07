@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { HERO_BY_ID, ITEM_BY_ID, REWARD_BY_ID, TRAP_IDS } from './catalog.ts'
+import { HERO_BY_ID, ITEM_BY_ID, RECAST_IDS, RECAST_RULE, REWARD_BY_ID, TRAP_IDS } from './catalog.ts'
 import { preferredFoe, scoreState } from './flow.ts'
 import { createGame } from './engine.ts'
 
@@ -46,12 +46,12 @@ describe('card retunes', () => {
     expect(HERO_BY_ID.techies?.text).not.toMatch(/Play face down/i)
   })
 
-  it('adds anti-loop reminder on steal / copy / reactivate cards', () => {
-    expect(HERO_BY_ID.lifestealer?.text).toMatch(/Stolen and copied abilities cannot/i)
-    expect(HERO_BY_ID.vengeful_spirit?.text).toMatch(/Stolen and copied abilities cannot/i)
-    expect(HERO_BY_ID.enchantress?.text).toMatch(/Stolen and copied abilities cannot/i)
-    expect(ITEM_BY_ID.satanic?.text).toMatch(/Stolen and copied abilities cannot/i)
-    expect(ITEM_BY_ID.blink?.text).toMatch(/Stolen and copied abilities cannot/i)
+  it('keeps the Recast rule as a shared hint, not pasted onto card text', () => {
+    expect(HERO_BY_ID.lifestealer?.text).not.toMatch(/Stolen and copied abilities cannot/i)
+    expect(ITEM_BY_ID.blink?.text).not.toMatch(/Stolen and copied abilities cannot/i)
+    expect(RECAST_IDS.has('lifestealer')).toBe(true)
+    expect(RECAST_IDS.has('blink')).toBe(true)
+    expect(RECAST_RULE).toMatch(/Stolen and copied abilities cannot/i)
   })
 
   it('updates Shadow Blade and Refresher to sheet text', () => {

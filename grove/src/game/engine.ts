@@ -1119,17 +1119,49 @@ function satisfy(state: Game, ids: string[]): Game {
     if (!card) {
       return offerInstantWindow(next, resume.heroUid, resume.cast, resume.seats, resume.index + 1)
     }
-    // Nyx from hand: counter this ability; Intelligence casters are also destroyed.
+    // Nyx: seat onto your team, then counter (destroy Intelligence casters).
     if (card.defId === 'nyx_assassin') {
-      let dumped = discardUid(next, pending.actor, cardUid)
-      const caster = findHero(dumped, resume.heroUid)
-      if (caster && attrsOf(dumped, caster.hero).includes('INT')) {
-        dumped = enqueue(dumped, resume.heroUid, 'Spiked Carapace', false, true, pending.actor)
+      const options = teamsFor(next, cardUid).filter((option) => option.ok)
+      if (options.length === 0) {
+        return offerInstantWindow(next, resume.heroUid, resume.cast, resume.seats, resume.index + 1)
       }
-      return log(dumped, 'Spiked Carapace counters the ability.')
+      if (options.length === 1) return spikeCarapace(play(next, cardUid, options[0]!.id, []), resume.heroUid, pending.actor)
+      return ask(next, {
+        actor: pending.actor,
+        prompt: 'Play Nyx Assassin — choose a team.',
+        mode: 'pick',
+        min: 1,
+        max: 1,
+        choices: options.map((option) => ({
+          id: `seat:${option.id}`,
+          label: option.label,
+          defId: card.defId,
+          hint: option.reason,
+        })),
+        resume: { kind: 'nyx-place', cast: resume.cast, heroUid: resume.heroUid, cardUid },
+      })
     }
+    // Spirit Breaker: seat onto your team, then redirect the ability onto it.
     if (card.defId === 'spirit_breaker' && redirectable(resume.cast)) {
-      return charge(next, pending.actor, card, resume.heroUid, resume.cast)
+      const options = teamsFor(next, cardUid).filter((option) => option.ok)
+      if (options.length === 0) {
+        return offerInstantWindow(next, resume.heroUid, resume.cast, resume.seats, resume.index + 1)
+      }
+      if (options.length === 1) return charge(next, pending.actor, card, resume.heroUid, resume.cast, options[0]!.id)
+      return ask(next, {
+        actor: pending.actor,
+        prompt: 'Play Spirit Breaker — choose a team.',
+        mode: 'pick',
+        min: 1,
+        max: 1,
+        choices: options.map((option) => ({
+          id: `seat:${option.id}`,
+          label: option.label,
+          defId: card.defId,
+          hint: option.reason,
+        })),
+        resume: { kind: 'spirit-place', cast: resume.cast, heroUid: resume.heroUid, cardUid },
+      })
     }
     // Orchid from interrupt: nullify the ability about to fire (target = that opponent).
     if (card.defId === 'orchid') {
@@ -1223,6 +1255,18 @@ function satisfy(state: Game, ids: string[]): Game {
       played = { ...played, after: { kind: 'alive', uid: resume.heroUid, cast: resume.cast } }
     }
     return played
+  }
+  if (resume.kind === 'nyx-place') {
+    const raw = ids[0] ?? ''
+    const team = raw.startsWith('seat:') ? raw.slice(5) : 'new'
+    return spikeCarapace(play(next, resume.cardUid, team, []), resume.heroUid, pending.actor)
+  }
+  if (resume.kind === 'spirit-place') {
+    const raw = ids[0] ?? ''
+    const team = raw.startsWith('seat:') ? raw.slice(5) : 'new'
+    const card = next.players[pending.actor]?.hand.find((entry) => entry.uid === resume.cardUid)
+    if (!card) return next
+    return charge(next, pending.actor, card, resume.heroUid, resume.cast, team)
   }
   if (resume.kind === 'free-play-offer') {
     if (ids[0] === 'yes') {
@@ -1328,13 +1372,27 @@ function redirectable(resume: CastResume): boolean {
   return resume.picked.some((id) => id.startsWith('hero:') || id.startsWith('team:'))
 }
 
-/** Spirit Breaker enters a new team, then every hero / team the ability targets becomes it. */
-function charge(state: Game, seat: PlayerId, card: CardInst, heroUid: string, resume: CastResume): Game {
-  let next = removeHand(state, seat, card.uid)
-  let teamId = ''
-  ;[next, teamId] = seatTeam(next, seat)
-  next = putOnTeam(next, seat, teamId, makeHero(card, seat, seat, next))
-  next = arrived(next, card.uid).state
+/** Nyx seats first (via play), then counters — do not resume the cancelled ability. */
+function spikeCarapace(state: Game, heroUid: string, by: PlayerId): Game {
+  let next: Game = { ...state, after: null }
+  const caster = findHero(next, heroUid)
+  if (caster && attrsOf(next, caster.hero).includes('INT')) {
+    next = enqueue(next, heroUid, 'Spiked Carapace', false, true, by)
+  }
+  return log(next, 'Spiked Carapace counters the ability.')
+}
+
+/** Spirit Breaker enters the chosen team, then every hero / team the ability targets becomes it. */
+function charge(
+  state: Game,
+  seat: PlayerId,
+  card: CardInst,
+  heroUid: string,
+  resume: CastResume,
+  team: string,
+): Game {
+  let next = play(state, card.uid, team, [])
+  next = { ...next, after: null }
   const home = findHero(next, card.uid)
   if (!home) return log(next, 'Charge of Darkness falls short.')
   const picked = resume.picked.map((id) => {
