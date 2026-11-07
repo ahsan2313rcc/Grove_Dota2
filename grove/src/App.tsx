@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   AI_STRATS,
   chooseAiAction,
@@ -396,22 +396,22 @@ export default function App() {
     return () => window.clearTimeout(timer)
   }, [debug, game, stuck, labSession])
 
-  function send(action: Action) {
-    if (!live || debug) return
+  const send = useCallback((action: Action) => {
+    if (debug) return
     setRuns((current) => {
       const run = current[0]
       if (!run) return current
       try {
         const next = apply(run.game, action)
         run.tracker.observe(run.game, action, next)
-        if (!labSession) saveLocalMatch(run.seed, next, getScoreRules())
+        if (!labSession) saveLocalMatch(run.seed, next, getScoreRules(), action.type !== 'ready')
         return [{ ...run, game: next, stuck: false, stall: 0 }]
       } catch (error) {
         const text = error instanceof Error ? error.message : 'That play could not resolve.'
         return [{ ...run, game: log(run.game, text) }]
       }
     })
-  }
+  }, [debug, labSession])
 
   function stepDebug() {
     setRuns((current) => {
@@ -460,7 +460,7 @@ export default function App() {
     // Keep unfinished local matches so the lobby can offer Return to game.
     if (live && !debug) {
       if (live.game.over) clearLocalMatch()
-      else saveLocalMatch(live.seed, live.game, getScoreRules())
+      else saveLocalMatch(live.seed, live.game, getScoreRules(), true)
     } else if (debug) {
       clearLocalMatch()
       persistDebugSession()
@@ -756,7 +756,7 @@ export default function App() {
           setDebug(false)
           const tracker = new BalanceTracker(nextSeed)
           tracker.start(next)
-          saveLocalMatch(nextSeed, next, rules)
+          saveLocalMatch(nextSeed, next, rules, true)
           setRuns([{ seed: nextSeed, game: next, tracker, stuck: false, stall: 0 }])
           setFocus(0)
         }}

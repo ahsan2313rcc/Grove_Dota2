@@ -69,19 +69,47 @@ export function loadLocalMatch(): SavedLocalMatch | null {
   }
 }
 
-export function saveLocalMatch(seed: number, game: Game, rules: ScoreRules): void {
+let saveTimer: ReturnType<typeof setTimeout> | null = null
+let savePending: SavedLocalMatch | null = null
+
+function flushLocalMatch(): void {
+  if (!savePending) return
+  const payload = savePending
+  savePending = null
+  storeSet(LOCAL_KEY, JSON.stringify(payload))
+}
+
+/** Persist the local match. Debounced so AI ticks don't hitch the UI on every write. */
+export function saveLocalMatch(seed: number, game: Game, rules: ScoreRules, immediate = false): void {
   if (game.over || game.mode === 'online') {
+    if (saveTimer) {
+      clearTimeout(saveTimer)
+      saveTimer = null
+    }
+    savePending = null
     clearLocalMatch()
     return
   }
-  const payload: SavedLocalMatch = {
+  savePending = {
     v: 1,
     seed,
     game,
     rules: cloneRules(rules),
     savedAt: Date.now(),
   }
-  storeSet(LOCAL_KEY, JSON.stringify(payload))
+  if (immediate) {
+    if (saveTimer) {
+      clearTimeout(saveTimer)
+      saveTimer = null
+    }
+    flushLocalMatch()
+    return
+  }
+  if (saveTimer) return
+  saveTimer = setTimeout(() => {
+    saveTimer = null
+    flushLocalMatch()
+  }, 500)
 }
 
 export function clearLocalMatch(): void {

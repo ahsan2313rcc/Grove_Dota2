@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { memo, useState } from 'react'
 import { display } from '../game/catalog.ts'
 import { cardArtUrl, type ArtKind } from './media.ts'
 
@@ -15,7 +15,7 @@ function artKindOf(defId: string): ArtKind {
 }
 
 /** Portrait / icon art with graceful fallback when CDN misses. */
-export function CardArt({
+export const CardArt = memo(function CardArt({
   defId,
   size = 'portrait',
   className = '',
@@ -44,10 +44,10 @@ export function CardArt({
       className={`card-art ${size} ${className}`.trim()}
       src={src}
       alt=""
-      loading={size === 'portrait' ? 'eager' : 'lazy'}
+      loading="lazy"
       decoding="async"
       referrerPolicy="no-referrer"
       onError={() => setFailed(true)}
     />
   )
-}
+})

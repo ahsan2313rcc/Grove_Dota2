@@ -169,8 +169,25 @@ export function Table({
     graphHeroes: [],
   }
 
-  const teamCount = game?.players[game.active]?.teams.length ?? 0
-  const comboCount = game?.players[game.active]?.combos.length ?? 0
+  const networked = onlineSeat !== null && onlineSeat !== undefined
+  const scrollHumans = game?.players.filter((player) => !player.ai).map((player) => player.id) ?? []
+  const scrollPending =
+    game?.pending && game.players[game.pending.actor] && !game.players[game.pending.actor]!.ai
+      ? game.pending.actor
+      : null
+  const scrollActive =
+    game && game.players[game.active] && !game.players[game.active]!.ai ? game.active : null
+  const scrollViewer: PlayerId | null = !game
+    ? null
+    : networked
+      ? onlineSeat
+      : debug
+        ? game.active
+        : scrollPending !== null
+          ? scrollPending
+          : reactSeat !== null && scrollHumans.includes(reactSeat) && reactSeat !== game.active
+            ? reactSeat
+            : (scrollActive ?? scrollHumans[0] ?? 0)
 
   useEffect(() => {
     function onKey(event: KeyboardEvent) {
@@ -186,10 +203,11 @@ export function Table({
     return () => window.removeEventListener('keydown', onKey)
   }, [])
 
+  // Scroll only when the viewed seat changes — not on every AI tick (that felt like a page refresh).
   useEffect(() => {
-    if (!game || statsOnly) return
+    if (scrollViewer === null || statsOnly) return
     document.querySelector('.lane.mine')?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
-  }, [game, statsOnly, teamCount, comboCount])
+  }, [scrollViewer, statsOnly])
 
   useEffect(() => {
     if (reactSeat === null || !game) return
@@ -297,7 +315,6 @@ export function Table({
   const primaryHuman = humans[0] ?? 0
   const pendingHuman = game.pending && !game.players[game.pending.actor]?.ai ? game.pending.actor : null
   const activeHuman = game.players[game.active] && !game.players[game.active]!.ai ? game.active : null
-  const networked = onlineSeat !== null && onlineSeat !== undefined
   // Instant / choice prompts for another human: switch the view to them immediately (no confirm).
   const viewer: PlayerId = networked
     ? onlineSeat

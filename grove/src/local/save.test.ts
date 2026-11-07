@@ -30,7 +30,7 @@ describe('local match save', () => {
         { name: 'The Grove', ai: true },
       ],
     })
-    saveLocalMatch(42, game, DEFAULT_SCORE_RULES)
+    saveLocalMatch(42, game, DEFAULT_SCORE_RULES, true)
     const loaded = loadLocalMatch()
     expect(loaded?.seed).toBe(42)
     expect(loaded?.game.players[0]?.name).toBe('You')
@@ -57,7 +57,7 @@ describe('local match save', () => {
         ],
       },
     }
-    saveLocalMatch(3, finished, DEFAULT_SCORE_RULES)
+    saveLocalMatch(3, finished, DEFAULT_SCORE_RULES, true)
     expect(loadLocalMatch()).toBeNull()
   })
 
