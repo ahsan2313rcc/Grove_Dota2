@@ -1,0 +1,36 @@
+{
+  "trainedGames": 1000,
+  "trainedSamples": 1190547,
+  "thoughtPower": 5,
+  "evalGamesPerFoe": 40,
+  "baselineBeforeHeuristicTuning": {
+    "note": "Neural win% after 1000 outcome-RL games, before heuristic Ancient/pressure buffs",
+    "results": [
+      { "foe": "balanced", "neuralWinRate": 0.194, "heuristicWinRate": 0.806, "wins": 7, "losses": 29, "draws": 4 },
+      { "foe": "tempo", "neuralWinRate": 0.175, "heuristicWinRate": 0.825, "wins": 7, "losses": 33, "draws": 0 },
+      { "foe": "architect", "neuralWinRate": 0.231, "heuristicWinRate": 0.769, "wins": 9, "losses": 30, "draws": 1 },
+      { "foe": "spite", "neuralWinRate": 0.205, "heuristicWinRate": 0.795, "wins": 8, "losses": 31, "draws": 1 }
+    ],
+    "overallNeuralWinRate": 0.201
+  },
+  "afterHeuristicTuning": {
+    "note": "Same Neural weights; heuristics gained Ancient final-round urgency + contest nearly-filled boards (Architect/Balanced hardest buffs)",
+    "results": [
+      { "foe": "balanced", "neuralWinRate": 0.025, "heuristicWinRate": 0.975, "wins": 1, "losses": 39, "draws": 0, "avgTurns": 39.2 },
+      { "foe": "tempo", "neuralWinRate": 0.075, "heuristicWinRate": 0.925, "wins": 3, "losses": 37, "draws": 0, "avgTurns": 35.075 },
+      { "foe": "architect", "neuralWinRate": 0.026, "heuristicWinRate": 0.974, "wins": 1, "losses": 38, "draws": 1, "avgTurns": 38.275 },
+      { "foe": "spite", "neuralWinRate": 0.077, "heuristicWinRate": 0.923, "wins": 3, "losses": 36, "draws": 1, "avgTurns": 36.975 }
+    ],
+    "overallNeuralWinRate": 0.051,
+    "overallHeuristicWinRate": 0.949
+  },
+  "improvements": [
+    "Ancient final-round: cash points/pressure; stop banking premium answers",
+    "Contest foe nearly-filled (2-hero) teams earlier — Neural was sneaking wins on thin boards",
+    "Architect: less terrain greed, more removal when foe assembling (was weakest vs Neural)",
+    "Balanced: fire interrupts sooner when board is hot",
+    "Spite/Tempo: stronger pressure weights on nearly-filled foes",
+    "Eval stuck escapes so short soft-lock games no longer muddy win%"
+  ],
+  "at": "2026-11-07T00:08:36.396Z"
+}

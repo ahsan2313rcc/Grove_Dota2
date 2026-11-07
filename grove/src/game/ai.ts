@@ -422,10 +422,19 @@ function evaluateFast(state: Game, actor: PlayerId, strat: AiStrat): number {
     hand.length * 0.1 +
     state.players[actor].actions * 0.22 -
     foeFilled * 0.55
-  if (strat === 'tempo') score += heroes * 0.15 + nearly * 0.12
-  if (strat === 'architect') score += filled * 0.25 + comboPts * 0.15
-  if (strat === 'spite') score += traps * 0.35 + foeFilled * 0.35 - foe * 0.1
-  if (strat === 'balanced') score += denial * 0.3
+  const foeNearly = enemyNearly(state, actor)
+  if (strat === 'tempo') score += heroes * 0.15 + nearly * 0.12 + (foeNearly >= 1 ? 0.4 : 0)
+  if (strat === 'architect') {
+    score += filled * 0.25 + comboPts * 0.15
+    if (foeFilled >= 1) score += 0.9
+    if (foeNearly >= 1) score += 0.55
+  }
+  if (strat === 'spite') score += traps * 0.35 + foeFilled * 0.45 + foeNearly * 0.25 - foe * 0.1
+  if (strat === 'balanced') {
+    score += denial * 0.3
+    if (foeNearly >= 1 || foeFilled >= 1) score += 0.55
+  }
+  if (state.ancient) score += (mine - foe) * 1.2 - denial * 0.35
   return score
 }
 
@@ -877,11 +886,14 @@ function endBias(state: Game, actor: PlayerId, strat: AiStrat): number {
   // Keep spending actions — ending with spare actions is how seats fall behind.
   let bias = -2.05
   if (strat === 'tempo') bias = -2.35
-  if (strat === 'architect') bias = denialHand === 0 ? -2.15 : -1.55
-  if (strat === 'spite') bias = -2.2
+  // Architect used to bank answers too hard and bleed tempo to Neural's thin boards.
+  if (strat === 'architect') bias = denialHand === 0 ? -2.25 : -1.95
+  if (strat === 'spite') bias = -2.35
   // Holding a premium Instant while threat is low: slightly prefer to end rather than burn it.
-  if (denialHand >= 1 && threat < 4) bias += strat === 'tempo' ? 0.55 : 0.35
+  if (denialHand >= 1 && threat < 4 && !state.ancient) bias += strat === 'tempo' ? 0.55 : 0.35
   if (threat >= 7 && denialHand === 0) bias -= 0.35
+  // Final round: never leave actions on the table.
+  if (state.ancient) bias -= 0.85
   return bias
 }
 
@@ -981,19 +993,27 @@ function playBias(
     const beforeCombos = before.players[actor].combos.length
     const afterCombos = after.players[actor].combos.length
     if (afterCombos > beforeCombos) bonus += 0.85
-    // Still remove when a foe has a filled team.
-    if (enemyFilled(before, actor) >= 1 && (oppDelta > 0 || pressure > 0)) bonus += 0.9
+    // Still remove when a foe has a filled team — Neural often coasts on thin boards.
+    if (enemyFilled(before, actor) >= 1 && (oppDelta > 0 || pressure > 0)) bonus += 1.25
+    if (enemyNearly(before, actor) >= 1 && (oppDelta > 0 || pressure > 0)) bonus += 0.7
   }
   if (strat === 'spite') {
-    bonus += pressure * 0.45
-    if (denial >= 5 && (threat >= 4 || behind)) bonus += 0.65
+    bonus += pressure * 0.55
+    if (denial >= 5 && (threat >= 4 || behind || enemyNearly(before, actor) >= 1)) bonus += 0.85
     // Don't spite-break own cores: punish plays that shrink our filled count.
     if (afterFilled < beforeFilled) bonus -= 2.4
   }
   if (strat === 'tempo' && kind === 'hero' && !trap) bonus += 0.22
   if (strat === 'balanced') {
-    if (denial >= 7 && threat < 4 && !behind) bonus -= 0.4
-    if (oppDelta >= 2 || pressure >= 1) bonus += 0.35
+    const hot = threat >= 4 || enemyNearly(before, actor) >= 1 || enemyFilled(before, actor) >= 1
+    if (denial >= 7 && !hot && !behind && !before.ancient) bonus -= 0.35
+    if (oppDelta >= 2 || pressure >= 1) bonus += 0.55
+    if (hot && denial >= 5 && instant) bonus += 0.45
+  }
+  // Ancient final round: cash points and pressure; stop banking answers.
+  if (before.ancient) {
+    bonus += ptsGain * 0.55 + pressure * 0.35
+    if (instant && denial >= 7) bonus += 1.1
   }
   return bonus
 }
@@ -1034,6 +1054,15 @@ function enemyFilled(state: Game, actor: PlayerId): number {
   for (const player of state.players) {
     if (player.id === actor) continue
     n += player.teams.filter((team) => team.heroes.length >= 3).length
+  }
+  return n
+}
+
+function enemyNearly(state: Game, actor: PlayerId): number {
+  let n = 0
+  for (const player of state.players) {
+    if (player.id === actor) continue
+    n += player.teams.filter((team) => team.heroes.length === 2).length
   }
   return n
 }
@@ -1087,22 +1116,33 @@ function evaluate(state: Game, actor: PlayerId, strat: AiStrat): number {
     actions * 0.22 -
     foeFilled * 0.55
 
+  const foeNearly = enemyNearly(state, actor)
+
   if (strat === 'tempo') {
     score += heroes * 0.12 + actions * 0.1 + nearly * 0.15
     score -= denial * 0.15
-    if (threat >= 6) score += denial * 0.35
+    if (threat >= 6 || foeNearly >= 1) score += denial * 0.4
   }
   if (strat === 'architect') {
-    score += filled * 0.22 + terrains * 0.18 + comboPts * 0.2 + nearly * 0.12
-    if (foeFilled >= 1) score += 0.8
+    score += filled * 0.22 + terrains * 0.12 + comboPts * 0.2 + nearly * 0.12
+    // Less terrain greed when the foe is assembling — contest the board.
+    if (foeFilled >= 1) score += 1.35
+    if (foeNearly >= 1) score += 0.85
+    if (behind) score += 0.7
   }
   if (strat === 'spite') {
     score += traps * 0.28 + enemyTraps * 0.35 + (behind ? 1.1 : 0) - foe * 0.12
-    score += foeFilled * 0.4 + threat * 0.08
+    score += foeFilled * 0.55 + foeNearly * 0.35 + threat * 0.1
   }
   if (strat === 'balanced') {
-    score += denial * 0.25 + (behind ? 0.4 : 0)
-    if (!behind) score += denial * 0.2
+    score += denial * 0.25 + (behind ? 0.55 : 0)
+    if (!behind) score += denial * 0.15
+    if (foeNearly >= 1 || foeFilled >= 1) score += 0.9
+  }
+  // Final-round Ancient: raw margin dominates; answers lose latent value.
+  if (state.ancient) {
+    score += (mine - foe) * 1.4 + mine * 0.35
+    score -= denial * 0.45
   }
   return score
 }

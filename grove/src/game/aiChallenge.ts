@@ -281,8 +281,11 @@ export function evaluateChallenge(state: Game, actor: PlayerId, strat: AiStrat):
     foeFilled * 1.1 -
     foeHeroes * 0.08
 
+  const foeNearly = enemyNearly(state, actor)
+
   // Answer retention: premium denial is latent value unless board is on fire.
-  if (threat < 5) score += denial * 1.6
+  if (state.ancient) score += denial * 0.15
+  else if (threat < 5 && foeNearly === 0) score += denial * 1.6
   else if (threat < 7) score += denial * 0.7
   else score += denial * 0.25
   // Prefer keeping the match competitive — punish huge leads less than collapses.
@@ -294,21 +297,29 @@ export function evaluateChallenge(state: Game, actor: PlayerId, strat: AiStrat):
 
   if (strat === 'tempo') {
     score += heroes * 0.2 + nearly * 0.2 + actions * 0.12
-    if (threat < 5) score -= denial * 0.15
+    if (threat < 5 && foeNearly === 0) score -= denial * 0.15
+    if (foeNearly >= 1) score += 0.7
   }
   if (strat === 'architect') {
-    score += filled * 0.35 + comboPts * 0.25 + terrains * 0.25 + nearly * 0.2
-    if (foeFilled >= 1) score += 1.2
+    score += filled * 0.35 + comboPts * 0.25 + terrains * 0.15 + nearly * 0.2
+    if (foeFilled >= 1) score += 1.7
+    if (foeNearly >= 1) score += 1.0
+    if (behind) score += 0.8
   }
   if (strat === 'spite') {
-    score += traps * 0.45 + enemyTraps * 0.5 + foeFilled * 0.55 + threat * 0.12
+    score += traps * 0.45 + enemyTraps * 0.5 + foeFilled * 0.7 + foeNearly * 0.4 + threat * 0.12
     score -= foe * 0.15
     if (behind) score += 1.4
   }
   if (strat === 'balanced') {
-    score += denial * 0.35
-    if (behind) score += 0.6
-    if (!behind && threat < 4) score += denial * 0.25
+    score += denial * 0.3
+    if (behind) score += 0.75
+    if (!behind && threat < 4 && foeNearly === 0) score += denial * 0.2
+    if (foeNearly >= 1 || foeFilled >= 1) score += 1.0
+  }
+  if (state.ancient) {
+    score += lead * 1.6 + mine * 0.4
+    score -= denial * 0.5
   }
   return score
 }
@@ -347,19 +358,23 @@ function playBiasChallenge(
     if (afterFilled > beforeFilled) bonus += 1.4
   }
 
-  // Strong hold on premium answers.
+  const hotBoard =
+    threat >= 5.5 || behind || foeLoss >= 2 || ptsGain >= 4 || enemyNearly(before, actor) >= 1 || !!before.ancient
+
+  // Strong hold on premium answers — loosen when foe is about to fill or Ancient is live.
   if (display(card.defId).instant && denial >= 7) {
-    const burn = threat >= 6 || behind || foeLoss >= 2 || ptsGain >= 4
-    bonus += burn ? 0.8 : -2.6
+    bonus += hotBoard ? 0.95 : -2.4
   } else if (display(card.defId).instant && denial >= 5) {
-    bonus += threat >= 4.5 || behind ? 0.35 : -0.9
+    bonus += hotBoard || threat >= 4.5 ? 0.45 : -0.85
   }
 
   if (strat === 'architect' && after.players[actor].combos.length > before.players[actor].combos.length) {
     bonus += 1
   }
+  if (strat === 'architect' && foeLoss > 0) bonus += 0.55
   if (strat === 'spite' && afterFilled < beforeFilled) bonus -= 2.8
   if (strat === 'tempo' && card.kind === 'hero' && !trap) bonus += 0.3
+  if (before.ancient) bonus += ptsGain * 0.6 + foeLoss * 0.4
   return bonus
 }
 
@@ -369,10 +384,12 @@ function endBiasChallenge(state: Game, actor: PlayerId, strat: AiStrat): number 
   const denial = state.players[actor].hand.filter((card) => (INTERRUPT_VALUE[card.defId] ?? 0) >= 6).length
   const threat = threatScoreChallenge(state, actor)
   let bias = -1.8
-  if (denial >= 1 && threat < 4.5) bias += 0.9
+  if (denial >= 1 && threat < 4.5 && !state.ancient && enemyNearly(state, actor) === 0) bias += 0.9
   if (threat >= 7 && denial === 0) bias -= 0.5
   if (strat === 'tempo') bias -= 0.25
-  if (strat === 'architect' && denial > 0) bias += 0.2
+  // Architect: spend more, bank less — was the softest vs Neural.
+  if (strat === 'architect') bias -= 0.35
+  if (state.ancient) bias -= 0.9
   return bias
 }
 
@@ -473,6 +490,15 @@ function enemyFilled(state: Game, actor: PlayerId): number {
   for (const player of state.players) {
     if (player.id === actor) continue
     n += player.teams.filter((team) => team.heroes.length >= 3).length
+  }
+  return n
+}
+
+function enemyNearly(state: Game, actor: PlayerId): number {
+  let n = 0
+  for (const player of state.players) {
+    if (player.id === actor) continue
+    n += player.teams.filter((team) => team.heroes.length === 2).length
   }
   return n
 }
