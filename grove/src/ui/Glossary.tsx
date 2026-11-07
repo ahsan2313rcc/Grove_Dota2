@@ -3,7 +3,7 @@ import { ANCIENT, HEROES, ITEMS, REWARDS, TERRAINS } from '../game/catalog.ts'
 import type { Attr } from '../game/types.ts'
 import { CardArt } from './CardArt.tsx'
 
-type Tab = 'heroes' | 'items' | 'terrains' | 'runes' | 'neutrals' | 'towers'
+type Tab = 'heroes' | 'items' | 'terrains' | 'runes' | 'neutrals' | 'towers' | 'ancient'
 
 const TABS: { id: Tab; label: string }[] = [
   { id: 'heroes', label: 'Heroes' },
@@ -12,6 +12,7 @@ const TABS: { id: Tab; label: string }[] = [
   { id: 'runes', label: 'Runes' },
   { id: 'neutrals', label: 'Neutrals' },
   { id: 'towers', label: 'Towers' },
+  { id: 'ancient', label: 'Ancient' },
 ]
 
 const ATTRS: Attr[] = ['STR', 'AGI', 'INT', 'UNI']
@@ -29,6 +30,9 @@ const TIMING_LABEL = {
   instant: 'Instant',
   trap: 'Trap',
 } as const
+
+const ANCIENT_PLACEMENT =
+  'After the opening deal, The Ancient is placed by seat count (mid for 2–4, deep for 5–6, last for 7–8), ±5%. Depth can also be set in Win condition.'
 
 export function Glossary({ onClose }: { onClose: () => void }) {
   const [tab, setTab] = useState<Tab>('heroes')
@@ -65,27 +69,20 @@ export function Glossary({ onClose }: { onClose: () => void }) {
       .sort((a, b) => a.name.localeCompare(b.name))
   }, [needle, tab])
 
+  const showAncient = tab === 'ancient' && matches(needle, ANCIENT.name, ANCIENT.text, ANCIENT_PLACEMENT, 'endgame')
+
   const count = tab === 'heroes' ? heroes.length
     : tab === 'items' ? items.length
       : tab === 'terrains' ? terrains.length
-        : rewards.length
+        : tab === 'ancient' ? (showAncient ? 1 : 0)
+          : rewards.length
 
   return (
     <div className="scrim" onClick={onClose}>
       <article className="sheet glossary" role="dialog" aria-modal="true" aria-labelledby="glossary-title" onClick={(event) => event.stopPropagation()}>
         <p className="eyebrow">Card reference</p>
         <h2 id="glossary-title">Glossary</h2>
-        <p className="quiet">Browse every hero, item, terrain, and reward in the shared decks. The Ancient is placed after the opening deal by seat count (mid for 2–4, deep for 5–6, last for 7–8); whoever draws it puts it on the board, worth +10 to whoever controls it at the end.</p>
-        <div className="glossary-entry has-art" data-kind="ancient" style={{ marginBottom: 12 }}>
-          <CardArt defId={ANCIENT.id} size="icon" className="glossary-art" />
-          <div className="glossary-body">
-            <header>
-              <strong>{ANCIENT.name}</strong>
-              <span className="glossary-marks"><span className="pill muted">1× endgame</span></span>
-            </header>
-            <p>{ANCIENT.text}</p>
-          </div>
-        </div>
+        <p className="quiet">Browse every hero, item, terrain, reward, and The Ancient in the shared decks.</p>
 
         <div className="glossary-tabs" role="tablist" aria-label="Card type">
           {TABS.map((entry) => (
@@ -123,7 +120,7 @@ export function Glossary({ onClose }: { onClose: () => void }) {
               ))}
             </div>
           ) : null}
-          <span className="quiet">{count} cards</span>
+          <span className="quiet">{count} card{count === 1 ? '' : 's'}</span>
         </div>
 
         {tab === 'heroes' ? (
@@ -205,6 +202,22 @@ export function Glossary({ onClose }: { onClose: () => void }) {
                 </div>
               </li>
             ))}
+          </ul>
+        ) : null}
+
+        {tab === 'ancient' && showAncient ? (
+          <ul className="glossary-list" data-testid="glossary-ancient">
+            <li className="glossary-entry has-art" data-kind="ancient">
+              <CardArt defId={ANCIENT.id} size="icon" className="glossary-art" />
+              <div className="glossary-body">
+                <header>
+                  <strong>{ANCIENT.name}</strong>
+                  <span className="glossary-marks"><span className="pill muted">1× endgame</span></span>
+                </header>
+                <p>{ANCIENT.text}</p>
+                <p className="quiet">{ANCIENT_PLACEMENT}</p>
+              </div>
+            </li>
           </ul>
         ) : null}
 
