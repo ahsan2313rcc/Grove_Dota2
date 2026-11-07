@@ -52,6 +52,7 @@ import {
   teamSize,
   toExile,
   toGrave,
+  trapBlock,
   topReward,
   updateTeam,
 } from './flow.ts'
@@ -186,7 +187,7 @@ export function cast(state: Game, resume: CastResume): Game {
     const countered = refracts(state, resume.actor, pickedHeroes)
     if (countered.stopped) return countered.state
     let armed = { ...resume, armed: true }
-    if (state.multicast === resume.actor && !resume.echo) {
+    if (state.multicast === resume.sourceUid && !resume.echo) {
       state = {
         ...countered.state,
         multicast: null,
@@ -417,7 +418,7 @@ function questions(state: Game, resume: CastResume): Ask {
         'Move the trap onto another player\'s team.',
         teamChoices(state, actor, kind, (team, player) => {
           if (team.id === fromId || team.trap || team.mine) return false
-          return player.id !== from.player.id
+          return player.id !== from.player.id && !trapBlock(state, team)
         }),
       )
     }
@@ -788,7 +789,23 @@ function questions(state: Game, resume: CastResume): Ask {
         }
         return ready()
       }
-      if (resume.defId === 'ward' || resume.defId === 'bounty_hunter') {
+      if (resume.defId === 'ward') {
+        const traps = teamChoices(state, actor, kind, (team) => !!team.trap)
+        if (at === 0) {
+          return pose(actor, 'Observer Ward: remove a trap or reveal a hand?', [
+            ...(traps.length > 0 ? [{ id: 'mode:trap', label: 'Remove a trap' }] : []),
+            { id: 'mode:hand', label: "Reveal an opponent's hand" },
+          ])
+        }
+        if (at === 1) {
+          if (resume.picked.includes('mode:trap')) return pose(actor, 'Remove the trap on which team?', traps)
+          return pose(actor, 'Choose an opponent.', opponentChoices(state, actor))
+        }
+        if (at > 2 || resume.picked.includes('mode:trap')) return ready()
+        const seen = pickedEnemy(state, resume, actor)
+        return pose(actor, `${pname(state, seen)}'s hand.`, [...handCards(state, seen), { id: 'ok', label: 'Done' }], 1, 1, 'look')
+      }
+      if (resume.defId === 'bounty_hunter') {
         if (at > 0) return ready()
         return pose(actor, `${pname(state, enemy)}'s hand.`, [...handCards(state, enemy), { id: 'ok', label: 'Done' }], 1, 1, 'look')
       }
@@ -1017,7 +1034,7 @@ function effect(state: Game, resume: CastResume): Game {
       const toId = teams[1] ?? rawTeams(resume.picked)[1]
       const from = fromId ? teamById(state, fromId) : null
       const to = toId ? teamById(state, toId) : null
-      if (!from?.team.trap || !to || to.team.trap || to.team.mine) return state
+      if (!from?.team.trap || !to || to.team.trap || to.team.mine || trapBlock(state, to.team)) return state
       const trap = from.team.trap
       let next = updateTeam(state, fromId!, (team) => ({ ...team, trap: null }))
       next = updateTeam(next, toId!, (team) => ({ ...team, trap }))
@@ -1070,7 +1087,7 @@ function effect(state: Game, resume: CastResume): Game {
     case 'night_stalker':
       return stealRandom(state, enemy, actor, 2)
     case 'ogre_magi':
-      return log({ ...state, multicast: actor }, 'Multicast is primed.')
+      return log(state, 'Multicast waits face down.')
     case 'omniknight':
       return log(state, 'Guardian Angel is an aura.')
     case 'phoenix': {
@@ -1232,8 +1249,17 @@ function effect(state: Game, resume: CastResume): Game {
       if (!home) return state
       return log(updateTeamTimed(state, home.team.id, 'blade', stamp), 'Blade Fury.')
     }
-    case 'bounty_hunter':
     case 'ward':
+      if (resume.picked.includes('mode:trap')) {
+        const teamId = teams[0]
+        const found = teamId ? teamById(state, teamId) : null
+        if (!found?.team.trap) return state
+        const trap = found.team.trap
+        const next = updateTeam(state, found.team.id, (team) => ({ ...team, trap: null }))
+        return log(toGrave(next, { uid: trap.uid, defId: trap.defId, kind: 'hero' }, { type: 'deck' }), 'Observer Ward removes a trap unrevealed.')
+      }
+      return log({ ...state, reveal: [...state.reveal, { viewer: actor, target: enemy, turn: state.turn }] }, `${pname(state, actor)} sees ${pname(state, enemy)}'s hand.`)
+    case 'bounty_hunter':
       return log({ ...state, reveal: [...state.reveal, { viewer: actor, target: enemy, turn: state.turn }] }, `${pname(state, actor)} sees ${pname(state, enemy)}'s hand.`)
     case 'broodmother':
       return log(state, 'Spin Web waits face down.')

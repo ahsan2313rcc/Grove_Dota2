@@ -6,7 +6,7 @@ import { teamShapes } from '../game/scoring.ts'
 import type { Action, CardInst, Game, PlayerId } from '../game/types.ts'
 import { CardFace } from './CardFace.tsx'
 import { Prompt } from './Prompt.tsx'
-import { emberTargets, handRevealed, heroMarks, isCombo, playBlock, playsAsInstant, shownAttrs, shownRange, statusLines } from './present.ts'
+import { handRevealed, heroMarks, isCombo, playBlock, playsAsInstant, shownAttrs, shownRange, statusLines } from './present.ts'
 import { ALL_STRAT_FILTER, type BalanceSummary, type MatchReport, type StratFilter } from '../game/balance.ts'
 import { DebugRail, type DebugSpeed, type DebugView } from './DebugRail.tsx'
 import { Glossary } from './Glossary.tsx'
@@ -102,7 +102,6 @@ export function Table({
   const [focus, setFocus] = useState<Focus | null>(null)
   const [placing, setPlacing] = useState<string | null>(null)
   const [extras, setExtras] = useState<string[]>([])
-  const [moving, setMoving] = useState<string | null>(null)
   const [pile, setPile] = useState<PileName | null>(null)
   const [rules, setRules] = useState(false)
   const [glossary, setGlossary] = useState(false)
@@ -121,7 +120,6 @@ export function Table({
     setFocus(null)
     setPlacing(null)
     setExtras([])
-    setMoving(null)
     setPile(null)
     setLogOpen(false)
     setHandOpen(null)
@@ -180,8 +178,7 @@ export function Table({
       setLogOpen(false)
       setHandOpen(null)
       setPlacing(null)
-      setMoving(null)
-    }
+      }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [])
@@ -341,7 +338,7 @@ export function Table({
   const plans = canAct ? comboPlans(game) : []
   const lines = statusLines(game, viewer)
   const lastLog = game.log[game.log.length - 1] ?? ''
-  const showDetail = !!focus || !!placing || !!moving
+  const showDetail = !!focus || !!placing
   const activeName = game.players[game.active]?.name ?? 'Player'
   const whoseTurn = game.over ? 'Match over' : debug ? `${activeName}'s turn` : game.active === viewer ? 'Your turn' : `${activeName}'s turn`
   const reactCandidates = !networked && !debug && humans.length > 1 && !game.pending && !game.over && !game.veil
@@ -401,7 +398,6 @@ export function Table({
       setFocus((current) => (current?.kind === 'hand' && current.uid === card.uid ? null : { kind: 'hand', uid: card.uid }))
       return
     }
-    setMoving(null)
     if (card.kind === 'terrain') {
       toggleTerrainCombo(card)
       return
@@ -448,8 +444,7 @@ export function Table({
     if (needsTeam(card.defId, card.kind)) {
       setPlacing(uid)
       setExtras((current) => current.filter((extra) => extra !== uid))
-      setMoving(null)
-      setFocus(fromGrave || fromClinkz ? { kind: 'card', defId: card.defId } : { kind: 'hand', uid })
+        setFocus(fromGrave || fromClinkz ? { kind: 'card', defId: card.defId } : { kind: 'hand', uid })
       return
     }
     onAction({ type: 'play', uid, team: '', extras: extras.length > 0 && card.kind === 'hero' ? extras : undefined })
@@ -528,13 +523,7 @@ export function Table({
                         return next
                       })
                       setPlacing(null)
-                      setMoving(null)
                     }}
-                    onEmber={chair.mine && canAct ? (uid) => {
-                      setMoving((current) => (current === uid ? null : uid))
-                      setPlacing(null)
-                      setFocus((current) => (current?.kind === 'hero' && current.uid === uid ? null : { kind: 'hero', uid }))
-                    } : undefined}
                   />
                 )
               })}
@@ -694,7 +683,6 @@ export function Table({
                 focus={focus}
                 placing={placing}
                 extras={extras}
-                moving={moving}
                 comboReady={comboReady}
                 chosen={chosen}
                 onPlay={playFocused}
@@ -712,12 +700,8 @@ export function Table({
                   setExtras([])
                   setReactSeat(null)
                 }}
-                onMove={(team) => {
-                  if (moving) onAction({ type: 'move', uid: moving, team })
-                  setMoving(null)
-                }}
                 onMorph={(uid) => onAction({ type: 'morph', uid })}
-                onCancel={() => { setPlacing(null); setExtras([]); setMoving(null) }}
+                onCancel={() => { setPlacing(null); setExtras([]) }}
               />
             ) : null}
             <p className="log-last" data-testid="log-last">{lastLog}</p>
@@ -826,7 +810,6 @@ function Lane({
   combos,
   game,
   onInspect,
-  onEmber,
 }: {
   name: string
   score: number
@@ -842,7 +825,6 @@ function Lane({
   combos: Game['players'][number]['combos']
   game: Game
   onInspect: (focus: Focus) => void
-  onEmber?: (uid: string) => void
 }) {
   return (
     <section className={`lane${mine ? ' mine' : ' foe'}${active ? ' active' : ''}`}>
@@ -878,13 +860,7 @@ function Lane({
                       attrs={shownAttrs(game, hero)}
                       range={shownRange(hero)}
                       marks={heroMarks(hero, team)}
-                      onClick={() => {
-                        if (onEmber && hero.defId === 'ember_spirit') {
-                          onEmber(hero.uid)
-                          return
-                        }
-                        onInspect({ kind: 'hero', uid: hero.uid })
-                      }}
+                      onClick={() => onInspect({ kind: 'hero', uid: hero.uid })}
                     />
                   ))}
                 </div>
@@ -964,13 +940,11 @@ function Detail({
   focus,
   placing,
   extras,
-  moving,
   comboReady,
   chosen,
   onPlay,
   onPlace,
   onTeam,
-  onMove,
   onMorph,
   onCancel,
 }: {
@@ -981,13 +955,11 @@ function Detail({
   focus: Focus | null
   placing: string | null
   extras: string[]
-  moving: string | null
   comboReady: boolean
   chosen: CardInst[]
   onPlay: (uid: string) => void
   onPlace: () => void
   onTeam: (team: string) => void
-  onMove: (team: string) => void
   onMorph: (uid: string) => void
   onCancel: () => void
 }) {
@@ -1028,22 +1000,6 @@ function Detail({
       </div>
     )
   }
-  if (moving) {
-    const options = emberTargets(game, moving)
-    return (
-      <div className="detail">
-        <p>Move Ember Spirit</p>
-        <div className="inline-choices">
-          {options.map((option) => (
-            <button key={option.id} type="button" disabled={!option.ok} onClick={() => onMove(option.id)}>
-              {option.label}{option.reason ? ` · ${option.reason}` : ''}
-            </button>
-          ))}
-          <button type="button" onClick={onCancel}>Cancel</button>
-        </div>
-      </div>
-    )
-  }
   if (!focus) return null
   if (focus.kind === 'card') {
     const info = display(focus.defId)
@@ -1069,7 +1025,6 @@ function Detail({
         <p>{info.text}</p>
         {heroMarks(loc.hero, loc.team).length > 0 ? <p className="quiet">{heroMarks(loc.hero, loc.team).join(' · ')}</p> : null}
         {canAct && morph ? <button type="button" onClick={() => onMorph(loc.hero.uid)}>{morph.label}</button> : null}
-        {canAct && loc.hero.defId === 'ember_spirit' && loc.hero.controller === viewer ? <p className="quiet">Choose a team above, or click Ember again and pick a destination.</p> : null}
       </div>
     )
   }

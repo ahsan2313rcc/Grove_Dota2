@@ -6,10 +6,10 @@
  * important pending picks instead of keyword heuristics alone.
  */
 import { display, HERO_BY_ID } from './catalog.ts'
-import { aiComboPick, apply, comboPlans, emberMoves, morphCasts, needsTeam, playableFromGrave, teamsFor, undyingRevive } from './engine.ts'
+import { aiComboPick, apply, comboPlans, morphCasts, needsTeam, playableFromGrave, teamsFor, undyingRevive } from './engine.ts'
 import {
-  findHero,
   isTrapHero,
+  trapAim,
   preferredFoe,
   preferredFoeFromScores,
   scoreState,
@@ -191,11 +191,6 @@ function challengeCandidates(state: Game, actor: PlayerId, strat: AiStrat): Acti
     if (discards.length >= 2) out.push({ type: 'undying', team: 'new', discards })
   }
 
-  for (const ember of emberMoves(state).slice(0, 2)) {
-    const dest = emberTargets(state, ember.uid)[0]
-    if (dest) out.push({ type: 'move', uid: ember.uid, team: dest })
-  }
-
   const graveTop = playableFromGrave(state, actor)
   if (graveTop?.kind === 'terrain') {
     for (const plan of comboPlans(state)) {
@@ -360,8 +355,8 @@ function playBiasChallenge(
   let bonus = ptsGain * 1.05 + foeLoss * 0.7 + extras * 0.4
 
   if (trap) {
-    const dest = teamId !== 'new' && teamId !== '' ? teamById(after, teamId) : null
-    bonus += dest && dest.player.id !== actor ? (strat === 'spite' ? 2.4 : 1.8) : 0.2
+    const aim = trapAim(after, actor, card.defId, teamId)
+    bonus += aim > 0 ? (strat === 'spite' ? 2.4 : 1.8) : -1.6
   }
 
   if (card.kind === 'hero' && !trap) {
@@ -478,16 +473,6 @@ function pickDiscards(state: Game, actor: PlayerId): string[] {
     .filter((card) => card.kind === 'terrain' || (INTERRUPT_VALUE[card.defId] ?? 0) < 5)
     .slice(0, 2)
     .map((card) => card.uid)
-}
-
-function emberTargets(state: Game, uid: string): string[] {
-  const loc = findHero(state, uid)
-  if (!loc) return []
-  const actor = loc.hero.controller
-  return state.players[actor].teams
-    .filter((team) => team.id !== loc.team.id)
-    .map((team) => team.id)
-    .concat(state.players[actor].teams.length < 12 ? ['new'] : [])
 }
 
 function stuckDiscard(state: Game, actor: PlayerId): string | null {

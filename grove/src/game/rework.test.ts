@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { apply, createGame } from './engine.ts'
+import { apply, createGame, teamsFor } from './engine.ts'
 import { allLocs, makeHero, newTeam, putOnTeam, scoreState } from './flow.ts'
 import type { CardInst, Game, PlayerId } from './types.ts'
 
@@ -240,4 +240,196 @@ describe('reworked heroes', () => {
 
 function findTeamOf(game: Game, uid: string): string | undefined {
   return allLocs(game).find((loc) => loc.hero.uid === uid)?.team.id
+}
+
+function trapOn(game: Game, teamId: string, defId: string): Game {
+  const [pulled, card] = pull(game, defId)
+  return {
+    ...pulled,
+    players: pulled.players.map((seat) => ({
+      ...seat,
+      teams: seat.teams.map((entry) => (entry.id === teamId ? { ...entry, trap: { uid: card.uid, defId, owner: 1 } } : entry)),
+    })),
+  }
+}
+
+function teamOf(game: Game, teamId: string) {
+  return game.players.flatMap((seat) => seat.teams).find((entry) => entry.id === teamId)
+}
+
+describe('traps', () => {
+  it('a face-down trap switches off the attribute bonus', () => {
+    let game = ready()
+    let home = ''
+    ;[game, home] = team(game, 0, ['axe', 'sven', 'tiny'])
+    const open = scoreState(game, 0).teams
+    game = trapOn(game, home, 'techies')
+    expect(scoreState(game, 0).teams).toBeLessThan(open)
+    expect(teamOf(game, home)?.trap).not.toBeNull()
+  })
+
+  it('cannot be planted on a 5-hero team', () => {
+    let game = toHand(ready(), 0, ['riki'])
+    let full = ''
+    ;[game, full] = team(game, 1, ['axe', 'sven', 'tiny', 'lina', 'zeus'])
+    const options = teamsForTrap(game, uidOf(game, 0, 'riki'))
+    expect(options.find((option) => option.id === full)?.ok).toBe(false)
+    game = apply(game, { type: 'play', uid: uidOf(game, 0, 'riki'), team: full })
+    expect(teamOf(game, full)?.trap).toBeNull()
+  })
+
+  it('does not fire when the team is only targeted', () => {
+    let game = toHand(ready(), 0, ['lina'])
+    let foe = ''
+    ;[game, foe] = team(game, 1, ['axe', 'sven'])
+    game = trapOn(game, foe, 'techies')
+    const axe = teamOf(game, foe)!.heroes[0]!.uid
+    game = drain(apply(game, { type: 'play', uid: uidOf(game, 0, 'lina'), team: 'new' }), pick(`hero:${axe}`))
+    expect(teamOf(game, foe)?.trap?.defId).toBe('techies')
+  })
+
+  it('Techies sacrifices the whole team, entrant included', () => {
+    let game = toHand(ready(), 0, ['lina'])
+    let home = ''
+    ;[game, home] = team(game, 0, ['axe', 'sven'])
+    game = trapOn(game, home, 'techies')
+    game = drain(apply(game, { type: 'play', uid: uidOf(game, 0, 'lina'), team: home }))
+    expect(teamOf(game, home)).toBeUndefined()
+    expect(game.grave.map((card) => card.defId).sort()).toEqual(['axe', 'lina', 'sven', 'techies'])
+  })
+
+  it('Broodmother exiles the entrant, then joins', () => {
+    let game = toHand(ready(), 0, ['lina'])
+    let home = ''
+    ;[game, home] = team(game, 0, ['axe'])
+    game = trapOn(game, home, 'broodmother')
+    game = drain(apply(game, { type: 'play', uid: uidOf(game, 0, 'lina'), team: home }))
+    expect(teamOf(game, home)?.heroes.map((hero) => hero.defId)).toEqual(['axe', 'broodmother'])
+    expect(game.exile.some((card) => card.defId === 'lina')).toBe(true)
+  })
+
+  it('Monkey King costs the controller their next turn', () => {
+    let game = toHand(ready(), 0, ['axe'])
+    let home = ''
+    ;[game, home] = team(game, 0, ['sven'])
+    game = trapOn(game, home, 'monkey_king')
+    game = drain(apply(game, { type: 'play', uid: uidOf(game, 0, 'axe'), team: home }))
+    expect(game.players[0].skip).toBe(true)
+  })
+
+  it('Riki resolves first and stops the entering ability', () => {
+    let game = toHand(ready(), 0, ['lina'])
+    let home = ''
+    ;[game, home] = team(game, 0, ['sven'])
+    ;[game] = team(game, 1, ['axe'])
+    game = trapOn(game, home, 'riki')
+    game = drain(apply(game, { type: 'play', uid: uidOf(game, 0, 'lina'), team: home }))
+    expect(game.players[0].orchid).not.toBeNull()
+    expect(heroCount(game, 1)).toBe(1)
+    expect(teamOf(game, home)?.heroes.map((hero) => hero.defId)).toEqual(['sven', 'lina', 'riki'])
+  })
+
+  it('Slark: the controller discards 3 and everyone else draws 1', () => {
+    let game = toHand(ready(), 0, ['axe', 'river', 'river', 'lane', 'jungle'])
+    game = toHand(game, 1, [])
+    let home = ''
+    ;[game, home] = team(game, 0, ['sven'])
+    game = trapOn(game, home, 'slark')
+    game = drain(apply(game, { type: 'play', uid: uidOf(game, 0, 'axe'), team: home }))
+    expect(game.players[0].hand.length).toBe(1)
+    expect(game.players[1].hand.length).toBe(1)
+  })
+
+  it('Shadow Shaman: the controller sacrifices a hero from another team', () => {
+    let game = toHand(ready(), 0, ['axe'])
+    let home = ''
+    ;[game, home] = team(game, 0, ['sven'])
+    ;[game] = team(game, 0, ['tiny'])
+    game = trapOn(game, home, 'shadow_shaman')
+    game = drain(apply(game, { type: 'play', uid: uidOf(game, 0, 'axe'), team: home }))
+    expect(allLocs(game).some((loc) => loc.hero.defId === 'tiny')).toBe(false)
+    expect(teamOf(game, home)?.heroes.map((hero) => hero.defId)).toEqual(['sven', 'axe'])
+  })
+
+  it('Kez plays a free hero whose ability resolves before the entrant', () => {
+    let game = toHand(ready(), 0, ['spectre', 'lina'])
+    let home = ''
+    ;[game, home] = team(game, 0, ['sven'])
+    ;[game] = team(game, 1, ['axe', 'tiny', 'zeus'])
+    game = trapOn(game, home, 'kez')
+    const order: string[] = []
+    game = drain(apply(game, { type: 'play', uid: uidOf(game, 0, 'spectre'), team: home }), (current) => {
+      const pending = current.pending!
+      if (pending.resume.kind === 'kez-trap') return [pending.choices.find((choice) => choice.defId === 'lina')!.id]
+      if (pending.resume.kind === 'cast' && pending.choices[0]?.id.startsWith('hero:')) order.push(pending.resume.defId)
+      return null
+    })
+    expect(order).toEqual(['lina', 'spectre'])
+    expect(teamOf(game, home)?.heroes.map((hero) => hero.defId)).toEqual(['sven', 'spectre', 'lina', 'kez'])
+    expect(heroCount(game, 1)).toBe(1)
+  })
+
+  it('Ogre Magi makes the entering hero activate twice', () => {
+    let game = toHand(ready(), 0, ['lina'])
+    let home = ''
+    ;[game, home] = team(game, 0, ['sven'])
+    ;[game] = team(game, 1, ['axe', 'tiny'])
+    game = trapOn(game, home, 'ogre_magi')
+    game = drain(apply(game, { type: 'play', uid: uidOf(game, 0, 'lina'), team: home }))
+    expect(heroCount(game, 1)).toBe(0)
+  })
+
+  it('Bounty Hunter steals a hero card from the opponent', () => {
+    let game = toHand(ready(), 0, ['axe'])
+    game = toHand(game, 1, ['lina', 'river'])
+    let home = ''
+    ;[game, home] = team(game, 0, ['sven'])
+    game = trapOn(game, home, 'bounty_hunter')
+    game = drain(apply(game, { type: 'play', uid: uidOf(game, 0, 'axe'), team: home }))
+    expect(game.players[0].hand.map((card) => card.defId)).toEqual(['lina'])
+    expect(game.players[1].hand.map((card) => card.defId)).toEqual(['river'])
+  })
+
+  it('Templar Assassin keeps the team alive until the controller next turn', () => {
+    let game = toHand(ready(), 0, ['axe'])
+    let home = ''
+    ;[game, home] = team(game, 0, ['sven'])
+    game = trapOn(game, home, 'templar_assassin')
+    game = drain(apply(game, { type: 'play', uid: uidOf(game, 0, 'axe'), team: home }))
+    expect(teamOf(game, home)?.guard).not.toBeNull()
+    game = apply(game, { type: 'end' })
+    game = apply(game, { type: 'ready' })
+    game = toHand(game, 1, ['spectre'])
+    const sven = teamOf(game, home)!.heroes[0]!.uid
+    game = drain(apply(game, { type: 'play', uid: uidOf(game, 1, 'spectre'), team: 'new' }), pick(`hero:${sven}`))
+    expect(teamOf(game, home)?.heroes.length).toBe(3)
+  })
+
+  it('a revealed ward with no room goes to the grave', () => {
+    let game = toHand(ready(), 0, ['axe'])
+    let home = ''
+    ;[game, home] = team(game, 0, ['sven', 'tiny', 'lina', 'zeus'])
+    game = trapOn(game, home, 'templar_assassin')
+    game = drain(apply(game, { type: 'play', uid: uidOf(game, 0, 'axe'), team: home }))
+    expect(teamOf(game, home)?.heroes.length).toBe(5)
+    expect(game.grave.some((card) => card.defId === 'templar_assassin')).toBe(true)
+  })
+
+  it('Observer Ward removes a trap unrevealed', () => {
+    let game = toHand(ready(), 0, ['ward'])
+    let foe = ''
+    ;[game, foe] = team(game, 1, ['axe'])
+    game = trapOn(game, foe, 'techies')
+    game = drain(apply(game, { type: 'play', uid: uidOf(game, 0, 'ward'), team: '' }), (current) => {
+      const ids = current.pending?.choices.map((choice) => choice.id) ?? []
+      if (ids.includes('mode:trap')) return ['mode:trap']
+      return null
+    })
+    expect(teamOf(game, foe)?.trap).toBeNull()
+    expect(game.grave.some((card) => card.defId === 'techies')).toBe(true)
+  })
+})
+
+function teamsForTrap(game: Game, uid: string) {
+  return teamsFor(game, uid)
 }

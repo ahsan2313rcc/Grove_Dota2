@@ -130,6 +130,7 @@ function softFinish(game: Game, reason = 'Match halted (soft-lock).'): Game {
     veil: false,
     queue: [],
     echoes: [],
+    laterCasts: [],
     after: null,
   }
 }

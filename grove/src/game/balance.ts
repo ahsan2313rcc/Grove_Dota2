@@ -1560,6 +1560,7 @@ function softFinish(game: Game, reason: string): Game {
     veil: false,
     queue: [],
     echoes: [],
+    laterCasts: [],
     after: null,
     pendingDraws: [],
     over: { reason, scores, parts },

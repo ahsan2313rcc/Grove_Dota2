@@ -1,5 +1,5 @@
 import { display } from '../game/catalog.ts'
-import { attrsOf, enterReason, findHero, graveLocked, instantsLocked, itemsLocked, rangeOf, scoreTeam, TEAM_CAP } from '../game/flow.ts'
+import { attrsOf, graveLocked, instantsLocked, itemsLocked, rangeOf } from '../game/flow.ts'
 import type { Attr, BoardHero, CardInst, Game, PlayerId, Range, Team } from '../game/types.ts'
 
 export function opponentOf(game: Game, id: PlayerId): PlayerId {
@@ -32,12 +32,13 @@ export function heroMarks(hero: BoardHero, team: Team): string[] {
   if (hero.muted) marks.push('Orchid')
   if (hero.rupture) marks.push('Rupture')
   if (hero.dawn) marks.push('Dawn')
-  if (hero.refract) marks.push('Refraction')
   if (hero.held) {
     const held = display(hero.held.card.defId).name
     marks.push(hero.held.mode === 'morph' ? `Holds ${held}` : `Static ${held}`)
   }
   if (team.glyph) marks.push('Glyph')
+  if (team.guard) marks.push('Refraction')
+  if (team.trap) marks.push('Trapped')
   if (team.gaze) marks.push('Gaze')
   if (team.noEnter) marks.push('No entry')
   if (team.noLeave) marks.push('No leaving')
@@ -85,22 +86,6 @@ export function statusLines(game: Game, viewer: PlayerId): string[] {
     lines.push('You may play Instant cards to interrupt.')
   }
   return lines
-}
-
-export function emberTargets(game: Game, uid: string): { id: string; label: string; ok: boolean; reason?: string }[] {
-  const loc = findHero(game, uid)
-  if (!loc) return []
-  const actor = game.active
-  const options = game.players[actor].teams
-    .filter((team) => team.id !== loc.team.id)
-    .map((team) => {
-      const reason = enterReason(game, team, 1, false)
-      const scored = scoreTeam(game, team)
-      return { id: team.id, label: `${scored.why} · ${scored.points}`, ok: !reason, reason: reason ?? undefined }
-    })
-  const capped = game.players[actor].teams.length >= TEAM_CAP
-  options.push({ id: 'new', label: 'New team', ok: !capped, reason: capped ? '12 teams is the limit.' : undefined })
-  return options
 }
 
 export function playBlock(game: Game, viewer: PlayerId, card: CardInst): string | null {

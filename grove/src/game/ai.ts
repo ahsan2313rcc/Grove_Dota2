@@ -1,10 +1,11 @@
 import { display, HERO_BY_ID } from './catalog.ts'
-import { aiComboPick, apply, comboPlans, emberMoves, morphCasts, needsTeam, playableFromGrave, teamsFor, undyingRevive } from './engine.ts'
+import { aiComboPick, apply, comboPlans, morphCasts, needsTeam, playableFromGrave, teamsFor, undyingRevive } from './engine.ts'
 import {
   allLocs,
   drawsLocked,
   findHero,
   isTrapHero,
+  trapAim,
   preferredFoe,
   preferredFoeFromScores,
   scoreState,
@@ -164,20 +165,6 @@ export function chooseAiAction(state: Game, mode: AiSearchMode = 'full'): Action
           bestScore = score
           best = action
         }
-      }
-    }
-  }
-
-  for (const ember of emberMoves(state)) {
-    for (const team of emberTargets(state, ember.uid)) {
-      if (!team.ok) continue
-      const action: Action = { type: 'move', uid: ember.uid, team: team.id }
-      const next = apply({ ...state, autoAll: true }, action)
-      if (!moved(state, next)) continue
-      const score = evaluate(next, actor, strat) + 0.4
-      if (score > bestScore) {
-        bestScore = score
-        best = action
       }
     }
   }
@@ -481,8 +468,8 @@ function playBiasFast(
   const behind = beforePts + 3 < rivalPts(before, actor)
   let bonus = ptsGain * 0.9
   if (trap) {
-    const dest = teamId !== 'new' && teamId !== '' ? teamById(after, teamId) : null
-    bonus += dest && dest.player.id !== actor ? (strat === 'spite' ? 2.1 : 1.5) : 0.3
+    const aim = trapAim(after, actor, card.defId, teamId)
+    bonus += aim > 0 ? (strat === 'spite' ? 2.1 : 1.5) : -1.5
   }
   if (card.kind === 'hero' && !trap) {
     bonus += 0.9
@@ -546,6 +533,19 @@ export function chooseAiPending(state: Game): string[] {
   const save = pending.choices.find((choice) => choice.id.startsWith('play:'))
   if (save && /destroyed|destroy/i.test(pending.prompt)) {
     return [save.id]
+  }
+
+  // Shackles: sacrifice the hero whose loss costs the fewest points.
+  if (pending.resume.kind === 'shaman-trap') {
+    const base = scoreState(state, actor).total
+    const cost = (id: string) => {
+      const loc = findHero(state, id.slice(5))
+      if (!loc) return 99
+      const team = { ...loc.team, heroes: loc.team.heroes.filter((hero) => hero.uid !== loc.hero.uid) }
+      return base - (base - scoreTeam(state, loc.team).points + scoreTeam(state, team).points)
+    }
+    const cheapest = [...pending.choices].sort((a, b) => cost(a.id) - cost(b.id))[0]
+    if (cheapest) return [cheapest.id]
   }
 
   // Instant interrupt window — fire a strong Instant instead of passing.
@@ -898,16 +898,6 @@ function choiceOwner(state: Game, choiceId: string): PlayerId | null {
   return null
 }
 
-function emberTargets(state: Game, uid: string): { id: string; ok: boolean }[] {
-  const loc = findHero(state, uid)
-  if (!loc) return []
-  const actor = loc.hero.controller
-  return state.players[actor].teams
-    .filter((team) => team.id !== loc.team.id)
-    .map((team) => ({ id: team.id, ok: true }))
-    .concat([{ id: 'new', ok: state.players[actor].teams.length < 12 }])
-}
-
 function stuckDiscardUid(state: Game, actor: PlayerId): string | null {
   const hand = state.players[actor].hand
   if (hand.length === 0) return null
@@ -985,10 +975,7 @@ function playBias(
   const ptsGain = afterPts - beforePts
   const kind = card.kind
   const trap = isTrapHero(card.defId)
-  const trapOnEnemy = (() => {
-    const found = teamById(after, teamId)
-    return !!found && found.player.id !== actor && !!found.team.trap && found.team.trap.owner === actor
-  })()
+  const trapOnEnemy = trap && trapAim(after, actor, card.defId, teamId) > 0
   const instant = display(card.defId).instant
   const denial = INTERRUPT_VALUE[card.defId] ?? 0
   const threat = threatScore(before, actor)
@@ -1009,7 +996,7 @@ function playBias(
   if (trap && trapOnEnemy) {
     bonus += strat === 'spite' ? 2.25 : 1.7
   } else if (trap) {
-    bonus += strat === 'spite' ? 0.35 : 0.25
+    bonus -= 1.5
   }
 
   // Hold premium Instant answers unless the board is hot or we are behind.
@@ -1206,8 +1193,8 @@ function pickTeamOptions(
   defId: string,
   kind: CardInst['kind'],
   fast: boolean,
-): { id: string; ok: boolean; label: string; reason: string | undefined }[] {
-  if (!needsTeam(defId, kind)) return [{ id: '', ok: true, label: '', reason: undefined }]
+): { id: string; ok: boolean; label: string; reason?: string }[] {
+  if (!needsTeam(defId, kind)) return [{ id: '', ok: true, label: '' }]
   const all = teamsFor(state, uid).filter((team) => team.ok)
   if (!fast || all.length <= 2) return all
   const ranked = [...all].sort((a, b) => {

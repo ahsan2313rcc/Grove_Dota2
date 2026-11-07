@@ -22,12 +22,14 @@ import {
   findHand,
   findHero,
   finishTrapChoose,
+  holdCast,
   graveLocked,
   holderWith,
   nextSeat,
   heroWeight,
   instantsLocked,
   isTrapHero,
+  trapBlock,
   itemsLocked,
   log,
   makeCard,
@@ -47,7 +49,6 @@ import {
   scoreTeam,
   setPlayer,
   shuffle,
-  strip,
   takeDraw,
   teamById,
   TEAM_CAP,
@@ -227,6 +228,7 @@ function blank(seed: number, mode: 'hotseat' | 'ai' | 'online', seats: SeatSpec[
     pendingDraws: [],
     limbo: [],
     echoes: [],
+    laterCasts: [],
     stolenCast: false,
     extraTurn: null,
     noDraw: null,
@@ -260,7 +262,6 @@ function reduce(state: Game, action: Action): Game {
   if (action.type === 'draw') return drawAction(state)
   if (action.type === 'end') return endTurn(state)
   if (action.type === 'combo') return combo(state, action.uids)
-  if (action.type === 'move') return moveEmber(state, action.uid, action.team)
   if (action.type === 'morph') return morphCast(state, action.uid)
   if (action.type === 'undying') return reviveUndying(state, action.team, action.discards)
   if (action.type === 'play') return play(state, action.uid, action.team, action.extras ?? [])
@@ -310,7 +311,13 @@ export function settle(state: Game): Game {
     if (state.pendingDraws.length > 0) {
       const [draw, ...rest] = state.pendingDraws
       state = { ...state, pendingDraws: rest }
-      state = beginDraw(state, draw!.player, draw!.n, false)
+      state = beginDraw(state, draw!.player, draw!.n)
+      continue
+    }
+    if (state.laterCasts.length > 0) {
+      const held = state.laterCasts[state.laterCasts.length - 1]!
+      state = { ...state, laterCasts: state.laterCasts.slice(0, -1) }
+      state = runAfter(state, { kind: 'alive', uid: held.uid, cast: held.cast })
       continue
     }
     // Hand limit is enforced only when ending a turn — draws may go above 7 mid-turn.
@@ -335,23 +342,9 @@ function castableHero(defId: string): boolean {
   return display(defId).kind === 'hero' && display(defId).text.length > 0 && firesAbility(defId)
 }
 
-function beginDraw(state: Game, player: PlayerId, count: number, asked: boolean): Game {
+function beginDraw(state: Game, player: PlayerId, count: number): Game {
   if (count <= 0) return state
   if (drawsLocked(state, player)) return log(state, "Berserker's Call stops the draw.")
-  if (!asked && state.grave.some((card) => card.defId === 'slark')) {
-    return ask(state, {
-      actor: player,
-      prompt: 'Shadow Dance can replace this draw. Mill 3 and return Slark, or draw.',
-      mode: 'pick',
-      min: 1,
-      max: 1,
-      choices: [
-        { id: 'yes', label: 'Shadow Dance' },
-        { id: 'no', label: 'Draw' },
-      ],
-      resume: { kind: 'slark', player, n: count },
-    })
-  }
   return takeDraw(state, player, count)
 }
 
@@ -379,7 +372,7 @@ function drawAction(state: Game): Game {
   // Hand limit is enforced at end of turn (discard down to 7), not on action-draws.
   if (state.deck.length === 0) return finish(state, 'The deck is empty.')
   state = setPlayer(state, actor, (player) => ({ ...player, actions: player.actions - 1 }))
-  return beginDraw(state, actor, 1, false)
+  return beginDraw(state, actor, 1)
 }
 
 function endTurn(state: Game): Game {
@@ -430,7 +423,7 @@ function startTurn(state: Game, id: PlayerId): Game {
         ? 1
         : 0
     state = setPlayer(state, active, (current) => ({ ...current, actions: Math.max(0, 2 - tax) }))
-    state = beginDraw(state, active, TURN_DRAW, false)
+    state = beginDraw(state, active, TURN_DRAW)
     const veil = state.mode === 'hotseat' && !state.autoAll && !state.players[active].ai
     return log(
       { ...state, veil },
@@ -608,6 +601,8 @@ function play(state: Game, uid: string, team: string, extras: string[] = []): Ga
     const found = teamById(state, team)
     if (!found) return log(origin, 'Choose any team for the trap.')
     if (found.team.trap || found.team.mine) return log(origin, 'That team already has a trap.')
+    const closed = trapBlock(state, found.team)
+    if (closed) return log(origin, closed)
     if (!instant) state = setPlayer(state, actor, (player) => ({ ...player, actions: player.actions - 1 }))
     return plantTrap(state, actor, held.card, found.team.id)
   }
@@ -743,6 +738,7 @@ function playHeroOnto(state: Game, actor: PlayerId, card: CardInst, teamId: stri
   if (!dest) return state
   const reason = enterReason(state, dest.team, heroWeight(hero), false)
   if (reason) return log(state, reason)
+  const trapped = !!dest.team.trap
   let next = putOnTeam(removeHand(state, actor, card.uid), actor, teamId, hero)
   const landed = arrived(next, card.uid)
   const verb = fire ? 'plays' : 'fields'
@@ -756,6 +752,8 @@ function playHeroOnto(state: Game, actor: PlayerId, card: CardInst, teamId: stri
   if (!fires) return next
   const resume = { kind: 'cast' as const, actor, sourceUid: card.uid, defId: card.defId, picked: [], steps: 0 }
   if (landed.mined) return { ...next, after: { kind: 'alive', uid: card.uid, cast: resume } }
+  // The trap resolves first (including its prompts); the entrant's ability waits its turn.
+  if (trapped) return holdCast(next, resume)
   // Targets first, then Instant interrupt (see cast → offerInstantWindow).
   return cast(next, resume)
 }
@@ -836,30 +834,6 @@ function playReward(state: Game, actor: PlayerId, card: CardInst): Game {
     picked: [],
     steps: 0,
   })
-}
-
-function moveEmber(state: Game, uid: string, team: string): Game {
-  const loc = findHero(state, uid)
-  if (!loc || loc.hero.defId !== 'ember_spirit' || loc.hero.controller !== state.active) return state
-  const resolved = resolveTeam(state, state.active, team)
-  if (!resolved) return state
-  const [based, teamId] = resolved
-  if (teamId === loc.team.id) return state
-  const dest = teamById(based, teamId)
-  if (!dest) return state
-  const reason = enterReason(based, dest.team, 1, false)
-  if (reason) return log(based, reason)
-  let next = based
-  next = {
-    ...next,
-    players: next.players.map((player) => ({
-      ...player,
-      teams: player.teams.map((entry) => ({ ...entry, heroes: entry.heroes.filter((hero) => hero.uid !== uid) })),
-    })) as Game['players'],
-  }
-  next = strip(next)
-  next = putOnTeam(next, state.active, teamId, { ...loc.hero, controller: state.active })
-  return log(arrived(next, uid).state, 'Fire Remnant.')
 }
 
 function reviveUndying(state: Game, team: string, discards: string[]): Game {
@@ -1068,10 +1042,6 @@ function satisfy(state: Game, ids: string[]): Game {
     }
     return answerSave(next, choice.slice(5), resume.uid, resume.cause, resume.force)
   }
-  if (resume.kind === 'slark') {
-    if (ids[0] === 'yes') return slark(next, resume.player, resume.n)
-    return takeDraw(next, resume.player, resume.n)
-  }
   if (resume.kind === 'limit') {
     let dumped = next
     for (const id of ids) {
@@ -1130,21 +1100,6 @@ function satisfy(state: Game, ids: string[]): Game {
     return next
   }
   return next
-}
-
-function slark(state: Game, player: PlayerId, draws: number): Game {
-  const milled = state.deck.slice(0, 3)
-  let next: Game = { ...state, deck: state.deck.slice(milled.length) }
-  for (const card of milled) next = toGrave(next, card, { type: 'deck' })
-  const index = next.grave.findIndex((card) => card.defId === 'slark')
-  if (index >= 0) {
-    const card = next.grave[index]
-    if (card) {
-      next = addHand({ ...next, grave: next.grave.filter((entry) => entry.uid !== card.uid) }, player, [card])
-    }
-  }
-  if (draws > 1) return queueDraw(log(next, 'Shadow Dance.'), player, draws - 1)
-  return log(next, 'Shadow Dance.')
 }
 
 function redirectable(resume: CastResume): boolean {
@@ -1249,7 +1204,7 @@ export function teamsFor(
   const held = heldForPlay(state, uid)
   if (!held) return []
   const actor = held.player.id
-  // Traps plant face-down on any existing team (ally or enemy).
+  // Traps plant face-down on any team that could still take a hero (ally or enemy).
   if (isTrapHero(held.card.defId)) {
     const options: { id: string; label: string; ok: boolean; reason?: string }[] = []
     for (const player of state.players) {
@@ -1257,12 +1212,12 @@ export function teamsFor(
         const scored = scoreTeam(state, team)
         const whose = player.id === actor ? 'Your' : `${player.name}'s`
         const letter = String.fromCharCode(65 + (index % 26))
-        const blocked = team.trap || team.mine
+        const blocked = team.trap || team.mine ? 'That team already has a trap.' : trapBlock(state, team)
         options.push({
           id: team.id,
           label: `${whose} ${letter} ${scored.why} · ${scored.points}`,
           ok: !blocked,
-          reason: blocked ? 'That team already has a trap.' : undefined,
+          reason: blocked ?? undefined,
         })
       }
     }
@@ -1339,12 +1294,6 @@ export function aiComboPick(state: Game): string[] | null {
   const late = !!state.ancient || state.deck.length <= 12
   const crowded = seat.hand.length >= seat.handLimit
   return late || crowded ? pair.uids : null
-}
-
-export function emberMoves(state: Game): { uid: string; name: string }[] {
-  return allLocs(state)
-    .filter((loc) => loc.hero.defId === 'ember_spirit' && loc.hero.controller === state.active)
-    .map((loc) => ({ uid: loc.hero.uid, name: 'Ember Spirit' }))
 }
 
 /** Undying in grave + 2 cards in hand → can discard 2 to seat him. */

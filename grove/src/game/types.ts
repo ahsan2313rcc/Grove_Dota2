@@ -65,6 +65,8 @@ export interface Team {
   /** @deprecated legacy Techies mine; prefer `trap`. */
   mine: CardInst | null
   trap: TeamTrap | null
+  /** Templar Assassin ward: heroes here cannot be destroyed until the controller's next turn. */
+  guard: Timed | null
 }
 
 export interface Combo {
@@ -139,7 +141,7 @@ export type Resume =
   | { kind: 'free-play-offer'; uid: string; actor: PlayerId }
   | { kind: 'torment'; heroUid: string; cast: CastResume | null }
   | { kind: 'slark-trap'; owner: PlayerId; card: CardInst }
-  | { kind: 'slark'; player: PlayerId; n: number }
+  | { kind: 'bounty-trap'; controller: PlayerId; target: PlayerId | null }
   | { kind: 'limit'; player: PlayerId; then: 'end' | 'none' }
   | { kind: 'sand'; players: PlayerId[]; index: number }
   | { kind: 'kunkka-split'; cards: string[]; picker: PlayerId }
@@ -229,7 +231,8 @@ export interface Game {
   graveThisTurn: number
   enteredThisTurn: string[]
   lastGrave: GraveMark | null
-  multicast: PlayerId | null
+  /** Ogre Magi ward: this hero uid activates its next ability twice. */
+  multicast: string | null
   silence: Timed | null
   naga: Timed | null
   lockPlay: Timed | null
@@ -254,6 +257,8 @@ export interface Game {
   pendingDraws: { player: PlayerId; n: number }[]
   limbo: CardInst[]
   echoes: CastResume[]
+  /** Entrant abilities held back while a trap resolves (last in fires first). */
+  laterCasts: { uid: string; cast: CastResume }[]
   /** Nested stolen/copied fires cannot chain-steal (anti-loop). */
   stolenCast: boolean
   /** Refresher: this seat takes another turn after the current one ends. */
