@@ -841,9 +841,41 @@ describe('heroes', () => {
     const orchid = game.pending?.choices.find((choice) => choice.id.startsWith('instant:'))?.id ?? ''
     game = apply(game, { type: 'choose', ids: [orchid] })
     expect(game.players[0].orchid).toBeTruthy()
-    expect(game.players[0].teams[0]?.heroes[0]?.muted).toBe(true)
+    expect(game.players[0].teams[0]?.heroes[0]?.muted).toBeTruthy()
     expect(game.log.some((line) => /Orchid nullifies/.test(line))).toBe(true)
     expect(game.pending?.resume.kind === 'cast').toBe(false)
+  })
+
+  it('clears an Orchid mute on the caster\'s next turn so a stolen Kunkka can fire', () => {
+    let game = ready()
+    game = only(game, 0, ['kunkka'])
+    game = only(game, 1, ['orchid', 'satanic'])
+    game = apply(game, { type: 'play', uid: uid(game, 0, 'kunkka'), team: 'new' })
+    expect(game.pending?.resume.kind).toBe('instant-window')
+    const orchid = game.pending?.choices.find((choice) => choice.id.startsWith('instant:'))?.id ?? ''
+    game = apply(game, { type: 'choose', ids: [orchid] })
+    const silenced = game.players[0].teams.flatMap((team) => team.heroes).find((hero) => hero.defId === 'kunkka')
+    expect(silenced?.muted).toBeTruthy()
+    game = apply(game, { type: 'end' })
+    game = apply(game, { type: 'ready' })
+    const freed = game.players[0].teams.flatMap((team) => team.heroes).find((hero) => hero.defId === 'kunkka')
+    expect(freed?.muted).toBeNull()
+    expect(game.players[0].orchid).toBeNull()
+    const before = game.log.length
+    game = apply(game, { type: 'play', uid: uid(game, 1, 'satanic'), team: '' })
+    game = passInstants(game)
+    const heroPick = game.pending?.choices.find((choice) => choice.id === `hero:${freed?.uid}`)
+    expect(heroPick).toBeTruthy()
+    game = apply(game, { type: 'choose', ids: [heroPick!.id] })
+    const teamPick = game.pending?.choices.find((choice) => choice.id.startsWith('team:') || choice.id.startsWith('new'))
+    expect(teamPick).toBeTruthy()
+    game = apply(game, { type: 'choose', ids: [teamPick!.id] })
+    game = apply(game, { type: 'choose', ids: ['yes'] })
+    game = passInstants(game)
+    const added = game.log.slice(before)
+    expect(added.some((line) => /Satanic fires/i.test(line))).toBe(true)
+    expect(added.some((line) => /Orchid stops|does not fire/i.test(line))).toBe(false)
+    expect(game.pending?.resume.kind).toBe('kunkka-split')
   })
 
   it('announces chosen targets before the Instant interrupt window', () => {

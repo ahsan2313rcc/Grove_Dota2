@@ -1176,7 +1176,7 @@ function satisfy(state: Game, ids: string[]): Game {
       if (immuneFrom(dumped, resume.heroUid, pending.actor)) {
         dumped = log(dumped, `${display(resume.cast.defId).name} is immune — Orchid only locks later abilities.`)
       } else {
-        dumped = editHero(dumped, resume.heroUid, (hero) => ({ ...hero, muted: true }))
+        dumped = editHero(dumped, resume.heroUid, (hero) => ({ ...hero, muted: stamp }))
         dumped = log(dumped, `Orchid nullifies ${display(resume.cast.defId).name}.`)
       }
       if (!dumped.after) dumped = { ...dumped, after: { kind: 'alive', uid: resume.heroUid, cast: resume.cast } }

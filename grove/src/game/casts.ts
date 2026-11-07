@@ -2567,7 +2567,7 @@ function hook(state: Game, resume: CastResume): Game {
     hidden: null,
     bkb: null,
     tether: null,
-    muted: false,
+    muted: null,
     dawn: null,
     wk: card.defId === 'wraith_king',
     refract: card.defId === 'templar_assassin',

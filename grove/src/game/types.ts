@@ -38,7 +38,8 @@ export interface BoardHero {
   bkb: Timed | null
   /** Io Tether: cannot be destroyed during this game turn. */
   tether: number | null
-  muted: boolean
+  /** Orchid interrupt: this hero's ability is nullified until the caster's next turn. */
+  muted: Timed | null
   dawn: { caster: PlayerId; turn: number } | null
   wk: boolean
   refract: boolean
