@@ -22,7 +22,9 @@ describe('balance', () => {
     expect(report.finalScores).toHaveLength(2)
     expect(report.seatStrats).toHaveLength(2)
     expect(report.mixture).toBe(true)
-    expect(report.events.drawDeck).toBeGreaterThan(0)
+    expect(report.events.drawDeck).toBeGreaterThanOrEqual(report.turns - 1)
+    expect(report.shapes.mixTerrainPoints).toBe(report.shapes.mixTerrains * 5)
+    expect(report.shapes.pairTerrainPoints).toBe(report.shapes.pairTerrains * 3)
     expect(report.shapes.coreTeams + report.shapes.mixTeams + report.shapes.openTeams).toBeGreaterThan(0)
     expect(report.swings.every((swing) => AI_STRATS.some((entry) => entry.id === swing.actorStrat))).toBe(true)
 
@@ -37,7 +39,7 @@ describe('balance', () => {
       expect(sample.presence).toBeGreaterThanOrEqual(0)
     }
     expect(summary.heroLow.length + summary.terrainLow.length + summary.lootLow.length).toBeGreaterThan(0)
-    expect(summary.shapeCompare).toHaveLength(9)
+    expect(summary.shapeCompare).toHaveLength(10)
     expect(summary.eventStats.length).toBeGreaterThan(8)
     expect(summary.avgPtsByTurn.length).toBeGreaterThan(0)
     expect(summary.avgCardsByTurn.length).toBe(summary.avgPtsByTurn.length)
@@ -61,7 +63,7 @@ describe('balance', () => {
     // Core team /match = ×3+×4+×5 stacks. Pure = mono-only.
     if (coreAll && core3 && core4 && core5) {
       expect(coreAll.count).toBe(core3.count + core4.count + core5.count)
-      expect(coreAll.pureCount).toBe(core3.pureCount + core4.pureCount + core5.pureCount)
+      expect(coreAll.pureCount).toBe((core3.pureCount ?? 0) + (core4.pureCount ?? 0) + (core5.pureCount ?? 0))
       if (coreAll.count > 0) {
         expect(coreAll.avgPoints).toBeCloseTo(coreAll.totalPoints / coreAll.count, 5)
       } else {
@@ -164,7 +166,7 @@ describe('balance', () => {
     }
     const mid = Math.max(1, Math.floor(full.turns / 2) || 1)
     const atMid = summarizeShapesAtTurn([full], ALL_STRAT_FILTER, mid)
-    expect(atMid).toHaveLength(9)
+    expect(atMid).toHaveLength(10)
     const graph = buildTurnGraph([full], ALL_STRAT_FILTER, 'seatScore', null)
     expect(Array.isArray(graph)).toBe(true)
     const rel = buildTurnGraph([full], ALL_STRAT_FILTER, 'rel', summary.graphHeroes[0]?.defId ?? null)

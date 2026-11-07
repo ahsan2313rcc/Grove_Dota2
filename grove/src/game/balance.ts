@@ -149,6 +149,7 @@ export interface ShapeCounts {
   pureMix4: number
   coreTerrains: number
   mixTerrains: number
+  pairTerrains: number
   coreTeamPoints: number
   mixTeamPoints: number
   coreTeamPoints3: number
@@ -165,6 +166,7 @@ export interface ShapeCounts {
   mixTeamHeroes4: number
   coreTerrainPoints: number
   mixTerrainPoints: number
+  pairTerrainPoints: number
 }
 
 /** Board shape + seat scores captured at the end of a turn. */
@@ -270,13 +272,14 @@ export interface ShapeCompareRow {
     | 'mix_team_4'
     | 'core_terrain'
     | 'mix_terrain'
+    | 'pair_terrain'
   label: string
   count: number
   avgCount: number
   totalPoints: number
   avgPoints: number
-  /** Pure exact-size instances (mono core, or mix attrs with matching hero count). */
-  pureCount: number
+  /** Pure exact-size instances (mono core, or mix attrs with matching hero count); null where it does not apply. */
+  pureCount: number | null
   /** Average points per hero/card in the counted set. */
   avgPtsPerCard: number
 }
@@ -391,6 +394,7 @@ const EMPTY_SHAPES = (): ShapeCounts => ({
   pureMix4: 0,
   coreTerrains: 0,
   mixTerrains: 0,
+  pairTerrains: 0,
   coreTeamPoints: 0,
   mixTeamPoints: 0,
   coreTeamPoints3: 0,
@@ -407,6 +411,7 @@ const EMPTY_SHAPES = (): ShapeCounts => ({
   mixTeamHeroes4: 0,
   coreTerrainPoints: 0,
   mixTerrainPoints: 0,
+  pairTerrainPoints: 0,
 })
 
 type ImpactFrame = {
@@ -622,7 +627,6 @@ export class BalanceTracker {
 
   private tallyEvents(before: Game, after: Game, actor: number) {
     const beforeHand = cardMap(before.players[actor]?.hand ?? [])
-    const afterHand = cardMap(after.players[actor]?.hand ?? [])
     const beforeGrave = cardMap(before.grave)
     const afterGrave = cardMap(after.grave)
     const beforeDeck = cardMap(before.deck)
@@ -632,10 +636,14 @@ export class BalanceTracker {
     const afterBoard = boardHeroMap(after)
     const afterHands = allHandsMap(after)
 
-    for (const [uid] of afterHand) {
-      if (beforeHand.has(uid)) continue
-      if (beforeDeck.has(uid)) this.bumpEvent(actor, 'drawDeck')
-      else if (beforeGrave.has(uid)) this.bumpEvent(actor, 'drawGrave')
+    // Start-of-turn draws land in the next seat's hand while the previous seat is still "acting".
+    for (const player of after.players) {
+      const prior = player.id === actor ? beforeHand : cardMap(before.players[player.id]?.hand ?? [])
+      for (const uid of player.hand.map((card) => card.uid)) {
+        if (prior.has(uid)) continue
+        if (beforeDeck.has(uid)) this.bumpEvent(player.id, 'drawDeck')
+        else if (beforeGrave.has(uid)) this.bumpEvent(player.id, 'drawGrave')
+      }
     }
 
     // Discard / exile from any seat's hand — credit the acting seat (often forced by an opponent).
@@ -1299,8 +1307,9 @@ function buildShapeCompareRows(shapeTotals: ShapeCounts, matchCount: number): Sh
     shapeRow('mix_team', 'Mixed team', shapeTotals.mixTeams, shapeTotals.mixTeamPoints, shapeTotals.mixTeamHeroes, shapeTotals.pureMix3 + shapeTotals.pureMix4, matchCount, shapeTotals.mixTeams, maxMixTeamPoints()),
     shapeRow('mix_team_3', 'Mixed · 3 attrs', shapeTotals.mixTeams3, shapeTotals.mixTeamPoints3, shapeTotals.mixTeamHeroes3, shapeTotals.pureMix3, matchCount, shapeTotals.mixTeams3, maxMixTeamPoints()),
     shapeRow('mix_team_4', 'Mixed · 4 attrs', shapeTotals.mixTeams4, shapeTotals.mixTeamPoints4, shapeTotals.mixTeamHeroes4, shapeTotals.pureMix4, matchCount, shapeTotals.mixTeams4, maxMixTeamPoints()),
-    shapeRow('core_terrain', 'Core terrain', shapeTotals.coreTerrains, shapeTotals.coreTerrainPoints, shapeTotals.coreTerrains * 3, shapeTotals.coreTerrains, matchCount),
-    shapeRow('mix_terrain', 'Mixed terrain', shapeTotals.mixTerrains, shapeTotals.mixTerrainPoints, shapeTotals.mixTerrains * 3, shapeTotals.mixTerrains, matchCount),
+    shapeRow('core_terrain', 'Core terrain · 3 alike', shapeTotals.coreTerrains, shapeTotals.coreTerrainPoints, shapeTotals.coreTerrains * 3, null, matchCount),
+    shapeRow('mix_terrain', 'Mixed terrain · 1 of each', shapeTotals.mixTerrains, shapeTotals.mixTerrainPoints, shapeTotals.mixTerrains * 3, null, matchCount),
+    shapeRow('pair_terrain', 'Pair terrain · 2 + 1', shapeTotals.pairTerrains, shapeTotals.pairTerrainPoints, shapeTotals.pairTerrains * 3, null, matchCount),
   ]
 }
 
@@ -1322,7 +1331,7 @@ function shapeRow(
   count: number,
   points: number,
   cards: number,
-  pureCount: number,
+  pureCount: number | null,
   matches: number,
   /** Denominator for avg pts (defaults to `count`). */
   pointsDenom: number = count,
@@ -1660,21 +1669,24 @@ function shapeCountsFor(game: Game, playerId: number): ShapeCounts {
         shapes.mixTeams3 += 1
         shapes.mixTeamPoints3 += mixPts
         shapes.mixTeamHeroes3 += size
-        shapes.pureMix3 += 1
+        if (size === 3) shapes.pureMix3 += 1
       } else {
         shapes.mixTeams4 += 1
         shapes.mixTeamPoints4 += mixPts
         shapes.mixTeamHeroes4 += size
-        shapes.pureMix4 += 1
+        if (size === distinctAttrs) shapes.pureMix4 += 1
       }
     }
 
     if (!hasCore && !hasMix) shapes.openTeams += 1
   }
   for (const combo of player.combos) {
-    if (combo.kind === 'mixed' || combo.kind === 'pair') {
+    if (combo.kind === 'mixed') {
       shapes.mixTerrains += 1
       shapes.mixTerrainPoints += combo.points
+    } else if (combo.kind === 'pair') {
+      shapes.pairTerrains += 1
+      shapes.pairTerrainPoints += combo.points
     } else {
       shapes.coreTerrains += 1
       shapes.coreTerrainPoints += combo.points
