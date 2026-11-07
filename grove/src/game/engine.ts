@@ -336,16 +336,16 @@ function offerResponse(state: Game): Game {
     if (cards.length === 0) continue
     return ask({ ...state, respond: { ...window, index: index + 1 } }, {
       actor: seat,
-      prompt: `${window.about}. Play an Instant in response, or pass.`,
+      prompt: `${window.about}. Play an Instant as an interrupt, pass this action, or pass this turn.`,
       mode: 'pick',
       min: 1,
       max: 1,
       choices: [
-        { id: 'pass', label: 'Pass' },
-        { id: 'pass-turn', label: 'Pass until this turn ends' },
+        { id: 'pass', label: 'Pass this action' },
+        { id: 'pass-turn', label: 'Pass this turn' },
         ...cards.map((card) => ({
           id: `instant:${card.uid}`,
-          label: display(card.defId).name,
+          label: `Interrupt · ${display(card.defId).name}`,
           defId: card.defId,
           hint: display(card.defId).text,
         })),
