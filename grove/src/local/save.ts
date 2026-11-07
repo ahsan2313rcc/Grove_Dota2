@@ -6,6 +6,8 @@ import { cloneRules, DEFAULT_SCORE_RULES } from '../game/scoring.ts'
 const LOCAL_KEY = 'grove.local.match'
 const DEBUG_KEY = 'grove.local.debug'
 const ONLINE_AUTH_KEY = 'grove.online.auth'
+/** Set when the player leaves on purpose, so a later reload stays on the lobby. */
+const LEFT_KEY = 'grove.nav.left'
 
 /** In-memory fallback when localStorage is unavailable (tests / private mode). */
 const memory = new Map<string, string>()
@@ -72,7 +74,7 @@ export function loadLocalMatch(): SavedLocalMatch | null {
 let saveTimer: ReturnType<typeof setTimeout> | null = null
 let savePending: SavedLocalMatch | null = null
 
-function flushLocalMatch(): void {
+export function flushPendingLocalMatch(): void {
   if (!savePending) return
   const payload = savePending
   savePending = null
@@ -102,18 +104,51 @@ export function saveLocalMatch(seed: number, game: Game, rules: ScoreRules, imme
       clearTimeout(saveTimer)
       saveTimer = null
     }
-    flushLocalMatch()
+    flushPendingLocalMatch()
     return
   }
   if (saveTimer) return
   saveTimer = setTimeout(() => {
     saveTimer = null
-    flushLocalMatch()
+    flushPendingLocalMatch()
   }, 500)
 }
 
 export function clearLocalMatch(): void {
+  if (saveTimer) {
+    clearTimeout(saveTimer)
+    saveTimer = null
+  }
+  savePending = null
   storeRemove(LOCAL_KEY)
+}
+
+/** Player chose Leave. A refresh should open the lobby, not jump back into the match. */
+export function markVoluntaryLeave(): void {
+  try {
+    if (typeof sessionStorage !== 'undefined') sessionStorage.setItem(LEFT_KEY, '1')
+  } catch {
+    // ignore
+  }
+}
+
+/** True when this load follows Leave. Consumes the flag (cached so Strict Mode's double init agrees). */
+let leaveDecision: boolean | null = null
+export function takeVoluntaryLeave(): boolean {
+  if (leaveDecision !== null) return leaveDecision
+  try {
+    if (typeof sessionStorage === 'undefined') {
+      leaveDecision = false
+      return false
+    }
+    const left = sessionStorage.getItem(LEFT_KEY) === '1'
+    if (left) sessionStorage.removeItem(LEFT_KEY)
+    leaveDecision = left
+    return left
+  } catch {
+    leaveDecision = false
+    return false
+  }
 }
 
 export function loadOnlineAuth(): SavedOnlineAuth | null {
@@ -156,6 +191,8 @@ export type SavedDebugSession = {
   thoughtPower: number
   reports: MatchReport[]
   rules: ScoreRules
+  /** True while a debug session is open, so a reload can return to it. */
+  active: boolean
   savedAt: number
 }
 
@@ -173,6 +210,7 @@ export function loadDebugSession(): SavedDebugSession | null {
       view: data.view === 'watch' ? 'watch' : 'stats',
       trainNeural: !!data.trainNeural,
       thoughtPower: Math.floor(data.thoughtPower) || 7,
+      active: data.active === true,
       rules: data.rules ? cloneRules(data.rules) : cloneRules(DEFAULT_SCORE_RULES),
     }
   } catch {
@@ -184,6 +222,8 @@ export function saveDebugSession(session: Omit<SavedDebugSession, 'v' | 'savedAt
   const payload: SavedDebugSession = {
     v: 1,
     ...session,
+    // Keep the on-disk copy small so a long sim cannot blow the storage quota.
+    reports: session.reports.slice(-80),
     rules: cloneRules(session.rules),
     savedAt: Date.now(),
   }

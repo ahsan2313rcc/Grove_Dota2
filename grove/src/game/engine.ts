@@ -754,7 +754,7 @@ function play(state: Game, uid: string, team: string, extras: string[] = []): Ga
   if (handInstant && instantsLocked(state, actor)) {
     return log(origin, 'Battle Trance stops Instant cards.')
   }
-  if (held.card.kind === 'hero' && state.players[actor].noHeroNow && !offTurn) {
+  if (held.card.kind === 'hero' && state.players[actor].noHeroNow) {
     return log(origin, 'You cannot play hero cards this turn.')
   }
   // Instant heroes may still enter the board off-turn (e.g. Dazzle/Oracle onto a team).

@@ -23,6 +23,7 @@ import {
   foe,
   opponents,
   graveLocked,
+  heroPlayBanned,
   heroChoices,
   heroTag,
   heroWeight,
@@ -691,6 +692,7 @@ function questions(state: Game, resume: CastResume): Ask {
       }
       return ready()
     case 'blink': {
+      if (heroPlayBanned(state, actor)) return fizzle("You cannot play hero cards (Heaven's Halberd).")
       if (at === 0) {
         const heroes = handCards(state, actor, (card) => card.kind === 'hero')
         if (heroes.length === 0) return fizzle('No hero in hand.')
@@ -2650,6 +2652,7 @@ function tinyToss(state: Game, resume: CastResume): Game {
 /** Blink: play a hero from hand into a team; optionally fire its ability (anti-loop). */
 function blinkPlay(state: Game, resume: CastResume): Game {
   const actor = resume.actor
+  if (heroPlayBanned(state, actor)) return log(state, "Blink is a hero play — Heaven's Halberd stops it.")
   const cardUid = cardIds(resume.picked)[0]
   const destRaw = resume.picked.find((id) => id.startsWith('team:') || id.startsWith('new:'))
   if (!cardUid || !destRaw) return state

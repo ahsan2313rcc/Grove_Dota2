@@ -376,6 +376,14 @@ export function abilitiesLocked(state: Game, id: PlayerId): boolean {
   return !!state.frost && state.frost.caster !== id
 }
 
+/**
+ * Heaven's Halberd / Huskar / Doom: this seat cannot play hero cards.
+ * Does not stop reactivating a hero already in play (Satanic, Arcane, Keeper).
+ */
+export function heroPlayBanned(state: Game, id: PlayerId): boolean {
+  return !!state.players[id]?.noHeroNow
+}
+
 /** Orchid: this seat cannot activate ability effects. */
 export function orchidLocked(state: Game, id: PlayerId): boolean {
   return !!state.players[id]?.orchid
@@ -1846,7 +1854,7 @@ export function finishTrapChoose(state: Game, ids: string[]): Game | null {
     const found = teamById(next, teamId)
     const cardUid = picked(ids[0], 'card:')
     const hand = found ? next.players[found.player.id]!.hand.find((entry) => entry.uid === cardUid) : undefined
-    if (found && hand && !enterReason(next, found.team, 1, false)) {
+    if (found && hand && !heroPlayBanned(next, found.player.id) && !enterReason(next, found.team, 1, false)) {
       const controller = found.player.id
       const hero = makeHero(hand, controller, controller, next)
       next = putOnTeam(removeHand(next, controller, hand.uid), controller, teamId, hero)

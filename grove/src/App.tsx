@@ -55,10 +55,13 @@ import {
   clearLocalMatch,
   describeDebugSession,
   describeLocalMatch,
+  flushPendingLocalMatch,
   loadDebugSession,
   loadLocalMatch,
+  markVoluntaryLeave,
   saveDebugSession,
   saveLocalMatch,
+  takeVoluntaryLeave,
   type SavedDebugSession,
   type SavedLocalMatch,
 } from './local/save.ts'
@@ -273,25 +276,52 @@ function readStart(): { debug: boolean; seed: number; seats: SeatCount; runs: Li
   return { debug: true, seed, seats: count, runs: [], view: 'stats' }
 }
 
+/** After a reload, return to the open match or debug session. Leave stays on the lobby. */
+function restoredSession(): { debug: SavedDebugSession | null; match: SavedLocalMatch | null } {
+  if (typeof window === 'undefined') return { debug: null, match: null }
+  const mode = new URLSearchParams(window.location.search).get('mode')
+  if (mode === 'ai' || mode === 'hotseat' || mode === 'debug') return { debug: null, match: null }
+  if (takeVoluntaryLeave()) return { debug: null, match: null }
+  const debug = loadDebugSession()
+  if (debug?.active) return { debug, match: null }
+  return { debug: null, match: loadLocalMatch() }
+}
+
 export default function App() {
   const boot = useState(readStart)[0]
-  const [debug, setDebug] = useState(boot?.debug ?? false)
-  const [seed, setSeed] = useState(boot?.seed ?? 1)
-  const [seatCount, setSeatCount] = useState<SeatCount>(boot?.seats ?? 2)
-  const [runs, setRuns] = useState<LiveRun[]>(boot?.runs ?? [])
+  const restored = useState(() => (boot ? { debug: null, match: null } : restoredSession()))[0]
+  const [debug, setDebug] = useState(boot?.debug ?? !!restored.debug)
+  const [seed, setSeed] = useState(boot?.seed ?? restored.debug?.seed ?? restored.match?.seed ?? 1)
+  const [seatCount, setSeatCount] = useState<SeatCount>(
+    boot?.seats
+    ?? (SEAT_OPTIONS.includes((restored.debug?.seats ?? restored.match?.game.players.length ?? 2) as SeatCount)
+      ? (restored.debug?.seats ?? restored.match?.game.players.length ?? 2) as SeatCount
+      : 2),
+  )
+  const [runs, setRuns] = useState<LiveRun[]>(() => {
+    if (boot) return boot.runs
+    if (!restored.match) return []
+    const tracker = new BalanceTracker(restored.match.seed)
+    tracker.start(restored.match.game)
+    return [{ seed: restored.match.seed, game: restored.match.game, tracker, stuck: false, stall: 0 }]
+  })
   const [focus, setFocus] = useState(0)
   const [debugSpeed, setDebugSpeed] = useState<DebugSpeed>(1)
-  const [debugView, setDebugView] = useState<DebugView>(boot?.view ?? 'stats')
-  const [queueSize, setQueueSize] = useState(100)
-  const [reports, setReports] = useState<MatchReport[]>([])
+  const [debugView, setDebugView] = useState<DebugView>(boot?.view ?? restored.debug?.view ?? 'stats')
+  const [queueSize, setQueueSize] = useState(restored.debug?.queueSize ?? 100)
+  const [reports, setReports] = useState<MatchReport[]>(restored.debug?.reports ?? [])
   const [match, setMatch] = useState(boot ? 1 : 0)
   const [queueLeft, setQueueLeft] = useState(0)
   const [runningFast, setRunningFast] = useState(false)
   const [stratFilter, setStratFilter] = useState<StratFilter>(ALL_STRAT_FILTER)
-  const [debugStrats, setDebugStrats] = useState<AiStrat[]>(() => Array.from({ length: boot?.seats ?? 2 }, (_, index) => cycleStrat(index)))
-  const [trainNeural, setTrainNeural] = useState(false)
+  const [debugStrats, setDebugStrats] = useState<AiStrat[]>(() =>
+    restored.debug?.strats?.length
+      ? restored.debug.strats
+      : Array.from({ length: boot?.seats ?? 2 }, (_, index) => cycleStrat(index)),
+  )
+  const [trainNeural, setTrainNeural] = useState(restored.debug?.trainNeural ?? false)
   const [nnInfo, setNnInfo] = useState<NnMemoryInfo>(() => bootNnMemory())
-  const [thoughtPower, setThoughtPower] = useState(() => bootAiThoughtPower())
+  const [thoughtPower, setThoughtPower] = useState(restored.debug?.thoughtPower ?? bootAiThoughtPower())
   const [online, setOnline] = useState(false)
   const [labSession, setLabSession] = useState(false)
   const [returnToLab, setReturnToLab] = useState(false)
@@ -306,6 +336,16 @@ export default function App() {
   debugStratsRef.current = debugStrats
   trainNeuralRef.current = trainNeural
   liveTrainNeural = trainNeural
+
+  useEffect(() => {
+    if (restored.debug) setScoreRules(restored.debug.rules)
+    else if (restored.match) setScoreRules(restored.match.rules)
+    function flush() {
+      flushPendingLocalMatch()
+    }
+    window.addEventListener('pagehide', flush)
+    return () => window.removeEventListener('pagehide', flush)
+  }, [restored])
 
   const live = runs[0] ?? null
   const game = live?.game ?? null
@@ -438,11 +478,13 @@ export default function App() {
       thoughtPower,
       reports,
       rules: getScoreRules(),
+      active: true,
       ...extra,
     })
   }
 
   function leave() {
+    markVoluntaryLeave()
     queueToken.current += 1
     watchAdvanceRef.current += 1
     watchRef.current = false
@@ -463,7 +505,7 @@ export default function App() {
       else saveLocalMatch(live.seed, live.game, getScoreRules(), true)
     } else if (debug) {
       clearLocalMatch()
-      persistDebugSession()
+      persistDebugSession({ active: false })
     }
     setLabSession(false)
     setReturnToLab(false)
@@ -701,6 +743,7 @@ export default function App() {
       thoughtPower,
       reports: [],
       rules,
+      active: true,
     })
     window.setTimeout(() => {
       void runFastQueue(nextSeed, total, seats, strats)

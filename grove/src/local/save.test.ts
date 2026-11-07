@@ -81,6 +81,7 @@ describe('debug session save', () => {
       thoughtPower: 8,
       reports: [],
       rules: DEFAULT_SCORE_RULES,
+      active: true,
     })
     const loaded = loadDebugSession()
     expect(loaded?.seed).toBe(99)
