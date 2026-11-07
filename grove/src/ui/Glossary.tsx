@@ -75,7 +75,7 @@ export function Glossary({ onClose }: { onClose: () => void }) {
       <article className="sheet glossary" role="dialog" aria-modal="true" aria-labelledby="glossary-title" onClick={(event) => event.stopPropagation()}>
         <p className="eyebrow">Card reference</p>
         <h2 id="glossary-title">Glossary</h2>
-        <p className="quiet">Browse every hero, item, terrain, and reward in the shared decks. The Ancient (+10 on draw reveal, then one final turn each) is placed after the opening deal by seat count (mid for 2–4, deep for 5–6, last for 7–8).</p>
+        <p className="quiet">Browse every hero, item, terrain, and reward in the shared decks. The Ancient is placed after the opening deal by seat count (mid for 2–4, deep for 5–6, last for 7–8); whoever draws it puts it on the board, worth +10 to whoever controls it at the end.</p>
         <div className="glossary-entry has-art" data-kind="ancient" style={{ marginBottom: 12 }}>
           <CardArt defId={ANCIENT.id} size="icon" className="glossary-art" />
           <div className="glossary-body">

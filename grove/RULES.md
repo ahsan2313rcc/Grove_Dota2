@@ -8,7 +8,7 @@ Authoritative rules for agents and implementers. Card text lives in `src/game/ca
 
 Grove is a competitive multiplayer card game (typically **2 seats**; engine supports more). Players build **teams of heroes** and play **terrain combos** for points. One **shared deck**, shared **grave**, and shared **exile**. Separate face-down reward piles: **runes**, **neutrals**, **towers**.
 
-**Win condition:** The match ends when **The Ancient** is revealed and each player has taken one final turn, **or** when the shared deck is empty. Highest total score wins (teams + terrain combo points + Ancient bonus if any). Ties are possible (no forced tiebreak in engine finish).
+**Win condition:** The match ends when **The Ancient** is revealed and each player has taken one final turn, **or** when the shared deck is empty. Highest total score wins (teams + terrain combo points + 10 for whoever controls The Ancient). Ties are possible (no forced tiebreak in engine finish).
 
 ---
 
@@ -19,7 +19,7 @@ Grove is a competitive multiplayer card game (typically **2 seats**; engine supp
 | **Hero** | Main deck | Has attribute (STR/AGI/INT/UNI), attack type (Melee/Ranged), ability timing |
 | **Item** | Main deck | Played from hand; often targeted |
 | **Terrain** | Main deck (36 total: river/jungle/lane) | Never played alone — always as a **combo of exactly 3** |
-| **Ancient** | Main deck (1 copy) | Endgame card; cannot be played. Revealed by draw / grave / exile |
+| **Ancient** | Main deck (1 copy) | Neutral body; placed free when drawn; +10 to its controller at the end; starts the final round |
 | **Rune** | Rune pile | Reward from 3 Rivers |
 | **Neutral** | Neutral pile | Reward from 3 Jungles; token body on a team (except Tormentor) |
 | **Tower** | Tower pile | Reward from 3 Lanes |
@@ -29,7 +29,7 @@ Grove is a competitive multiplayer card game (typically **2 seats**; engine supp
 - **`cast`** — Ability fires when the hero is played as the **active** hero (unless silenced/blocked).
 - **`aura`** — No on-play fire; passive while on the board.
 - **`instant`** — Free (no action). Playable on **your turn** and on **opponents’ turns** to interrupt. Before a hero ability fires, opponents get an Instant window.
-- **`trap`** — Played face down onto a team. Does **not** fire on play. Reveals and resolves when its trigger is met (see §7.1).
+- **`trap`** — Played face down onto a team. Does **not** fire on play. Reveals and resolves when the next hero enters that team (see §7.1).
 
 **Item / reward `instant: true`:** Does not cost an action.
 
@@ -85,7 +85,6 @@ Legal actions (when no `pending` prompt):
 | **Combo** 3 terrains | Free | See §5 |
 | **Draw** | 1 action | Draw 1 if hand &lt; limit and deck nonempty |
 | **Discard stuck** | 1 action | Pitch a hand card to grave (escape Poison Nova / lone terrains) |
-| **Move** Ember Spirit | Free | Aura move between own teams |
 | **Morph cast** | — | Fire stolen Morph ability if eligible |
 | **End** | — | End turn (must discard down to 7 first if over limit) |
 
@@ -99,11 +98,12 @@ While `pending` is set, only **choose** (answer the prompt) is legal. AI/`autoAl
 
 ### 4.4 The Ancient (endgame)
 
-One copy of **The Ancient** sits in the main deck after the opening deal, placed by player count (mid-deck for 2–4, deep for 5–6, last card for 7–8). It cannot be played.
+One copy of **The Ancient** sits in the main deck after the opening deal, placed by player count (mid-deck for 2–4, deep for 5–6, last card for 7–8).
 
-- **Revealed by draw** (`takeDraw`): that seat scores **+10**. Start the final round.
-- **Revealed from grave or exile** (milled / exiled into those zones): **no** +10. Same final round.
-- **Final round:** `endsLeft` starts at seat count. Each `end` decrements it; at 0 the match **finish**es (“The Ancient ends the match”).
+- **Revealed by draw:** the drawer plays it **for free** into a team they control or a new team (`ancient-place` prompt). It is a neutral body: 0 flat points, counts as **any one attribute** (whichever scores best), can be targeted, moved, stolen, or destroyed like a hero.
+- **+10** goes to whoever **controls** it when the match ends — not to whoever drew it.
+- Drawing it starts the **final round**: finish the current turn, then each opponent takes one more turn.
+- **Revealed from grave or exile** (milled / exiled into those zones): it is not placed; it only starts the final round.
 - Empty-deck finish still applies if the deck empties before The Ancient is revealed.
 
 ### 4.5 Empty deck
@@ -117,17 +117,21 @@ Whenever the game is live and the deck is empty after settling effects/draws, **
 - Terrains **cannot** be played as a single card.
 - Play **exactly three** terrain cards from hand as one free combo.
 
-**Three of a kind** (3 River / 3 Jungle / 3 Lane):
+Every combo is exactly three terrains, scored by shape:
 
-- Score **`coreCombo`** points (default **5**), stored on the player’s `combos` list.
-- Take the **top card** of the matching pile into hand (rune / neutral / tower). If pile empty, no reward.
+| Shape | Example | Points | Reward |
+|-------|---------|--------|--------|
+| **Pair** (`pairCombo`) | River, River, Jungle | **3** | — |
+| **Mixed** (`mixCombo`) | River, Jungle, Lane | **5** | — |
+| **Core** (`coreCombo`) | Lane, Lane, Lane | **8** | Top card of the matching pile (River → rune, Jungle → neutral, Lane → tower); none if the pile is empty |
 
-**Mixed** (one of each River + Jungle + Lane):
+**Terrain heroes count cards inside your combos**, not combos:
 
-- Score **`mixCombo`** points (default **5**).
-- **No** reward pile draw.
-
-**Luna aura:** For each Jungle card in the combo, if you control Luna, draw an item from the main deck (first item found; cards above it stay).
+- **Meepo:** +1 point per terrain type (River / Jungle / Lane) you control.
+- **Ember Spirit:** X = number of terrain types you control.
+- **Slardar:** draw 1 per River card you control.
+- **Luna:** whenever you play a combo, search the deck for an item card for each Jungle in it.
+- **Hoodwink:** needs any Jungle card.
 
 Combos remain as scored terrain piles; some effects destroy/protect them (Hoodwink, Windranger, Treant).
 
@@ -145,9 +149,11 @@ Combos remain as scored terrain piles; some effects destroy/protect them (Hoodwi
 - **Troll Warlord (Battle Trance):** Opponents cannot play Instant cards (logged when it blocks an interrupt).
 - **Shadow Demon ban:** Listed UIDs cannot be played while that SD is controlled by the banner.
 
-### 6.2 Nyx (Instant)
+### 6.2 Counters (Instant)
 
-**Nyx Assassin** is an Instant. Play it in the Instant interrupt window before an ability fires to counter that ability and destroy the firing hero. There is no separate discard-Nyx prompt.
+**Nyx Assassin** is an Instant. Play it in the Instant window before an ability fires to counter that ability; the firing hero is destroyed only if it is **Intelligence**.
+
+**Spirit Breaker** is an Instant. Play it in the same window to redirect the ability to itself: a hero target becomes Spirit Breaker, a team target becomes Spirit Breaker’s team.
 
 ### 6.3 Heroes — multi-drop
 
@@ -160,13 +166,13 @@ Combos remain as scored terrain piles; some effects destroy/protect them (Hoodwi
 **On enter (`arrived`):**
 
 - Mark `enteredThisTurn`.
-- If team has Techies **mine**, destroy the entering hero and grave the mine card.
+- If the team has a face-down trap, it resolves first (§7.1).
 - Each **Lycan** already on that team (same controller) → controller draws 1.
 
 **On-play fire** (active hero only, timing ≠ aura, not Nyx/Spirit Breaker hand-counter, not global silence):
 
 1. If mined, queue cast for if-still-alive.
-2. Else **Instant interrupt window**: each opponent may play one Instant (or pass). Battle Trance skips a seat and logs if they held Instant cards. Nyx played here counters the ability and destroys the hero.
+2. Else **Instant interrupt window**: each opponent may play one Instant (or pass). Battle Trance skips a seat and logs if they held Instant cards. Nyx played here counters the ability (destroying an Intelligence caster); Spirit Breaker redirects it.
 3. Else if enemy **Pugna**: choose discard 1 or fizzle fire.
 4. Else `cast(...)` the ability.
 
@@ -191,13 +197,16 @@ Combos remain as scored terrain piles; some effects destroy/protect them (Hoodwi
 
 Trap heroes (`timing: 'trap'`):
 
-1. Play face down on **any** team (ally or enemy).
-2. **At most one trap per team** (optional hard limit; recommended).
-3. **Trigger (automatic):** when a hero **enters** that team, **or** when that team / a hero in it is **targeted by an effect**, the trap **reveals and resolves** — no owner choice to pass.
-4. Resolve printed text. The revealed hero **joins that team** as a normal body unless the text specifies the trap is **destroyed** / **Sacrificed** (then it goes to the grave). If the team cannot hold it, return the card to the trap owner’s hand.
-5. **Zeus** removes all face-down traps from the board.
+1. Play face down on a team with room for another hero — yours or an enemy’s. **Not** on a team of five, **not** on a closed team (`noEnter`), and **at most one trap per team**. There is no bluffing: only trap heroes go face down.
+2. While face down, that team scores **no attribute bonus** (CORE / MIXED); flat and attack points still count.
+3. **Single trigger:** the next time a hero **enters** that team, the trap reveals and resolves **before** the entering hero’s ability (the entrant’s cast is held in `laterCasts` until the trap finishes). Being targeted does not trigger it. The “controller” in trap text is whoever controls that team.
+4. Afterwards a trap that did not sacrifice itself **joins that team** if there is room; otherwise it goes to the grave.
+5. Removal: **Zeus** clears every trap; **Guardian Greaves** clears one player’s traps; **Observer Ward** removes a target trap (or reveals a hand); **Batrider** moves a trap to another player’s team with room, still face down.
 
-Trap roster: Techies, Riki, Kez, Monkey King, Templar Assassin, Ogre Magi, Slark, Bounty Hunter, Shadow Shaman.
+| Group | Heroes |
+|-------|--------|
+| **Snares** (hurt the controller) | Techies, Broodmother, Monkey King, Slark, Riki, Shadow Shaman |
+| **Wards** (help the controller) | Kez, Ogre Magi, Bounty Hunter, Templar Assassin |
 
 
 ### 7.1 Pipeline
@@ -315,7 +324,7 @@ Max illustrative: 5 same attr → 5 + 10 = **15**. Mix + ATK e.g. 5 heroes 4 att
 
 ### 9.2 Terrains
 
-Each completed combo adds its stored `points` (default 5).
+Each completed combo adds its stored `points` (pair 3, mixed 5, core 8).
 
 ---
 
@@ -335,7 +344,7 @@ Each completed combo adds its stored `points` (default 5).
 | **Viper** | Enemy auras are nullified |
 | **Skip** | Miss next turn (Bane, Pangolier conditional, …) |
 | **Anti-loop** | Stolen/copied abilities cannot chain-steal or chain-fire |
-| **Traps** | Auto-reveal on enter/targeted; Zeus clears all |
+| **Traps** | Reveal when a hero enters, before its ability; suppress that team’s attribute bonus while face down |
 
 ---
 
@@ -369,7 +378,7 @@ AI strats: `balanced` | `tempo` | `architect` | `spite`.
 
 ## 14. Rules agents often miss
 
-1. Terrains are **only** via 3-card combo; never lone play.
+1. Terrains are **only** via 3-card combo; never lone play. Any three terrains make a combo.
 2. Multi-hero drop = **one** action; **one** fire.
 3. Nyx counters only the **active** hero; companions still land.
 4. Neutrals are **0** flat points but count for bonuses; one per team.
@@ -393,5 +402,6 @@ AI strats: `balanced` | `tempo` | `architect` | `spite`.
 | Point math | `src/game/scoring.ts` |
 | Short human rules UI | `src/ui/Rules.tsx` |
 | Card browser UI | `src/ui/Glossary.tsx` |
+| Ability Lab (per-card preset boards + conservation audit) | `src/game/lab.ts`, `src/ui/Lab.tsx` |
 
 For the full card text dump, read `HEROES`, `ITEMS`, `REWARDS`, and `TERRAINS` in `catalog.ts`.
