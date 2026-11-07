@@ -1225,6 +1225,36 @@ button.debug-mode-cycle:hover {
   display: grid; place-items: center; padding: 18px; z-index: 5;
 }
 .sheet { width: min(980px, 100%); max-height: min(86dvh, 860px); overflow: auto; padding: 18px; display: flex; flex-direction: column; gap: 10px; }
+.prompt-about {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 12px;
+  align-items: start;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--panel) 88%, black);
+}
+.prompt-about-copy { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.prompt-about-kind {
+  margin: 0;
+  font-size: 0.75rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--cream-dim);
+}
+.prompt-about-name { font-size: 1.05rem; }
+.prompt-about-spell {
+  margin: 0;
+  color: var(--gold);
+  font-weight: 600;
+}
+.prompt-about-text {
+  margin: 2px 0 0;
+  color: var(--cream-dim);
+  font-size: 0.92rem;
+  line-height: 1.35;
+}
 .choices, .dialog-cards { display: flex; flex-direction: row; flex-wrap: wrap; gap: 8px; align-items: stretch; }
 .choice { display: flex; flex-direction: column; gap: 6px; align-items: stretch; width: 132px; padding: 8px; border: 1px solid var(--line); border-radius: 14px; text-align: left; }
 .choice .card.compact { width: 100%; }

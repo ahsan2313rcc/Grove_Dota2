@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { apply } from './engine.ts'
 import { buildLab, census, labCards, runLab } from './lab.ts'
 
 describe('ability lab', () => {
@@ -6,6 +7,22 @@ describe('ability lab', () => {
     const { game, uid } = buildLab('lina')
     expect(uid).not.toBe('')
     expect([...census(game).values()].every((count) => count === 1)).toBe(true)
+  })
+
+  it('attaches ability context to targeting prompts', () => {
+    const { game, uid } = buildLab('lina')
+    let next = apply(game, { type: 'play', uid, team: 'new' })
+    let guard = 0
+    while (next.pending && next.pending.resume.kind !== 'cast' && guard++ < 20) {
+      const pick = next.pending.choices.find((choice) => choice.id === 'pass') ?? next.pending.choices[0]
+      if (!pick) break
+      next = apply(next, { type: 'choose', ids: [pick.id] })
+    }
+    expect(next.pending?.resume.kind).toBe('cast')
+    expect(next.pending?.about?.defId).toBe('lina')
+    expect(next.pending?.about?.spell).toMatch(/Laguna/i)
+    expect(next.pending?.about?.text.length).toBeGreaterThan(8)
+    expect(next.pending?.prompt).toMatch(/Laguna|Choose/i)
   })
 
   it('plants trap cards on your first team and hands you an entrant', () => {

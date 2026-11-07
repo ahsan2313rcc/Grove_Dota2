@@ -16,6 +16,8 @@ export function Prompt({
   const grouped = pending.mode === 'split' || pending.mode === 'assign' || pending.mode === 'groups'
   const exact = pending.min === pending.max
   const hint = exact ? `Choose ${pending.min}.` : `Choose ${pending.min} to ${pending.max}.`
+  const about = pending.about
+  const title = about ? (about.spell ?? about.name) : null
 
   function toggle(id: string) {
     if (pending.max === 1) {
@@ -36,8 +38,22 @@ export function Prompt({
     <div className="scrim">
       <section className="sheet" role="dialog" aria-modal="true" aria-labelledby="prompt-title">
         <p className="eyebrow">{names[pending.actor]} answers</p>
+        {about ? (
+          <div className="prompt-about" data-testid="prompt-about">
+            <CardFace defId={about.defId} compact />
+            <div className="prompt-about-copy">
+              <p className="prompt-about-kind">{kindLabel(about.kind)}</p>
+              <strong className="prompt-about-name">{about.name}</strong>
+              {about.spell ? <p className="prompt-about-spell">{about.spell}</p> : null}
+              <p className="prompt-about-text">{about.text}</p>
+            </div>
+          </div>
+        ) : null}
         <h2 id="prompt-title" data-testid="prompt">{pending.prompt}</h2>
-        <p className="quiet">{grouped ? 'Assign every card.' : hint}</p>
+        <p className="quiet">
+          {grouped ? 'Assign every card.' : hint}
+          {title ? ` · From ${title}.` : ''}
+        </p>
         <div className="choices">
           {pending.choices.map((choice) => {
             const on = picked.includes(choice.id)
@@ -93,6 +109,16 @@ export function Prompt({
       </section>
     </div>
   )
+}
+
+function kindLabel(kind?: string): string {
+  if (!kind) return 'Ability'
+  if (kind === 'hero') return 'Hero ability'
+  if (kind === 'item') return 'Item'
+  if (kind === 'reward') return 'Reward'
+  if (kind === 'squad') return 'Squad'
+  if (kind === 'combo') return 'Combo'
+  return kind.charAt(0).toUpperCase() + kind.slice(1)
 }
 
 function segments(mode: Pending['mode'], names: string[]): { value: string; label: string }[] {

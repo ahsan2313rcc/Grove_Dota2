@@ -170,6 +170,15 @@ export type Resume =
   | { kind: 'response' }
   | { kind: 'response-place'; cardUid: string }
 
+/** Card/ability context shown on targeting prompts so players know what they're answering. */
+export interface PromptAbout {
+  defId: string
+  name: string
+  spell?: string
+  text: string
+  kind?: string
+}
+
 export interface Pending {
   actor: PlayerId
   prompt: string
@@ -178,6 +187,8 @@ export interface Pending {
   min: number
   max: number
   resume: Resume
+  /** Source ability/item/reward for this prompt, when known. */
+  about?: PromptAbout
 }
 
 export interface StackDestroy {

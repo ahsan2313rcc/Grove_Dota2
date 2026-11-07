@@ -545,7 +545,39 @@ export function ask(state: Game, pending: Pending): Game {
   if (pending.mode === 'pick' && pending.min > 0 && pending.choices.length === 0) {
     return log(state, 'There is no legal choice.')
   }
-  return { ...state, pending }
+  return { ...state, pending: withPromptAbout(pending) }
+}
+
+/** Attach ability/item context from the resume so the Prompt UI can explain the ask. */
+function withPromptAbout(pending: Pending): Pending {
+  if (pending.about) return pending
+  const defId = promptSourceDefId(pending.resume)
+  if (!defId) return pending
+  const info = display(defId)
+  const about = {
+    defId,
+    name: info.name,
+    spell: info.spell,
+    text: info.text,
+    kind: info.kind,
+  }
+  const label = about.spell ?? about.name
+  const alreadyNamed =
+    pending.prompt.toLowerCase().includes(about.name.toLowerCase())
+    || (about.spell ? pending.prompt.toLowerCase().includes(about.spell.toLowerCase()) : false)
+  return {
+    ...pending,
+    about,
+    prompt: alreadyNamed ? pending.prompt : `${label}: ${pending.prompt}`,
+  }
+}
+
+function promptSourceDefId(resume: Pending['resume']): string | null {
+  if (resume.kind === 'cast') return resume.defId
+  if ('cast' in resume && resume.cast) return resume.cast.defId
+  if ('card' in resume && resume.card) return resume.card.defId
+  if ('trap' in resume && resume.trap) return resume.trap.defId
+  return null
 }
 
 export function queueDraw(state: Game, player: PlayerId, count: number): Game {
@@ -781,12 +813,19 @@ export function heroChoices(
 ): Choice[] {
   return allLocs(state)
     .filter((loc) => pred(loc) && canTargetHero(state, actor, loc.hero, source))
-    .map((loc) => ({
-      id: `hero:${loc.hero.uid}`,
-      label: display(loc.hero.defId).name,
-      hint: `${pname(state, loc.hero.controller)} · ${scoreTeam(state, loc.team).why}`,
-      defId: loc.hero.defId,
-    }))
+    .map((loc) => {
+      const info = display(loc.hero.defId)
+      const body = HERO_BY_ID[loc.hero.defId]
+      const tags = [body?.attr, body?.range].filter(Boolean).join(' · ')
+      return {
+        id: `hero:${loc.hero.uid}`,
+        label: info.name,
+        hint: [pname(state, loc.hero.controller), tags || null, scoreTeam(state, loc.team).why]
+          .filter(Boolean)
+          .join(' · '),
+        defId: loc.hero.defId,
+      }
+    })
 }
 
 export function teamChoices(
@@ -802,10 +841,17 @@ export function teamChoices(
       if (!canTargetTeam(state, actor, team, player.id, source)) continue
       const scored = scoreTeam(state, team)
       const letter = String.fromCharCode(65 + (player.teams.indexOf(team) % 26))
+      const roster = team.heroes
+        .slice(0, 3)
+        .map((hero) => display(hero.defId).name)
+        .join(', ')
+      const more = team.heroes.length > 3 ? ` +${team.heroes.length - 3}` : ''
       choices.push({
         id: `team:${team.id}`,
         label: `${pname(state, player.id)}'s Team ${letter}`,
-        hint: `${scored.why} · ${scored.points}`,
+        hint: [roster ? `${roster}${more}` : 'empty', scored.why, String(scored.points)]
+          .filter(Boolean)
+          .join(' · '),
         defId: team.heroes[0]?.defId,
       })
     }
