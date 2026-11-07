@@ -109,7 +109,6 @@ export function Table({
   const [winOpen, setWinOpen] = useState(false)
   const [handOpen, setHandOpen] = useState<PlayerId | null>(null)
   const [page, setPage] = useState(0)
-  const [acked, setAcked] = useState('')
   const [leaveArmed, setLeaveArmed] = useState(false)
   /** Hotseat: non-active human sits down to play Instant cards. */
   const [reactSeat, setReactSeat] = useState<PlayerId | null>(null)
@@ -125,7 +124,6 @@ export function Table({
     setLogOpen(false)
     setHandOpen(null)
     setPage(0)
-    setAcked('')
     setLeaveArmed(false)
     setReactSeat(null)
   }, [tableGen])
@@ -196,6 +194,13 @@ export function Table({
       setReactSeat(null)
     }
   }, [game, reactSeat])
+
+  // Hotseat: lift the turn veil automatically — no "pass the seat" confirm.
+  useEffect(() => {
+    if (!game || onlineSeat != null || debug) return
+    if (!game.veil || game.players[game.active]?.ai) return
+    onAction({ type: 'ready' })
+  }, [game, onlineSeat, debug, onAction])
 
   const debugReady = !!(
     debug
@@ -289,19 +294,12 @@ export function Table({
   const pendingHuman = game.pending && !game.players[game.pending.actor]?.ai ? game.pending.actor : null
   const activeHuman = game.players[game.active] && !game.players[game.active]!.ai ? game.active : null
   const networked = onlineSeat !== null && onlineSeat !== undefined
-  // Only pass-the-device when another human must answer — not when you target an enemy on your own turn.
-  const needsHandoff =
-    !debug
-    && !networked
-    && humans.length > 1
-    && pendingHuman !== null
-    && acked !== promptKey
-    && pendingHuman !== activeHuman
+  // Instant / choice prompts for another human: switch the view to them immediately (no confirm).
   const viewer: PlayerId = networked
     ? onlineSeat
     : debug
       ? game.active
-      : pendingHuman !== null && (acked === promptKey || pendingHuman === activeHuman || humans.length === 1)
+      : pendingHuman !== null
         ? pendingHuman
         : reactSeat !== null && humans.includes(reactSeat) && reactSeat !== game.active
           ? reactSeat
@@ -346,33 +344,7 @@ export function Table({
     ? humans.filter((id) => id !== game.active && id !== viewer)
     : []
 
-  if (!networked && game.mode === 'hotseat' && game.veil && !game.players[game.active]?.ai) {
-    return (
-      <SeatCover
-        title={game.players[game.active]!.name}
-        body="Five cards are waiting. The other hand stays hidden until the seat passes back."
-        action="Begin turn"
-        testId="ready"
-        names={names}
-        scores={game.players.map((player) => scoreState(game, player.id).total)}
-        onAction={() => onAction({ type: 'ready' })}
-      />
-    )
-  }
-
-  if (needsHandoff && pendingHuman !== null) {
-    return (
-      <SeatCover
-        title={names[pendingHuman] ?? 'Player'}
-        body="A response is waiting. Sit down before the choice is shown."
-        action={`I'm ${names[pendingHuman]}`}
-        testId="handoff"
-        names={names}
-        scores={game.players.map((player) => scoreState(game, player.id).total)}
-        onAction={() => setAcked(promptKey)}
-      />
-    )
-  }
+  // Veil is cleared by the effect above; skip the old seat-confirm cover.
 
   const chosen = liveCombo
     .map((uid) => you.hand.find((card) => card.uid === uid) ?? (graveTop?.uid === uid ? graveTop : null))
@@ -391,10 +363,6 @@ export function Table({
       .map((uid) => you.hand.find((card) => card.uid === uid))
       .filter((card): card is CardInst => !!card && card.uid !== selectedCard.uid)
     : []
-  const playFree = !!selectedCard && (
-    selectedCard.kind === 'terrain'
-    || playsAsInstant(game, viewer, selectedCard)
-  )
   const playLabel = !selectedCard
     ? 'Play'
     : selectedCard.kind === 'terrain'
@@ -659,7 +627,7 @@ export function Table({
               </button>
               <button
                 type="button"
-                className={`primary play-selected${playFree ? ' has-free' : ''}`}
+                className="primary play-selected"
                 data-testid="play-selected"
                 disabled={!selectedCard || !!playReason}
                 title={playReason ?? (selectedCard ? display(selectedCard.defId).name : undefined)}
@@ -672,8 +640,7 @@ export function Table({
                   if (selectedUid) playFocused(selectedUid)
                 }}
               >
-                <span className="play-label">{playLabel}</span>
-                {playFree ? <small className="play-free">Free</small> : null}
+                {playLabel}
               </button>
               <button type="button" data-testid="end" disabled={!canAct && !stuck} onClick={() => onAction({ type: 'end' })}>
                 End turn
@@ -961,34 +928,6 @@ function Lane({
   )
 }
 
-function SeatCover({
-  title,
-  body,
-  action,
-  testId,
-  names,
-  scores,
-  onAction,
-}: {
-  title: string
-  body: string
-  action: string
-  testId: string
-  names: string[]
-  scores: number[]
-  onAction: () => void
-}) {
-  return (
-    <div className="cover">
-      <p className="eyebrow">Pass the seat</p>
-      <h1>{title}</h1>
-      <p>{body}</p>
-      <p className="cover-scores">{names.map((name, index) => `${name} ${scores[index] ?? 0}`).join(' · ')}</p>
-      <button type="button" className="primary" data-testid={testId} onClick={onAction}>{action}</button>
-    </div>
-  )
-}
-
 function Detail({
   game,
   viewer,
@@ -1119,7 +1058,8 @@ function Detail({
   )
 }
 
-const DETAIL_TIMING: Record<'aura' | 'instant' | 'trap' | 'combo', string> = {
+const DETAIL_TIMING: Record<'cast' | 'aura' | 'instant' | 'trap' | 'combo', string> = {
+  cast: 'On play',
   aura: 'Aura',
   instant: 'Instant',
   trap: 'Trap',
@@ -1131,7 +1071,8 @@ function detailTiming(
   kind: string,
 ): keyof typeof DETAIL_TIMING | null {
   if (kind === 'terrain') return 'combo'
-  if (timing === 'aura' || timing === 'instant' || timing === 'trap') return timing
+  if (timing === 'cast' || timing === 'aura' || timing === 'instant' || timing === 'trap') return timing
+  if (kind === 'item') return 'cast'
   return null
 }
 

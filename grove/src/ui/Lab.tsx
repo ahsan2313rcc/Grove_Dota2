@@ -46,8 +46,28 @@ export function Lab({ onClose, onPlay }: { onClose: () => void; onPlay: (game: G
             Seed
             <input type="number" value={seed} onChange={(event) => setSeed(Number(event.target.value) || 1)} data-testid="lab-seed" />
           </label>
-          <button type="button" onClick={runAll} data-testid="lab-run-all">Run every card</button>
+          <button
+            type="button"
+            onClick={runAll}
+            data-testid="lab-run-all"
+            title="Auto-plays every hero and item on its lab board and lists any that break or look suspicious"
+          >
+            Run every card
+          </button>
+          {card ? (
+            <button
+              type="button"
+              className="primary"
+              data-testid="lab-play"
+              onClick={() => onPlay(buildLab(card.defId, seed).game, seed)}
+            >
+              Open board
+            </button>
+          ) : null}
         </div>
+        <p className="quiet lab-run-hint">
+          <strong>Run every card</strong> auto-plays each hero and item on its preset board with the current seed, then lists any that break (issues) or look suspicious (warnings).
+        </p>
 
         {sweep ? (
           <div className="lab-sweep" data-testid="lab-sweep">
@@ -115,10 +135,6 @@ export function Lab({ onClose, onPlay }: { onClose: () => void; onPlay: (game: G
               <ol className="lab-lines lab-log">
                 {result.log.map((line, index) => <li key={index}>{line}</li>)}
               </ol>
-
-              <button type="button" className="primary block" data-testid="lab-play" onClick={() => onPlay(buildLab(card.defId, seed).game, seed)}>
-                Open this board on the table
-              </button>
             </section>
           ) : null}
         </div>

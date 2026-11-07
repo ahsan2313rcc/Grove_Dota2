@@ -893,24 +893,13 @@ button.debug-mode-cycle:hover {
   gap: 2px;
   flex: 0 0 auto;
 }
-.detail-free,
-.play-free {
+.detail-free {
   font-size: 0.68rem;
   line-height: 1;
   color: var(--gold);
   letter-spacing: 0.04em;
   text-transform: uppercase;
 }
-.play-selected {
-  display: inline-flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 2px;
-  line-height: 1.1;
-}
-.play-selected .play-label { display: block; }
-.play-selected.has-free { padding-top: 0.28rem; padding-bottom: 0.28rem; }
 .detail h3 { font-size: 1.1rem; }
 .detail .spell { color: var(--gold); margin: 2px 0 4px; font-size: 0.85rem; }
 .detail p { font-size: 0.85rem; max-width: 70ch; }
@@ -1578,6 +1567,7 @@ button.debug-mode-cycle:hover {
 
 .lab { width: min(1040px, 100%); background: #0c1611; }
 .lab-seed { flex: 0 0 90px; }
+.lab-run-hint { margin: 0; font-size: 0.82rem; }
 .lab-sweep { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 8px 0; }
 .lab-chip { padding: 0.2rem 0.6rem; font-size: 0.78rem; }
 .lab-chip[data-bad='true'] { border-color: var(--danger, #d0645a); color: var(--danger, #d0645a); }
