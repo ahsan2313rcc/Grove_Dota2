@@ -127,7 +127,7 @@ export const HEROES: HeroDef[] = [
   hero('night_stalker', 'Night Stalker', 'STR', 'Melee', 'Dark Ascension', 'Steal 2 cards at random from target opponent.', 'cast'),
   hero('ogre_magi', 'Ogre Magi', 'STR', 'Melee', 'Multicast', 'Place face-down. When triggered, the entering hero activates its ability twice.', 'trap'),
   hero('omniknight', 'Omniknight', 'STR', 'Melee', 'Guardian Angel', 'You cannot add more heroes into this team. All allied heroes in this team are immune to all effects.', 'aura'),
-  hero('phoenix', 'Phoenix', 'STR', 'Ranged', 'Supernova', 'You may exile Phoenix, then return target enemy team to the bottom of the deck.', 'cast'),
+  hero('phoenix', 'Phoenix', 'STR', 'Ranged', 'Supernova', 'You may exile Phoenix. If you do, return target enemy team to the bottom of the deck.', 'cast'),
   hero('primal_beast', 'Primal Beast', 'STR', 'Melee', 'Uproar', 'Until your next turn, you cannot play hero cards, but you may play item cards as if they were instants.', 'cast'),
   hero('pudge', 'Pudge', 'STR', 'Melee', 'Meat Hook', 'Take control of target enemy hero. That opponent discards a card.', 'cast'),
   hero('slardar', 'Slardar', 'STR', 'Melee', 'Corrosive Haze', 'Draw a card for each River terrain you control.', 'cast'),

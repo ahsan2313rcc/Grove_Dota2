@@ -967,13 +967,19 @@ function questions(state: Game, resume: CastResume): Ask {
     }
     case 'phoenix': {
       if (at === 0) {
-        return pose(actor, 'Exile Phoenix?', [
+        return pose(actor, 'Exile Phoenix to return an enemy team to the bottom of the deck?', [
           { id: 'exile:yes', label: 'Exile Phoenix' },
           { id: 'exile:no', label: 'Keep Phoenix' },
         ])
       }
+      // Keep Phoenix — ability does nothing (no team bounce).
+      if (resume.picked.includes('exile:no') || (resume.picked.includes('no') && !resume.picked.includes('exile:yes'))) {
+        return ready()
+      }
       if (at > 1) return ready()
-      return pose(actor, 'Return an enemy team to the bottom of the deck.', teamChoices(state, actor, kind, (_team, player) => player.id !== actor))
+      const foes = teamChoices(state, actor, kind, (_team, player) => player.id !== actor)
+      if (foes.length === 0) return fizzle('No enemy team to return.')
+      return pose(actor, 'Return an enemy team to the bottom of the deck.', foes)
     }
     case 'ember_spirit': {
       const lanes = terrainKinds(state, actor).size
@@ -1140,13 +1146,15 @@ function effect(state: Game, resume: CastResume): Game {
     case 'omniknight':
       return log(state, 'Guardian Angel is an aura.')
     case 'phoenix': {
-      if (resume.picked.includes('yes') || resume.picked.includes('exile:yes')) {
-        state = exileBoard(state, resume.sourceUid, actor)
-      }
+      const exile =
+        resume.picked.includes('exile:yes')
+        || (resume.picked.includes('yes') && !resume.picked.includes('exile:no'))
+      if (!exile) return log(state, 'Supernova passes — Phoenix stays.')
+      state = exileBoard(state, resume.sourceUid, actor)
       const teamId = teams[0]
-      if (!teamId) return state
+      if (!teamId) return log(state, 'Supernova — Phoenix is exiled.')
       const found = teamById(state, teamId)
-      if (!found) return state
+      if (!found) return log(state, 'Supernova — Phoenix is exiled.')
       let next = log(state, 'Supernova.')
       for (const hero of [...found.team.heroes]) {
         next = toDeck(next, hero.uid, 'bottom', actor)
