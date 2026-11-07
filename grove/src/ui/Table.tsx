@@ -401,7 +401,7 @@ export function Table({
       ? `Play Combo ${chosen.length}/3`
       : selectedCard.kind === 'hero'
         ? (squadMates.length > 0 ? 'Play Squad' : 'Play Hero')
-        : selectedCard.kind === 'item' || selectedCard.kind === 'reward'
+        : selectedCard.kind === 'item'
           ? 'Play Item'
           : 'Play'
   const playReason = !selectedCard
@@ -1030,7 +1030,7 @@ function Detail({
           <DetailHead
             name={info.name}
             timing={detailTiming(info.timing, info.kind)}
-            free={fromGrave || playsAsInstant(game, viewer, card!)}
+            free={!!fromGrave || playsAsInstant(game, viewer, card!)}
           />
         ) : null}
         <p>
