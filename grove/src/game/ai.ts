@@ -133,6 +133,9 @@ export function chooseAiAction(state: Game, mode: AiSearchMode = 'full'): Action
   if (core) return { type: 'combo', uids: core.uids }
   if (mixed) return { type: 'combo', uids: mixed.uids }
 
+  const freeExile = clinkzPick(state, actor)
+  if (freeExile) return freeExile
+
   if (resolved === 'challenge') return chooseAiActionChallenge(state, actor, strat)
   if (resolved === 'neural') return chooseAiActionNeural(state, actor, strat)
   if (resolved === 'fast') return chooseAiActionFast(state, actor, strat)
@@ -264,6 +267,32 @@ export function chooseAiAction(state: Game, mode: AiSearchMode = 'full'): Action
     if (uid) return { type: 'discard', uid }
   }
 
+  return best
+}
+
+/** Death Pact items in exile are free this turn — play the best one that does not hurt the seat. */
+function clinkzPick(state: Game, actor: PlayerId): Action | null {
+  if (state.active !== actor || state.clinkzExile.length === 0) return null
+  const before = state.players.map((player) => scoreState(state, player.id).total)
+  const margin = (scores: number[]) => {
+    const mine = scores[actor] ?? 0
+    const rival = Math.max(...scores.filter((_, id) => id !== actor), 0)
+    return mine - rival
+  }
+  let best: Action | null = null
+  let bestGain = -0.5
+  for (const card of state.clinkzExile) {
+    if (card.kind !== 'item') continue
+    const action: Action = { type: 'play', uid: card.uid, team: '' }
+    const next = apply({ ...state, autoAll: true }, action)
+    if (next.clinkzExile.some((entry) => entry.uid === card.uid)) continue
+    const after = next.players.map((player) => scoreState(next, player.id).total)
+    const gain = margin(after) - margin(before)
+    if (gain > bestGain) {
+      bestGain = gain
+      best = action
+    }
+  }
   return best
 }
 

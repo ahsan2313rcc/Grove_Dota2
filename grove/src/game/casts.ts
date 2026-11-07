@@ -2461,8 +2461,8 @@ function clinkzExile(state: Game, actor: PlayerId): Game {
   for (const card of taken) next = toExile(next, card)
   const items = taken.filter((card) => card.kind === 'item')
   return log(
-    { ...next, clinkzExile: [...next.clinkzExile, ...items], freeItems: next.freeItems + items.length },
-    `Skeleton Walk exiles ${taken.length}; ${items.length} item(s) free this turn.`,
+    { ...next, clinkzExile: [...next.clinkzExile, ...items] },
+    `Death Pact exiles ${taken.length}; ${items.length} item(s) free this turn.`,
   )
 }
 

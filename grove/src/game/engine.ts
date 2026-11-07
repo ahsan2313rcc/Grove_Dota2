@@ -517,6 +517,8 @@ function play(state: Game, uid: string, team: string, extras: string[] = []): Ga
   // Peek hand owner first — Instant cards may be played off-turn by non-active seats.
   let held = findHand(state, uid)
   let actor = held?.player.id ?? state.active
+  // Rejections after pulling a card out of the grave / Clinkz exile must not leave it in hand.
+  const origin = state
 
   // Death Prophet: play the top card of the grave (your turn only). Terrains must combo — do not pull them here.
   const graveTop = state.grave[state.grave.length - 1]
@@ -527,12 +529,14 @@ function play(state: Game, uid: string, team: string, extras: string[] = []): Ga
     graveTop.uid === uid &&
     allLocs(state).some((loc) => loc.hero.defId === 'death_prophet' && loc.hero.controller === actor) &&
     !graveLocked(state, actor)
-  // Clinkz: play an exiled item that was Skeleton-Walked this turn (free — do not burn freeItems yet).
+  // Clinkz: play an exiled item from Death Pact this turn for free.
   const fromClinkz = state.clinkzExile.find((card) => card.uid === uid)
   let clinkzFree = false
   if (fromClinkz && !held) {
     clinkzFree = true
     actor = state.active
+    if (cardsLocked(state, actor)) return log(state, 'Chronosphere stops you from playing cards.')
+    if (itemsLocked(state, actor)) return log(state, 'Doom locks item cards.')
     state = {
       ...state,
       exile: state.exile.filter((card) => card.uid !== uid),
@@ -553,9 +557,9 @@ function play(state: Game, uid: string, team: string, extras: string[] = []): Ga
     held = findHand(state, uid)
   }
 
-  if (!held) return state
+  if (!held) return origin
   actor = held.player.id
-  if (held.card.kind === 'terrain') return log(state, 'Terrains are played three at a time.')
+  if (held.card.kind === 'terrain') return log(origin, 'Terrains are played three at a time.')
   const info = display(held.card.defId)
   const freeGrant = state.freePlay.includes(uid)
   const freeItem =
@@ -570,71 +574,67 @@ function play(state: Game, uid: string, team: string, extras: string[] = []): Ga
   const instant = handInstant || freeItem || primalFree || freeGrant
   const offTurn = actor !== state.active
   if (offTurn && !instant) {
-    return log(state, 'Only Instant cards can be played during an opponent\'s turn.')
+    return log(origin, 'Only Instant cards can be played during an opponent\'s turn.')
   }
   // Off-turn instants: no multi-drop, no traps onto board as "plays" that need your turn structure.
   if (offTurn && (extras.length > 0 || isTrapHero(held.card.defId))) {
-    return log(state, 'That Instant cannot be multi-dropped or planted off-turn.')
+    return log(origin, 'That Instant cannot be multi-dropped or planted off-turn.')
   }
-  if (cardsLocked(state, actor)) return log(state, 'Chronosphere stops you from playing cards.')
-  if (!instant && state.players[actor].actions < 1) return state
-  if (held.card.kind === 'item' && itemsLocked(state, actor)) return log(state, 'Doom locks item cards.')
+  if (cardsLocked(state, actor)) return log(origin, 'Chronosphere stops you from playing cards.')
+  if (!instant && state.players[actor].actions < 1) return origin
+  if (held.card.kind === 'item' && itemsLocked(state, actor)) return log(origin, 'Doom locks item cards.')
   if (handInstant && instantsLocked(state, actor)) {
-    return log(state, 'Battle Trance stops Instant cards.')
+    return log(origin, 'Battle Trance stops Instant cards.')
   }
   if (held.card.kind === 'hero' && state.players[actor].noHeroNow && !offTurn) {
-    return log(state, 'You cannot play hero cards this turn.')
+    return log(origin, 'You cannot play hero cards this turn.')
   }
   // Instant heroes may still enter the board off-turn (e.g. Dazzle/Oracle onto a team).
   if (held.card.kind === 'hero' && state.attrBan && state.attrBan.caster !== actor) {
     const attr = HEROES.find((hero) => hero.id === held.card.defId)?.attr
-    if (attr && attr === state.attrBan.attr) return log(state, "Reaper's Scythe bans that attribute.")
+    if (attr && attr === state.attrBan.attr) return log(origin, "Reaper's Scythe bans that attribute.")
   }
   if (isTrapHero(held.card.defId)) {
     const found = teamById(state, team)
-    if (!found) return log(state, 'Choose any team for the trap.')
-    if (found.team.trap || found.team.mine) return log(state, 'That team already has a trap.')
+    if (!found) return log(origin, 'Choose any team for the trap.')
+    if (found.team.trap || found.team.mine) return log(origin, 'That team already has a trap.')
     if (!instant) state = setPlayer(state, actor, (player) => ({ ...player, actions: player.actions - 1 }))
     return plantTrap(state, actor, held.card, found.team.id)
   }
   if (state.sdBan.some((ban) => ban.uid === uid && findHero(state, ban.sdUid)?.hero.controller === ban.caster)) {
-    return log(state, 'Disruption stops that hero from being played.')
+    return log(origin, 'Disruption stops that hero from being played.')
   }
 
   const companions = held.card.kind === 'hero'
     ? [...new Set(extras.filter((extra) => extra !== uid))]
     : []
   if (companions.length > 0 && held.card.kind !== 'hero') {
-    return log(state, 'Only heroes can multi-drop.')
+    return log(origin, 'Only heroes can multi-drop.')
   }
   for (const extra of companions) {
     const other = findHand(state, extra)
     if (!other || other.player.id !== actor || other.card.kind !== 'hero') {
-      return log(state, 'A companion hero is missing.')
+      return log(origin, 'A companion hero is missing.')
     }
     if (state.sdBan.some((ban) => ban.uid === extra && findHero(state, ban.sdUid)?.hero.controller === ban.caster)) {
-      return log(state, 'Disruption stops a companion hero.')
+      return log(origin, 'Disruption stops a companion hero.')
     }
   }
 
   if (needsTeam(held.card.defId, held.card.kind) || companions.length > 0) {
     const resolved = resolveTeam(state, actor, team)
-    if (!resolved) return state
+    if (!resolved) return origin
     const dest = teamById(resolved[0], resolved[1])
-    if (!dest) return state
+    if (!dest) return origin
     let weight = held.card.kind === 'hero' || held.card.kind === 'neutral' ? 1 : 0
     for (const _extra of companions) weight += 1
     const token = held.card.kind === 'neutral'
     const reason = enterReason(resolved[0], dest.team, weight, token)
-    if (reason) return log(state, reason)
+    if (reason) return log(origin, reason)
   }
   if (!instant) state = setPlayer(state, actor, (player) => ({ ...player, actions: player.actions - 1 }))
-  if (freeItem && !freeGrant) {
-    state = {
-      ...state,
-      freeItems: Math.max(0, state.freeItems - 1),
-      clinkzExile: state.clinkzExile.filter((card) => card.uid !== held!.card.uid),
-    }
+  if (freeItem && !freeGrant && !clinkzFree) {
+    state = { ...state, freeItems: Math.max(0, state.freeItems - 1) }
   }
   if (freeGrant) {
     state = { ...state, freePlay: state.freePlay.filter((id) => id !== uid) }
