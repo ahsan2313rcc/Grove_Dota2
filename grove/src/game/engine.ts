@@ -290,6 +290,7 @@ function responseAbout(before: Game, action: Action, after: Game): string | null
     const held = findHand(before, action.uid)
     if (held && held.player.id !== actor) return null
     const card = held?.card ?? before.grave[before.grave.length - 1]
+    if (card && isTrapHero(card.defId)) return `${who} sets a trap`
     return `${who} plays ${card ? display(card.defId).name : 'a card'}`
   }
   return null

@@ -1,23 +1,28 @@
 import { useState } from 'react'
+import { isTrapHero } from '../game/flow.ts'
 import type { Pending } from '../game/types.ts'
+import { CardArt } from './CardArt.tsx'
 import { CardFace } from './CardFace.tsx'
 
 export function Prompt({
   pending,
   names,
   onChoose,
+  revealTraps = false,
 }: {
   pending: Pending
   names: string[]
   onChoose: (ids: string[]) => void
+  /** Ability Lab / debug may show trap card art; normal matches keep traps secret. */
+  revealTraps?: boolean
 }) {
   const [picked, setPicked] = useState<string[]>([])
   const [bucket, setBucket] = useState<Record<string, string>>({})
   const grouped = pending.mode === 'split' || pending.mode === 'assign' || pending.mode === 'groups'
   const exact = pending.min === pending.max
   const hint = exact ? `Choose ${pending.min}.` : `Choose ${pending.min} to ${pending.max}.`
-  const about = pending.about
-  const title = about ? (about.spell ?? about.name) : null
+  const about =
+    pending.about && (!isTrapHero(pending.about.defId) || revealTraps) ? pending.about : null
 
   function toggle(id: string) {
     if (pending.max === 1) {
@@ -38,22 +43,17 @@ export function Prompt({
     <div className="scrim">
       <section className="sheet" role="dialog" aria-modal="true" aria-labelledby="prompt-title">
         <p className="eyebrow">{names[pending.actor]} answers</p>
-        {about ? (
-          <div className="prompt-about" data-testid="prompt-about">
-            <CardFace defId={about.defId} compact />
-            <div className="prompt-about-copy">
-              <p className="prompt-about-kind">{kindLabel(about.kind)}</p>
-              <strong className="prompt-about-name">{about.name}</strong>
-              {about.spell ? <p className="prompt-about-spell">{about.spell}</p> : null}
-              <p className="prompt-about-text">{about.text}</p>
+        <div className={`prompt-head${about ? ' has-art' : ''}`}>
+          {about ? (
+            <div className="prompt-source" data-testid="prompt-about">
+              <CardArt defId={about.defId} size="icon" className="prompt-source-art" />
             </div>
+          ) : null}
+          <div className="prompt-copy">
+            <h2 id="prompt-title" data-testid="prompt">{pending.prompt}</h2>
+            <p className="quiet">{grouped ? 'Assign every card.' : hint}</p>
           </div>
-        ) : null}
-        <h2 id="prompt-title" data-testid="prompt">{pending.prompt}</h2>
-        <p className="quiet">
-          {grouped ? 'Assign every card.' : hint}
-          {title ? ` · From ${title}.` : ''}
-        </p>
+        </div>
         <div className="choices">
           {pending.choices.map((choice) => {
             const on = picked.includes(choice.id)
@@ -109,16 +109,6 @@ export function Prompt({
       </section>
     </div>
   )
-}
-
-function kindLabel(kind?: string): string {
-  if (!kind) return 'Ability'
-  if (kind === 'hero') return 'Hero ability'
-  if (kind === 'item') return 'Item'
-  if (kind === 'reward') return 'Reward'
-  if (kind === 'squad') return 'Squad'
-  if (kind === 'combo') return 'Combo'
-  return kind.charAt(0).toUpperCase() + kind.slice(1)
 }
 
 function segments(mode: Pending['mode'], names: string[]): { value: string; label: string }[] {

@@ -477,6 +477,8 @@ describe('heroes', () => {
     const team = game.players[1].teams[0]?.id ?? ''
     game = apply(game, { type: 'play', uid: uid(game, 1, 'techies'), team })
     expect(game.players[1].teams[0]?.trap?.defId).toBe('techies')
+    expect(game.log.some((line) => /sets a trap face down/i.test(line))).toBe(true)
+    expect(game.log.some((line) => /Techies/i.test(line))).toBe(false)
     game = apply(game, { type: 'end' })
     game = apply(game, { type: 'ready' })
     game = apply(game, { type: 'play', uid: uid(game, 0, 'zeus'), team: 'new' })

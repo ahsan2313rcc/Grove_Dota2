@@ -1637,7 +1637,8 @@ export function plantTrap(state: Game, actor: PlayerId, card: CardInst, teamId: 
   const trap: TeamTrap = { uid: card.uid, defId: card.defId, owner: actor }
   let next = removeHand(state, actor, card.uid)
   next = updateTeam(next, teamId, (team) => ({ ...team, trap }))
-  return log(next, `${pname(next, actor)} sets ${display(card.defId).name} face down.`)
+  // Keep the trap identity secret until it reveals — lab/debug UI may still show it.
+  return log(next, `${pname(next, actor)} sets a trap face down.`)
 }
 
 export function clearAllTraps(state: Game, cause = "Thundergod's Wrath"): Game {

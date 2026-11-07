@@ -33,15 +33,20 @@ export function CardFace({
   testId?: string
 }) {
   if (faceDown) {
-    const body = (
+    const body = peek ? (
+      <span className="peek-body">
+        <span className="card-name">Trap</span>
+      </span>
+    ) : (
       <>
         <span className="back-ring" />
         <span className="back-word">Grove</span>
       </>
     )
-    if (!onClick) return <div className="card back" data-kind="back">{body}</div>
+    const className = `card back${peek ? ' peek' : ''}`
+    if (!onClick) return <div className={className} data-kind="back" data-testid={testId}>{body}</div>
     return (
-      <button type="button" className="card back" data-kind="back" onClick={onClick} data-testid={testId}>
+      <button type="button" className={className} data-kind="back" onClick={onClick} data-testid={testId}>
         {body}
       </button>
     )

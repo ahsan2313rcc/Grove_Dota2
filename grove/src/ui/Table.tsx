@@ -531,6 +531,7 @@ export function Table({
                     teams={player.teams}
                     combos={player.combos}
                     game={game}
+                    revealTraps={debug || labSession}
                     onInspect={(next) => {
                       setFocus((current) => {
                         if (current?.kind === 'hero' && next.kind === 'hero' && current.uid === next.uid) return null
@@ -799,7 +800,13 @@ export function Table({
       </footer>
 
       {!debug && game.pending && (!networked || game.pending.actor === onlineSeat) ? (
-        <Prompt key={promptKey} pending={game.pending} names={names} onChoose={(ids) => onAction({ type: 'choose', ids })} />
+        <Prompt
+          key={promptKey}
+          pending={game.pending}
+          names={names}
+          revealTraps={labSession}
+          onChoose={(ids) => onAction({ type: 'choose', ids })}
+        />
       ) : null}
       {rules ? <Rules onClose={() => setRules(false)} /> : null}
       {glossary ? <Glossary onClose={() => setGlossary(false)} /> : null}
@@ -860,6 +867,7 @@ function Lane({
   teams,
   combos,
   game,
+  revealTraps = false,
   onInspect,
 }: {
   name: string
@@ -875,6 +883,8 @@ function Lane({
   teams: Game['players'][number]['teams']
   combos: Game['players'][number]['combos']
   game: Game
+  /** Ability Lab / debug may show the face-down trap's identity. */
+  revealTraps?: boolean
   onInspect: (focus: Focus) => void
 }) {
   return (
@@ -914,6 +924,19 @@ function Lane({
                       onClick={() => onInspect({ kind: 'hero', uid: hero.uid })}
                     />
                   ))}
+                  {team.trap ? (
+                    revealTraps ? (
+                      <CardFace
+                        defId={team.trap.defId}
+                        peek
+                        marks={['Trap']}
+                        onClick={() => onInspect({ kind: 'card', defId: team.trap!.defId })}
+                        testId="trap-face"
+                      />
+                    ) : (
+                      <CardFace defId={team.trap.defId} faceDown peek testId="trap-back" />
+                    )
+                  ) : null}
                 </div>
                 <footer>
                   {team.glyph ? <em>Glyph</em> : null}
