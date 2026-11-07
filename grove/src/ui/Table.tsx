@@ -629,80 +629,113 @@ export function Table({
               </div>
             </div>
             <div className="actions">
-              <button type="button" className="primary" data-testid="draw" disabled={!canAct || !!drawReason} onClick={() => onAction({ type: 'draw' })} title={drawReason ?? undefined}>
-                Draw
-              </button>
-              <button
-                type="button"
-                className="primary play-selected"
-                data-testid="play-selected"
-                disabled={!selectedCard || !!playReason}
-                title={playReason ?? (selectedCard ? display(selectedCard.defId).name : undefined)}
-                onClick={() => {
-                  if (!selectedCard) return
-                  if (selectedCard.kind === 'terrain') {
-                    if (comboReady) onAction({ type: 'combo', uids: chosen.map((card) => card.uid) })
-                    return
-                  }
-                  if (selectedUid) playFocused(selectedUid)
-                }}
-              >
-                {playLabel}
-              </button>
-              <button type="button" data-testid="end" disabled={!canAct && !stuck} onClick={() => onAction({ type: 'end' })}>
-                End turn
-              </button>
-              {reactSeat !== null ? (
-                <button type="button" data-testid="react-done" onClick={() => setReactSeat(null)}>
-                  Back to {activeName}
-                </button>
-              ) : null}
-              {reactCandidates.map((id) => (
-                <button key={id} type="button" data-testid={`react-${id}`} onClick={() => setReactSeat(id)}>
-                  Instant as {names[id]}
-                </button>
-              ))}
-              {plans.map((plan) => (
-                <button key={plan.label} type="button" className="combo" data-testid="combo" onClick={() => onAction({ type: 'combo', uids: plan.uids })}>
-                  {plan.label} · free
-                </button>
-              ))}
-              {canAct && morphCasts(game).map((cast) => (
-                <button key={cast.uid} type="button" onClick={() => onAction({ type: 'morph', uid: cast.uid })}>{cast.label}</button>
-              ))}
-              {canAct && undyingRevive(game).ok && chosen.length >= 2 ? (
-                <button
-                  type="button"
-                  className="combo"
-                  onClick={() =>
-                    onAction({
-                      type: 'undying',
-                      team: 'new',
-                      discards: chosen.slice(0, 2).map((card) => card.uid),
-                    })
-                  }
-                  title="Discard 2 selected cards to return Undying"
-                >
-                  Flesh Golem · revive
-                </button>
-              ) : null}
-              {canAct && graveTop ? (
-                <button
-                  type="button"
-                  className="combo"
-                  data-testid="grave-play"
-                  onClick={() => playFocused(graveTop.uid)}
-                  title={
-                    graveTop.kind === 'terrain'
-                      ? 'Death Prophet — include this terrain in a combo'
-                      : 'Death Prophet — play the top card of the grave'
-                  }
-                >
-                  Exorcism · {display(graveTop.defId).name}
-                  {graveTop.kind === 'terrain' ? ' · combo' : ''}
-                  {liveCombo.includes(graveTop.uid) ? ' ✓' : ''}
-                </button>
-              ) : null}
+              {placing ? (
+                <>
+                  {teamsFor(game, placing, extras).map((option) => (
+                    <button
+                      key={option.id}
+                      type="button"
+                      className={option.id === 'new' ? 'primary' : undefined}
+                      disabled={!option.ok}
+                      data-testid={option.id === 'new' ? 'team-new' : `team-pick-${option.id}`}
+                      title={option.reason}
+                      onClick={() => {
+                        onAction({
+                          type: 'play',
+                          uid: placing,
+                          team: option.id,
+                          extras: extras.length > 0 ? extras : undefined,
+                        })
+                        setPlacing(null)
+                        setExtras([])
+                        setReactSeat(null)
+                      }}
+                    >
+                      {option.label}{option.reason ? ` · ${option.reason}` : ''}
+                    </button>
+                  ))}
+                  <button type="button" data-testid="team-cancel" onClick={() => { setPlacing(null); setExtras([]) }}>
+                    Cancel
+                  </button>
+                </>
+              ) : (
+                <>
+                  <button type="button" className="primary" data-testid="draw" disabled={!canAct || !!drawReason} onClick={() => onAction({ type: 'draw' })} title={drawReason ?? undefined}>
+                    Draw
+                  </button>
+                  <button
+                    type="button"
+                    className="primary play-selected"
+                    data-testid="play-selected"
+                    disabled={!selectedCard || !!playReason}
+                    title={playReason ?? (selectedCard ? display(selectedCard.defId).name : undefined)}
+                    onClick={() => {
+                      if (!selectedCard) return
+                      if (selectedCard.kind === 'terrain') {
+                        if (comboReady) onAction({ type: 'combo', uids: chosen.map((card) => card.uid) })
+                        return
+                      }
+                      if (selectedUid) playFocused(selectedUid)
+                    }}
+                  >
+                    {playLabel}
+                  </button>
+                  <button type="button" data-testid="end" disabled={!canAct && !stuck} onClick={() => onAction({ type: 'end' })}>
+                    End turn
+                  </button>
+                  {reactSeat !== null ? (
+                    <button type="button" data-testid="react-done" onClick={() => setReactSeat(null)}>
+                      Back to {activeName}
+                    </button>
+                  ) : null}
+                  {reactCandidates.map((id) => (
+                    <button key={id} type="button" data-testid={`react-${id}`} onClick={() => setReactSeat(id)}>
+                      Instant as {names[id]}
+                    </button>
+                  ))}
+                  {plans.map((plan) => (
+                    <button key={plan.label} type="button" className="combo" data-testid="combo" onClick={() => onAction({ type: 'combo', uids: plan.uids })}>
+                      {plan.label} · free
+                    </button>
+                  ))}
+                  {canAct && morphCasts(game).map((cast) => (
+                    <button key={cast.uid} type="button" onClick={() => onAction({ type: 'morph', uid: cast.uid })}>{cast.label}</button>
+                  ))}
+                  {canAct && undyingRevive(game).ok && chosen.length >= 2 ? (
+                    <button
+                      type="button"
+                      className="combo"
+                      onClick={() =>
+                        onAction({
+                          type: 'undying',
+                          team: 'new',
+                          discards: chosen.slice(0, 2).map((card) => card.uid),
+                        })
+                      }
+                      title="Discard 2 selected cards to return Undying"
+                    >
+                      Flesh Golem · revive
+                    </button>
+                  ) : null}
+                  {canAct && graveTop ? (
+                    <button
+                      type="button"
+                      className="combo"
+                      data-testid="grave-play"
+                      onClick={() => playFocused(graveTop.uid)}
+                      title={
+                        graveTop.kind === 'terrain'
+                          ? 'Death Prophet — include this terrain in a combo'
+                          : 'Death Prophet — play the top card of the grave'
+                      }
+                    >
+                      Exorcism · {display(graveTop.defId).name}
+                      {graveTop.kind === 'terrain' ? ' · combo' : ''}
+                      {liveCombo.includes(graveTop.uid) ? ' ✓' : ''}
+                    </button>
+                  ) : null}
+                </>
+              )}
             </div>
             {showDetail ? (
               <Detail
@@ -714,21 +747,7 @@ export function Table({
                 extras={extras}
                 comboReady={comboReady}
                 chosen={chosen}
-                onTeam={(team) => {
-                  if (placing) {
-                    onAction({
-                      type: 'play',
-                      uid: placing,
-                      team,
-                      extras: extras.length > 0 ? extras : undefined,
-                    })
-                  }
-                  setPlacing(null)
-                  setExtras([])
-                  setReactSeat(null)
-                }}
                 onMorph={(uid) => onAction({ type: 'morph', uid })}
-                onCancel={() => { setPlacing(null); setExtras([]) }}
               />
             ) : null}
             <p className="log-last" data-testid="log-last">{lastLog}</p>
@@ -944,9 +963,7 @@ function Detail({
   extras,
   comboReady,
   chosen,
-  onTeam,
   onMorph,
-  onCancel,
 }: {
   game: Game
   viewer: PlayerId
@@ -956,15 +973,12 @@ function Detail({
   extras: string[]
   comboReady: boolean
   chosen: CardInst[]
-  onTeam: (team: string) => void
   onMorph: (uid: string) => void
-  onCancel: () => void
 }) {
   if (placing) {
     const graveCard = playableFromGrave(game, viewer)
     const fromGrave = graveCard?.uid === placing ? graveCard : null
     const card = fromGrave ?? game.players[viewer].hand.find((entry) => entry.uid === placing)
-    const options = card ? teamsFor(game, placing, extras) : []
     const mates = extras
       .map((uid) => game.players[viewer].hand.find((entry) => entry.uid === uid))
       .filter((entry): entry is CardInst => !!entry)
@@ -982,16 +996,7 @@ function Detail({
         <p>
           {fromGrave ? 'Exorcism' : trap ? 'Plant' : 'Active'} {info?.name ?? 'hero'}
           {!trap && mates.length > 0 ? ` + ${mates.map((entry) => display(entry.defId).name).join(', ')} (silent)` : ''}
-          {' '}onto
-        </p>
-        <p className="quiet">
-          {fromGrave
-            ? 'Death Prophet plays the top of the grave for free — pick a team.'
-            : trap
-            ? 'Choose any team — yours or an opponent’s. At most one trap per team.'
-            : card && playsAsInstant(game, viewer, card)
-            ? 'Place onto an existing team or a new one. Ability targets resolve from the card text after seating.'
-            : 'Click more heroes in hand to bring them in silently. Only the active ability fires.'}
+          {' — pick a team above.'}
         </p>
         {info?.spell ? <p className="spell">{info.spell}</p> : null}
         {trap ? (
@@ -1003,14 +1008,6 @@ function Detail({
           </p>
         ) : null}
         {info?.text ? <p>{info.text}</p> : null}
-        <div className="inline-choices">
-          {options.map((option) => (
-            <button key={option.id} type="button" disabled={!option.ok} data-testid={option.id === 'new' ? 'team-new' : `team-pick-${option.id}`} onClick={() => onTeam(option.id)}>
-              {option.label}{option.reason ? ` · ${option.reason}` : ''}
-            </button>
-          ))}
-          <button type="button" onClick={onCancel}>Cancel</button>
-        </div>
       </div>
     )
   }
