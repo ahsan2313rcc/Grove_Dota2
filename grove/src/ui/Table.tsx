@@ -1,4 +1,5 @@
-import { useEffect, useState, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { createPortal } from 'react-dom'
 import { display, RECAST_IDS, RECAST_RULE, TRAP_RULE_STEPS } from '../game/catalog.ts'
 import { comboPlans, morphCasts, needsTeam, playableFromGrave, teamsFor, undyingRevive } from '../game/engine.ts'
 import { allLocs, findHero, isTrapHero, scoreState, scoreTeam } from '../game/flow.ts'
@@ -1127,16 +1128,76 @@ function DetailHead({
 }
 
 function TrapRulesHint() {
+  const buttonRef = useRef<HTMLButtonElement>(null)
+  const closeTimer = useRef<number | null>(null)
+  const [open, setOpen] = useState(false)
+  const [pos, setPos] = useState({ top: 0, left: 0 })
+
+  function show() {
+    if (closeTimer.current !== null) {
+      window.clearTimeout(closeTimer.current)
+      closeTimer.current = null
+    }
+    setOpen(true)
+  }
+
+  function hide() {
+    if (closeTimer.current !== null) window.clearTimeout(closeTimer.current)
+    closeTimer.current = window.setTimeout(() => {
+      setOpen(false)
+      closeTimer.current = null
+    }, 140)
+  }
+
+  useEffect(() => {
+    if (!open || !buttonRef.current) return
+    const place = () => {
+      const rect = buttonRef.current!.getBoundingClientRect()
+      const width = 280
+      const left = Math.min(rect.left, window.innerWidth - width - 8)
+      setPos({ top: rect.bottom + 4, left: Math.max(8, left) })
+    }
+    place()
+    window.addEventListener('scroll', place, true)
+    window.addEventListener('resize', place)
+    return () => {
+      window.removeEventListener('scroll', place, true)
+      window.removeEventListener('resize', place)
+    }
+  }, [open])
+
+  useEffect(() => () => {
+    if (closeTimer.current !== null) window.clearTimeout(closeTimer.current)
+  }, [])
+
   return (
-    <div className="trap-blurb trap-rules-wrap" data-testid="trap-hint">
-      <button type="button" className="trap-hint">
+    <div className="trap-blurb" data-testid="trap-hint">
+      <button
+        ref={buttonRef}
+        type="button"
+        className="trap-hint"
+        onMouseEnter={show}
+        onMouseLeave={hide}
+        onFocus={show}
+        onBlur={hide}
+      >
         Trap rules
       </button>
-      <ol className="trap-rules-list">
-        {TRAP_RULE_STEPS.map((step) => (
-          <li key={step}>{step}</li>
-        ))}
-      </ol>
+      {open
+        ? createPortal(
+            <ol
+              className="trap-rules-list trap-rules-float"
+              style={{ top: pos.top, left: pos.left }}
+              onMouseEnter={show}
+              onMouseLeave={hide}
+            >
+              {TRAP_RULE_STEPS.map((step) => (
+                <li key={step}>{step}</li>
+              ))}
+            </ol>,
+            document.body,
+          )
+        : null}
     </div>
   )
 }

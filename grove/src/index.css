@@ -1286,18 +1286,10 @@ button.debug-mode-cycle:hover {
   border-color: #7a3b2e;
   color: #f0c2b4;
 }
-.trap-rules-wrap {
-  position: relative;
-  display: inline-flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 4px;
-}
 .trap-rules-list {
-  display: none;
   margin: 0;
-  padding: 8px 10px 8px 1.5rem;
-  max-width: 36ch;
+  padding: 10px 12px 10px 1.55rem;
+  width: min(280px, calc(100vw - 16px));
   list-style: decimal;
   border: 1px solid var(--line);
   border-radius: 10px;
@@ -1305,10 +1297,12 @@ button.debug-mode-cycle:hover {
   color: var(--cream-dim);
   font-size: 0.78rem;
   line-height: 1.4;
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.45);
 }
-.trap-rules-wrap:hover .trap-rules-list,
-.trap-rules-wrap:focus-within .trap-rules-list {
-  display: block;
+.trap-rules-float {
+  position: fixed;
+  z-index: 40;
+  pointer-events: auto;
 }
 .trap-rules-list li + li { margin-top: 4px; }
 .glossary { width: min(920px, 100%); }
