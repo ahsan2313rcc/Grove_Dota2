@@ -1,4 +1,4 @@
-import { display, HERO_BY_ID } from './catalog.ts'
+import { ANCIENT_ID, display, HERO_BY_ID } from './catalog.ts'
 import { aiComboPick, apply, comboPlans, morphCasts, needsTeam, playableFromGrave, teamsFor, undyingRevive } from './engine.ts'
 import {
   allLocs,
@@ -21,7 +21,7 @@ export const AI_STRATS: { id: AiStrat; label: string; blurb: string }[] = [
   { id: 'tempo', label: 'Tempo', blurb: 'Floods heroes, spends actions, and gates Chronosphere / Silence on real board threats.' },
   { id: 'architect', label: 'Architect', blurb: 'Builds cores and terrain paths, still removes filled enemy teams, ends only with empty denial.' },
   { id: 'spite', label: 'Spite', blurb: 'Pressure-first: hunts the highest threat seat with traps, steals, and removal without breaking own cores.' },
-  { id: 'neural', label: 'Neural', blurb: 'Outcome-trained net (1-ply + value). Train Neural learns from score horizons to beat heuristics.' },
+  { id: 'neural', label: 'Neural', blurb: 'Turn beam search scored by a value net trained on AI-vs-AI outcomes (play, +1/+3/+5/+10 turns, final placement).' },
 ]
 
 /** Heuristic personalities (everything except Neural). */
@@ -81,8 +81,8 @@ export type AiSearchMode = 'full' | 'fast' | 'challenge' | 'neural'
 
 /** Map seat strat → search brain. Neural seats use the net; others use Challenge (max). */
 export function searchModeForStrat(strat: AiStrat, batchFast = false): AiSearchMode {
-  if (strat === 'neural') return 'neural'
   if (batchFast) return 'fast'
+  if (strat === 'neural') return 'neural'
   return 'challenge'
 }
 
@@ -135,7 +135,7 @@ export function chooseAiAction(state: Game, mode: AiSearchMode = 'full'): Action
   if (freeExile) return freeExile
 
   if (resolved === 'challenge') return chooseAiActionChallenge(state, actor, strat)
-  if (resolved === 'neural') return chooseAiActionNeural(state, actor, strat)
+  if (resolved === 'neural') return chooseAiActionNeural(state, actor, strat, { fast: mode === 'fast' })
   if (resolved === 'fast') return chooseAiActionFast(state, actor, strat)
 
   let best: Action = { type: 'end' }
@@ -488,18 +488,7 @@ export function chooseAiPendingForSeat(state: Game): string[] {
   const pending = state.pending
   if (!pending) return []
   const strat = state.players[pending.actor]?.strat ?? DEFAULT_STRAT
-  if (strat === 'neural') {
-    // Multi-select prompts need the heuristic splitter/assigner.
-    if (
-      pending.min > 1
-      || pending.mode === 'split'
-      || pending.mode === 'assign'
-      || pending.mode === 'groups'
-    ) {
-      return chooseAiPending(state)
-    }
-    return chooseAiPendingNeural(state)
-  }
+  if (strat === 'neural') return chooseAiPendingNeural(state)
   if (searchModeForStrat(strat, false) === 'challenge') {
     return chooseAiPendingChallenge(state)
   }
@@ -525,6 +514,36 @@ export function chooseAiPending(state: Game): string[] {
     return smartGroups(pending.choices.map((choice) => choice.id))
   }
 
+  // Time Lapse / Clarity: a leader wants The Ancient soon, a trailer wants it buried.
+  if (pending.resume.kind === 'weaver-ancient' || pending.resume.kind === 'restack') {
+    const lead = (scores[actor] ?? 0) - Math.max(...scores.filter((_, seat) => seat !== actor))
+    if (pending.resume.kind === 'weaver-ancient') {
+      const band = lead >= 4 ? 'top' : lead >= 0 ? 'upper' : lead > -6 ? 'lower' : 'bottom'
+      return [`depth:${band}`]
+    }
+    const isAncient = (id: string) => state.limbo.some((card) => `card:${card.uid}` === id && (card.kind === 'ancient' || card.defId === ANCIENT_ID))
+    const ancient = pending.choices.find((choice) => isAncient(choice.id))
+    if (ancient && lead > 0) return [ancient.id]
+    const other = pending.choices.find((choice) => !isAncient(choice.id)) ?? pending.choices[0]
+    return other ? [other.id] : []
+  }
+  // Own-hand discards (hand limit, Ravage, Meat Hook, Retaliate…): pitch the least useful cards.
+  if (pending.resume.kind === 'limit' || pending.resume.kind === 'discard') {
+    const hand = state.players[actor]?.hand ?? []
+    return [...pending.choices]
+      .sort((a, b) => keepValue(hand, a.id.slice(5)) - keepValue(hand, b.id.slice(5)))
+      .slice(0, pending.min)
+      .map((choice) => choice.id)
+  }
+  // Nether Ward / Poison Nova: pay with the cheapest card unless it is the last one.
+  if ((pending.resume.kind === 'pugna' || pending.resume.kind === 'venomancer') && pending.choices.some((choice) => choice.id === 'fizzle')) {
+    const hand = state.players[actor]?.hand ?? []
+    const cards = pending.choices.filter((choice) => choice.id.startsWith('card:'))
+    if (hand.length <= 1 || cards.length === 0) return ['fizzle']
+    const cheapest = [...cards].sort((a, b) => keepValue(hand, a.id.slice(5)) - keepValue(hand, b.id.slice(5)))[0]!
+    return [cheapest.id]
+  }
+
   // Ability / card counters — take them.
   const torment = pending.choices.find((choice) => choice.id.startsWith('torment:'))
   if (torment) return [torment.id]
@@ -548,6 +567,13 @@ export function chooseAiPending(state: Game): string[] {
     if (cheapest) return [cheapest.id]
   }
 
+  if (pending.resume.kind === 'response') {
+    return [bestInterrupt(state, pending.choices.map((choice) => choice.id), actor, strat, 1.2) ?? 'pass']
+  }
+  if (pending.resume.kind === 'response-place') {
+    const neu = pending.choices.find((choice) => choice.id.endsWith(':new') || choice.id === 'seat:new')
+    return [neu?.id ?? pending.choices[0]?.id ?? 'pass']
+  }
   // Instant interrupt window — fire a strong Instant instead of passing.
   if (pending.resume.kind === 'instant-window') {
     const pick = bestInterrupt(state, pending.choices.map((choice) => choice.id), actor, strat)
@@ -616,9 +642,10 @@ function bestInterrupt(
   choiceIds: string[],
   actor: PlayerId,
   strat: AiStrat,
+  extraBar = 0,
 ): string | null {
   let best: string | null = null
-  let bestValue = interruptBar(state, actor, strat)
+  let bestValue = interruptBar(state, actor, strat) + extraBar
   const focus = threatFocus(state, actor, strat)
   const scores = state.players.map((player) => scoreState(state, player.id).total)
   const behind = (scores[actor] ?? 0) + 2 < (scores[focus] ?? 0)
@@ -782,6 +809,18 @@ function undyingCost(card: CardInst): number {
   if (display(card.defId).instant || INTERRUPT_VALUE[card.defId]) return 9
   if (HERO_BY_ID[card.defId]?.timing === 'cast') return 7
   return 4
+}
+
+/** How much a hand card is worth keeping; terrains gain value as they build toward a combo. */
+export function keepValue(hand: CardInst[], uid: string): number {
+  const card = hand.find((entry) => entry.uid === uid)
+  if (!card) return 0
+  if (card.kind === 'terrain') {
+    const same = hand.filter((entry) => entry.defId === card.defId).length
+    const kinds = new Set(hand.filter((entry) => entry.kind === 'terrain').map((entry) => entry.defId)).size
+    return 1 + (same >= 3 ? 6 : same === 2 ? 3 : 0) + (kinds === 3 ? 2 : 0)
+  }
+  return undyingCost(card) + 0.5
 }
 
 function pendingChoiceWeight(

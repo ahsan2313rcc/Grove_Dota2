@@ -159,6 +159,12 @@ export type Resume =
   | { kind: 'kez-trap'; teamId: string; trap: TeamTrap; card: CardInst }
   | { kind: 'shaman-trap'; teamId: string; trap: TeamTrap; card: CardInst }
   | { kind: 'jugg-kill'; actor: PlayerId; after: CastResume }
+  | { kind: 'discard'; player: PlayerId; n: number; cause: string }
+  | { kind: 'weaver-ancient'; actor: PlayerId; card: CardInst }
+  | { kind: 'restack'; actor: PlayerId; cards: string[]; placed: string[] }
+  /** Opponents may play an Instant after the active player's action resolves. */
+  | { kind: 'response' }
+  | { kind: 'response-place'; cardUid: string }
 
 export interface Pending {
   actor: PlayerId
@@ -299,6 +305,28 @@ export interface Game {
   ancient: { bonusSeat: PlayerId | null; endsLeft: number } | null
   /** When false, The Ancient is not in the deck and cannot end the match. */
   ancientEnabled: boolean
+  /** Discards owed; the discarding player picks the cards unless the effect says random. */
+  discardsDue?: DiscardDue[]
+  /** Target score for this match (null = off). */
+  winScore?: number | null
+  /** Seats that ended a turn at the target; each wins at its next turn if still alone at or above it. */
+  holds?: { seat: PlayerId; turn: number }[]
+  /** Response window owed after the active player's last action resolves. */
+  respond?: ResponseWindow | null
+  /** Seats that passed on every response window for the rest of this turn. */
+  passTurn?: PlayerId[]
+}
+
+export interface ResponseWindow {
+  about: string
+  seats: PlayerId[]
+  index: number
+}
+
+export interface DiscardDue {
+  player: PlayerId
+  n: number
+  cause: string
 }
 
 export type Action =

@@ -6,8 +6,10 @@ export function Rules({ onClose }: { onClose: () => void }) {
         <h2 id="rules-title">Rules</h2>
         <section>
           <h3>The turn</h3>
-          <p>Everyone is dealt 3 cards. The Ancient is then placed in the remaining deck by table size — around the middle for 2–4 players, deeper for 5–6, and last for 7–8. At the start of your turn you draw 2, then you have two actions — including the first seat on turn 1. Draw one more card for an action (even above 7), or play a hero, item, or reward for an action. Instant cards are free. A terrain combo is free and does not spend an action. If your hand is above 7, discard down to 7 when you end your turn.</p>
-          <p>The Ancient is a neutral. When you draw it, play it for free into a team you control or a new team. It counts as any one attribute, can be targeted and moved like a hero, and whoever controls it when the match ends scores +10. Drawing it starts the final round: finish your turn, then each opponent takes one more turn. If it is revealed from the grave or exile instead, it only starts the final round. The match also ends if the shared deck empties first.</p>
+          <p>Everyone is dealt 3 cards. The Ancient is then placed in the remaining deck by table size — about halfway down for 2 players, 60% for 3–4, 80% for 5–6 and 90% for 7–8 (each ±5%). At the start of your turn you draw 2, then you have two actions — including the first seat on turn 1. Draw one more card for an action (even above 7), or play a hero, item, or reward for an action. Instant cards are free. A terrain combo is free and does not spend an action. If your hand is above 7, discard down to 7 when you end your turn.</p>
+          <p>The Ancient is a neutral. When you draw it, play it for free into a team you control or a new team. It counts as any one attribute, can be targeted and moved like a hero, and whoever controls it when the match ends scores +10. Drawing it starts the final round: finish your turn, then each opponent takes one more turn. If it is revealed from the grave or exile instead, it only starts the final round. The match also ends if the shared deck empties first. Weaver's Time Lapse shuffles the grave into the deck and lets the Weaver player choose how deep The Ancient goes.</p>
+          <p>Target score (on by default, 50 / 40 / 35 / 30 for 2 / 3 / 4 / 5+ players): end your turn at the target and you win at the start of your next turn if you still hold it and nobody else does. Opponents stop you by reaching the target too or by knocking you below it.</p>
+          <p>Discards are your choice unless the card says at random. Immune heroes (Black King Bar, Glyph, Enrage, Wheel of Wonder, Shield Rune, Guardian Angel) ignore every opponent effect: destroy, exile, bounce, tuck, move, steal and silence.</p>
           <p>You may play several heroes into one team for a single action. Click the active hero, click companions to add them silently, then pick a team — only the active ability fires. If the play is countered, only the active hero is countered.</p>
         </section>
         <section>
@@ -26,7 +28,7 @@ export function Rules({ onClose }: { onClose: () => void }) {
         </section>
         <section>
           <h3>Answers</h3>
-          <p>The hand limit is 7. Instant cards are free and can be played on an opponent’s turn to interrupt — including before a hero ability fires. Nyx Assassin counters an ability and destroys the caster only if it is Intelligence. Spirit Breaker redirects an ability to itself, even one aimed at a whole team. Tormentor destroys a hero that just entered; saves stop a destroy. Troll Warlord’s Battle Trance stops opponents from playing Instant cards.</p>
+          <p>The hand limit is 7. Instant cards are free. After an opponent draws, plays, or sets a combo, you may play one Instant in response, and you may also interrupt before a hero ability fires. Nyx Assassin counters an ability and destroys the caster only if it is Intelligence. Spirit Breaker redirects an ability to itself, even one aimed at a whole team. Tormentor destroys a hero that just entered; saves stop a destroy. Troll Warlord’s Battle Trance stops opponents from playing Instant cards.</p>
         </section>
         <section>
           <h3>Traps</h3>

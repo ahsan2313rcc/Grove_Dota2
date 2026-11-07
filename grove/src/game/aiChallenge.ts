@@ -17,6 +17,7 @@ import {
   teamById,
 } from './flow.ts'
 import { aiSearchBudget } from './aiPower.ts'
+import { chooseAiPending } from './ai.ts'
 import type { Action, AiStrat, CardInst, Game, PlayerId } from './types.ts'
 
 const DEFAULT_STRAT: AiStrat = 'balanced'
@@ -138,6 +139,7 @@ export function chooseAiPendingChallenge(state: Game): string[] {
   if (pending.choices.length <= 1) {
     return pending.choices[0] ? [pending.choices[0].id] : []
   }
+  if (['limit', 'discard', 'weaver-ancient', 'restack', 'response', 'response-place'].includes(pending.resume.kind)) return chooseAiPending(state)
 
   const ids = pending.choices.map((choice) => choice.id)
   const tryIds = ids.slice(0, aiSearchBudget().pendingTry)

@@ -18,6 +18,7 @@ import type {
   CardInst,
   CardKind,
   Choice,
+  DiscardDue,
   Game,
   GraveMark,
   Pending,
@@ -88,8 +89,17 @@ export function pname(state: Game, id: PlayerId): string {
   return state.players[id].name
 }
 
+export const LOG_CAP = 2000
+
 export function log(state: Game, text: string): Game {
-  return { ...state, log: [...state.log, text].slice(-140) }
+  return { ...state, log: state.log.length >= LOG_CAP ? [...state.log.slice(1 - LOG_CAP), text] : [...state.log, text] }
+}
+
+/** "Dire's Luna" — names a board hero with its controller so log lines say whose card moved. */
+export function heroTag(state: Game, uid: string | undefined, fallback?: string): string {
+  const loc = uid ? findHero(state, uid) : null
+  if (!loc) return fallback ?? 'a hero'
+  return `${pname(state, loc.hero.controller)}'s ${display(loc.hero.defId).name}`
 }
 
 export function rand(state: Game): [Game, number] {
@@ -485,6 +495,27 @@ export function canTargetHero(state: Game, actor: PlayerId, hero: BoardHero, sou
   return true
 }
 
+/**
+ * "Immune to all effects" (Black King Bar / Glyph team, Enrage, Wheel of Wonder, Shield Rune,
+ * Guardian Angel): no opponent effect can destroy, exile, bounce, tuck, move, steal or silence it.
+ * `by === null` is an unowned effect and is blocked too; the controller's own effects still work.
+ */
+export function immuneFrom(state: Game, uid: string, by: PlayerId | null): boolean {
+  const loc = findHero(state, uid)
+  if (!loc) return false
+  if (by !== null && by === loc.hero.controller) return false
+  if (loc.hero.bkb || loc.player.bkb || loc.hero.shield || loc.team.glyph) return true
+  return (
+    loc.team.heroes.some((mate) => mate.defId === 'omniknight' && mate.controller === loc.hero.controller) &&
+    !aurasSuppressed(state, loc.hero.controller)
+  )
+}
+
+export function immuneNote(state: Game, uid: string): string {
+  const loc = findHero(state, uid)
+  return `${loc ? display(loc.hero.defId).name : 'The hero'} is immune.`
+}
+
 export function canTargetTeam(_state: Game, _actor: PlayerId, team: Team, _owner: PlayerId, source: SourceKind): boolean {
   if (team.glyph && source !== 'ability') return false
   if (team.glyph) return false
@@ -562,14 +593,12 @@ function iceBlastAny(state: Game): boolean {
   )
 }
 
-export function toExile(state: Game, card: CardInst): Game {
+export function toExile(state: Game, card: CardInst, note: string | null = `${display(card.defId).name} is exiled.`): Game {
   if ((card.defId === ANCIENT_ID || card.kind === 'ancient') && !state.ancient) {
     return revealAncient(state, 'exile', null, card)
   }
-  return log(
-    { ...state, exile: [...state.exile, card] },
-    `${display(card.defId).name} is exiled.`,
-  )
+  const next = { ...state, exile: [...state.exile, card] }
+  return note ? log(next, note) : next
 }
 
 export function toGrave(state: Game, card: CardInst, origin: GraveMark['origin']): Game {
@@ -614,6 +643,31 @@ export function discardUid(state: Game, id: PlayerId, uid: string): Game {
   return toGrave(removeHand(state, id, uid), card, { type: 'hand', player: id })
 }
 
+/** Owe a discard of `n` chosen by that player; resolved by settle once the current effect finishes. */
+export function queueDiscard(state: Game, player: PlayerId, n: number, cause: string): Game {
+  if (n <= 0) return state
+  return { ...state, discardsDue: [...(state.discardsDue ?? []), { player, n, cause }] }
+}
+
+export function beginDiscard(state: Game, due: DiscardDue): Game {
+  const hand = state.players[due.player]?.hand ?? []
+  if (hand.length === 0) return log(state, `${due.cause}: ${pname(state, due.player)} has no cards to discard.`)
+  if (hand.length <= due.n) {
+    let next = state
+    for (const card of [...hand]) next = discardUid(next, due.player, card.uid)
+    return log(next, `${due.cause}: ${pname(state, due.player)} discards their hand (${hand.length}).`)
+  }
+  return ask(state, {
+    actor: due.player,
+    prompt: `${due.cause}: discard ${due.n} card${due.n === 1 ? '' : 's'}.`,
+    mode: 'pick',
+    min: due.n,
+    max: due.n,
+    choices: hand.map((card) => ({ id: `card:${card.uid}`, label: display(card.defId).name, defId: card.defId })),
+    resume: { kind: 'discard', player: due.player, n: due.n, cause: due.cause },
+  })
+}
+
 export function discardRandom(state: Game, id: PlayerId, count: number): Game {
   let next = state
   for (let step = 0; step < count; step += 1) {
@@ -629,13 +683,14 @@ export function discardRandom(state: Game, id: PlayerId, count: number): Game {
   return next
 }
 
-export function takeDraw(state: Game, id: PlayerId, count: number): Game {
+export function takeDraw(state: Game, id: PlayerId, count: number, how: 'turn' | 'action' | null = null): Game {
   const cards = state.deck.slice(0, count)
   if (cards.length === 0) return log(state, `${pname(state, id)} cannot draw. The deck is empty.`)
   const ancient = cards.find((card) => card.defId === ANCIENT_ID || card.kind === 'ancient')
   const kept = ancient ? cards.filter((card) => card.uid !== ancient.uid) : cards
   let next = addHand({ ...state, deck: state.deck.slice(cards.length) }, id, kept)
-  next = log(next, `${pname(next, id)} draws ${cards.length}.`)
+  const why = how === 'turn' ? ' for the turn' : how === 'action' ? ' as an action' : ''
+  next = log(next, `${pname(next, id)} draws ${cards.length}${why} (${next.players[id].hand.length} in hand).`)
   if (ancient) next = revealAncient(next, 'draw', id, ancient)
   return next
 }
@@ -878,10 +933,10 @@ export function removeHero(state: Game, uid: string): { state: Game; hero: Board
   return { state, hero: fresh?.hero ?? loc.hero }
 }
 
-export function bounce(state: Game, uid: string, cause: string, ignoreRupture = false): Game {
+export function bounce(state: Game, uid: string, cause: string, ignoreRupture = false, by: PlayerId | null = null): Game {
   const loc = findHero(state, uid)
   if (!loc) return state
-  if (loc.hero.bkb || loc.player.bkb) return log(state, `${display(loc.hero.defId).name} cannot be returned to a hand.`)
+  if (!ignoreRupture && immuneFrom(state, uid, by)) return log(state, `${display(loc.hero.defId).name} is immune and stays.`)
   if (loc.team.noLeave) return log(state, `Dream Coil holds ${display(loc.hero.defId).name} in place.`)
   // Puck aura: cannot leave teams.
   if (
@@ -1001,6 +1056,9 @@ export function performDestroy(state: Game, item: StackDestroy): Game {
   const loc = findHero(state, item.uid)
   if (!loc) return state
   const name = display(loc.hero.defId).name
+  if (immuneFrom(state, item.uid, item.by)) return log(state, `${name} is immune.`)
+  const early = prevented(state, loc, item.force, item.by)
+  if (early) return log(state, early)
   // Dark Seer: take control instead of destroy this turn (ownership switches to Seer).
   if (
     state.darkSeer &&
@@ -1029,8 +1087,6 @@ export function performDestroy(state: Game, item: StackDestroy): Game {
     })
     return log(arrived(next, moved.hero.uid).state, `Vacuum: ${name} joins ${pname(next, thief)}.`)
   }
-  const soft = prevented(state, loc, item.force, item.by)
-  if (soft) return log(state, soft)
   const forced = item.force || (!!state.troll && item.by !== null && state.troll.player === item.by && state.troll.turn === state.turn)
 
   if (!forced && loc.hero.omni) {
@@ -1065,7 +1121,7 @@ export function performDestroy(state: Game, item: StackDestroy): Game {
     const removed = removeHero(state, loc.hero.uid)
     if (!removed.hero) return state
     const card: CardInst = { uid: removed.hero.uid, defId: removed.hero.defId, kind: 'hero' }
-    return log({ ...removed.state, deck: [card, ...removed.state.deck] }, `Borrowed Time tucks ${name} on top of the deck.`)
+    return log({ ...removed.state, deck: [card, ...removed.state.deck] }, `${item.cause} hits ${pname(state, loc.hero.controller)}'s ${name} — Borrowed Time puts it on top of the deck instead.`)
   }
   if (!forced && !loc.hero.roshan) {
     const roshan = loc.team.heroes.find((hero) => hero.roshan && hero.uid !== loc.hero.uid)
@@ -1137,13 +1193,14 @@ export function performDestroy(state: Game, item: StackDestroy): Game {
     defId: removed.hero.defId,
     kind: removed.hero.token ? 'neutral' : 'hero',
   }
-  if (removed.hero.token || exorcismExile) state = toExile(state, card)
+  if (removed.hero.token || exorcismExile) state = toExile(state, card, null)
   else state = toGrave(state, card, { type: 'board', hero: snapshot, teamId })
+  const tag = `${pname(state, snapshot.controller)}'s ${name}`
   state = log(
     state,
     exorcismExile && !removed.hero.token
-      ? `Exorcism exiles ${name}.`
-      : `${item.cause} destroys ${name}.`,
+      ? `${item.cause} kills ${tag} — Exorcism exiles it.`
+      : `${item.cause} destroys ${tag}.`,
   )
   if (snapshot.defId === 'tormentor' && item.sourceUid && findHero(state, item.sourceUid)) {
     state = enqueue(state, item.sourceUid, 'Tormentor', false, true, snapshot.controller)
@@ -1254,8 +1311,7 @@ export function noteTargets(state: Game, actor: PlayerId, uids: string[], teamId
       return attrs.includes('STR') ? sum + weight : sum
     }, 0)
     if (strength > 0) {
-      next = log(next, `Retaliate: ${pname(next, actor)} discards ${strength}.`)
-      next = discardRandom(next, actor, strength * centaurs.length)
+      next = queueDiscard(next, actor, strength * centaurs.length, 'Retaliate')
     }
   }
   return next
@@ -1271,8 +1327,10 @@ export function refracts(state: Game, actor: PlayerId, uids: string[]): { state:
   return { state, stopped: false }
 }
 
-export function silenced(state: Game): boolean {
-  return !!state.silence
+/** Global Silence, unless this board hero is immune to its caster. */
+export function silenced(state: Game, uid?: string): boolean {
+  if (!state.silence) return false
+  return !uid || !immuneFrom(state, uid, state.silence.caster)
 }
 
 export function castable(defId: string): boolean {
@@ -1416,7 +1474,7 @@ export function returnPhased(state: Game, dueTurn?: number): Game {
       ;[next, teamId] = seatTeam(next, entry.owner)
     }
     next = putOnTeam(next, entry.owner, teamId, hero)
-    next = log(next, `${display(hero.defId).name} returns from Eul's Scepter.`)
+    next = log(next, `${pname(next, entry.owner)}'s ${display(hero.defId).name} returns from Eul's Scepter.`)
   }
   return next
 }

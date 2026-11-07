@@ -83,6 +83,12 @@ export function statusLines(game: Game, viewer: PlayerId): string[] {
           : ` (+10 ${game.players[holder]?.name ?? 'seat'})`
     lines.push(`Ancient revealed${bonus}. Final round: ${game.ancient.endsLeft} turn${game.ancient.endsLeft === 1 ? '' : 's'} left.`)
   }
+  if (game.winScore) {
+    for (const hold of game.holds ?? []) {
+      const who = hold.seat === viewer ? 'You hold' : `${game.players[hold.seat]?.name ?? 'A seat'} holds`
+      lines.push(`${who} the target ${game.winScore}: wins at their next turn unless someone reaches it or knocks them below.`)
+    }
+  }
   if (game.active !== viewer && !game.over && !instantsLocked(game, viewer)) {
     lines.push('You may play Instant cards to interrupt.')
   }

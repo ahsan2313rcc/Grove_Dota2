@@ -1,4 +1,4 @@
-import { HERO_BY_ID, ITEM_BY_ID, display, firesAbility } from './catalog.ts'
+import { ANCIENT_ID, HERO_BY_ID, ITEM_BY_ID, display, firesAbility } from './catalog.ts'
 import {
   abilitiesLocked,
   addHand,
@@ -22,7 +22,10 @@ import {
   opponents,
   graveLocked,
   heroChoices,
+  heroTag,
   heroWeight,
+  immuneFrom,
+  immuneNote,
   instantsLocked,
   intelCount,
   log,
@@ -35,7 +38,9 @@ import {
   pullTop,
   makeHero,
   putOnTeam,
+  queueDiscard,
   queueDraw,
+  randInt,
   randomFrom,
   rangedCount,
   refracts,
@@ -44,6 +49,7 @@ import {
   removeHero,
   setPlayer,
   shuffle,
+  silenced,
   strengthCount,
   teamById,
   terrainCount,
@@ -162,11 +168,14 @@ function ownTeams(state: Game, actor: PlayerId, withNew: boolean): Choice[] {
 
 export function cast(state: Game, resume: CastResume): Game {
   if (HERO_BY_ID[resume.defId]) {
-    if (state.silence) return log(state, 'Global Silence stops the ability.')
-    if (abilitiesLocked(state, resume.actor)) return log(state, "Shiva's Guard stops the ability.")
-    if (state.players[resume.actor]?.orchid) return log(state, 'Orchid stops the ability.')
+    const shielded = (by: PlayerId) => immuneFrom(state, resume.sourceUid, by)
+    const spell = `${heroTag(state, resume.sourceUid, display(resume.defId).name)}'s ability`
+    if (state.silence && !shielded(state.silence.caster)) return log(state, `Global Silence stops ${spell}.`)
+    if (abilitiesLocked(state, resume.actor) && !shielded(state.frost!.caster)) return log(state, `Shiva's Guard stops ${spell}.`)
+    const orchid = state.players[resume.actor]?.orchid
+    if (orchid && !shielded(orchid.caster)) return log(state, `Orchid stops ${spell}.`)
     const source = findHero(state, resume.sourceUid)
-    if (source?.hero.muted) return log(state, 'Orchid stops the ability.')
+    if (source?.hero.muted) return log(state, `Orchid stops ${spell}.`)
     // Rubick Spell Steal: nullify that enemy hero's ability for the rest of the turn.
     if (state.spellNullify.some((entry) => entry.uid === resume.sourceUid)) {
       return log(state, `Spell Steal nullifies ${display(resume.defId).name}.`)
@@ -174,7 +183,10 @@ export function cast(state: Game, resume: CastResume): Game {
   }
   if (!resume.armed) {
     const asked = questions(state, resume)
-    if (asked.type === 'fizzle') return log(state, asked.text)
+    if (asked.type === 'fizzle') {
+      const about = display(resume.defId)
+      return log(state, asked.text === 'No legal target.' ? `${about.spell ?? about.name} has no legal target.` : asked.text)
+    }
     if (asked.type === 'ask') {
       return ask(state, { ...asked.q, resume })
     }
@@ -230,7 +242,44 @@ export function cast(state: Game, resume: CastResume): Game {
   if (HERO_BY_ID[resume.defId] && !resume.echo) {
     state = arcaneAuraOnActivate(state, resume.sourceUid)
   }
-  return effect(state, resume)
+  return announce(state, effect(state, resume), resume)
+}
+
+/**
+ * Abilities log their bare title ("Epicenter."). Fold it into the play line right before it
+ * ("Radiant plays Sand King — Epicenter.") or name the caster when it fires on its own.
+ */
+function announce(before: Game, after: Game, resume: CastResume): Game {
+  const fresh = after.log.length - before.log.length
+  if (fresh <= 0) return after
+  const info = display(resume.defId)
+  const titles = new Set([info.spell, info.name].filter((title): title is string => !!title).map((title) => `${title}.`))
+  const start = before.log.length
+  const at = after.log.findIndex((line, index) => index >= start && titles.has(line))
+  if (at < 0) return after
+  const lines = [...after.log]
+  const title = lines[at]!.slice(0, -1)
+  const playLine = new RegExp(`^.+ (plays|plays Instant) ${escapeRe(info.name)}\\.$`)
+  let host = -1
+  for (let index = at - 1; index >= Math.max(0, at - 4); index -= 1) {
+    if (playLine.test(lines[index]!)) {
+      host = index
+      break
+    }
+  }
+  if (host >= 0) {
+    if (title !== info.name) lines[host] = `${lines[host]!.slice(0, -1)} — ${title}.`
+    lines.splice(at, 1)
+  } else if (HERO_BY_ID[resume.defId]) {
+    lines[at] = `${heroTag(after, resume.sourceUid, info.name)}: ${title}.`
+  } else {
+    lines[at] = `${pname(after, resume.actor)}'s ${title}.`
+  }
+  return { ...after, log: lines }
+}
+
+function escapeRe(text: string): string {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
 
 /** Arcane Aura — one draw per CM you control whenever any of your heroes activates. */
@@ -243,7 +292,7 @@ function arcaneAuraOnActivate(state: Game, sourceUid: string): Game {
   for (const loc of allLocs(state)) {
     if (loc.hero.defId !== 'crystal_maiden') continue
     if (loc.hero.controller !== controller) continue
-    next = queueDraw(log(next, 'Arcane Aura.'), controller, 1)
+    next = queueDraw(log(next, `Arcane Aura: ${pname(next, controller)} draws 1.`), controller, 1)
   }
   return next
 }
@@ -944,11 +993,8 @@ function questions(state: Game, resume: CastResume): Ask {
       )
     case 'dragon_knight':
       return ready()
-    case 'clarity': {
-      if (at > 0) return ready()
-      const kinds = ['river', 'jungle', 'lane'].filter((id) => state.deck.some((card) => card.defId === id))
-      return pose(actor, 'Search for a terrain.', kinds.map((id) => ({ id: `type:${id}`, label: display(id).name, defId: id })))
-    }
+    case 'clarity':
+      return ready()
     case 'euls':
       if (at > 0) return ready()
       return pose(actor, 'Set a hero aside.', heroChoices(state, actor, kind, () => true))
@@ -1043,19 +1089,19 @@ function effect(state: Game, resume: CastResume): Game {
     case 'doom':
       return log(state, 'Doom is an aura.')
     case 'scythe':
-      return exileBoard(state, heroes[0])
+      return exileBoard(state, heroes[0], actor)
     case 'earth_spirit': {
       const uid = heroes[0]
       const dest = teams[0]
       const victim = resume.picked.find((id) => id.startsWith('kill:'))?.slice(5)
       const loc = uid ? findHero(state, uid) : null
       if (!loc || !dest) return state
-      let next = moveOnto(state, loc.hero.uid, loc.hero.controller, dest)
+      let next = moveOnto(state, loc.hero.uid, loc.hero.controller, dest, { by: actor })
       if (victim && findHero(next, victim)) next = kill(next, victim, 'Boulder Smash')
       return log(next, 'Boulder Smash.')
     }
     case 'disruptor':
-      return toDeck(state, heroes[0], resume.picked.includes('deck:bottom') ? 'bottom' : 'top')
+      return toDeck(state, heroes[0], resume.picked.includes('deck:bottom') ? 'bottom' : 'top', actor)
     case 'earthshaker':
     case 'sven':
       if (!teams[0]) return state
@@ -1077,6 +1123,7 @@ function effect(state: Game, resume: CastResume): Game {
       if (teamSize(self.team) <= teamSize(foeLoc.team)) {
         return log(state, 'Duel fails — Legion Commander needs the larger team.')
       }
+      if (immuneFrom(state, target, actor)) return log(state, immuneNote(state, target))
       const removed = removeHero(state, target)
       if (!removed.hero) return state
       const card = { uid: removed.hero.uid, defId: removed.hero.defId, kind: 'hero' as const }
@@ -1092,7 +1139,7 @@ function effect(state: Game, resume: CastResume): Game {
       return log(state, 'Guardian Angel is an aura.')
     case 'phoenix': {
       if (resume.picked.includes('yes') || resume.picked.includes('exile:yes')) {
-        state = exileBoard(state, resume.sourceUid)
+        state = exileBoard(state, resume.sourceUid, actor)
       }
       const teamId = teams[0]
       if (!teamId) return state
@@ -1100,7 +1147,7 @@ function effect(state: Game, resume: CastResume): Game {
       if (!found) return state
       let next = log(state, 'Supernova.')
       for (const hero of [...found.team.heroes]) {
-        next = toDeck(next, hero.uid, 'bottom')
+        next = toDeck(next, hero.uid, 'bottom', actor)
       }
       return next
     }
@@ -1118,7 +1165,7 @@ function effect(state: Game, resume: CastResume): Game {
       const loc = findHero(state, heroes[0])
       if (!loc || !home) return state
       state = moveOnto(state, heroes[0], actor, home.team.id)
-      return discardRandom(log(state, 'Meat Hook.'), loc.hero.controller, 1)
+      return queueDiscard(log(state, 'Meat Hook.'), loc.hero.controller, 1, 'Meat Hook')
     }
     case 'slardar': {
       const rivers = terrainCount(state, actor, 'river')
@@ -1135,9 +1182,9 @@ function effect(state: Game, resume: CastResume): Game {
           [...picked].map((teamId) => teamById(next, teamId)).find((found) => found?.player.id === id)?.team ??
           next.players[id]!.teams[0]
         if (chosen) {
-          for (const hero of [...chosen.heroes]) next = bounce(next, hero.uid, 'Ravage')
+          for (const hero of [...chosen.heroes]) next = bounce(next, hero.uid, 'Ravage', false, actor)
         }
-        next = discardRandom(next, id, 5)
+        next = queueDiscard(next, id, 5, 'Ravage')
       }
       return next
     }
@@ -1283,6 +1330,10 @@ function effect(state: Game, resume: CastResume): Game {
       const pack: CardInst[] = []
       let next = state
       for (const hero of [...found.team.heroes]) {
+        if (immuneFrom(next, hero.uid, actor)) {
+          next = log(next, immuneNote(next, hero.uid))
+          continue
+        }
         const removed = removeHero(next, hero.uid)
         if (!removed.hero) continue
         const card = { uid: removed.hero.uid, defId: removed.hero.defId, kind: 'hero' as const }
@@ -1305,7 +1356,7 @@ function effect(state: Game, resume: CastResume): Game {
       return imprison(state, resume, heroes[0])
     case 'razor': {
       if (!heroes[0]) return state
-      const next = exileBoard(state, heroes[0])
+      const next = exileBoard(state, heroes[0], actor)
       return log(setPlayer(next, actor, (player) => ({ ...player, actions: player.actions + 1 })), 'Static Link: +1 action.')
     }
     case 'naga_siren':
@@ -1315,13 +1366,13 @@ function effect(state: Game, resume: CastResume): Game {
     case 'troll_warlord':
       return log(state, 'Battle Trance is an aura.')
     case 'terrorblade':
-      return sunder(state, teams[0], teams[1])
+      return sunder(state, teams[0], teams[1], actor)
     case 'vengeful_spirit':
       return netherSwap(state, resume.sourceUid, heroes[0])
     case 'viper':
       return log(state, 'Nethertoxin is an aura.')
     case 'weaver':
-      return timeLapse(log(state, 'Time Lapse.'))
+      return timeLapse(log(state, 'Time Lapse.'), actor)
     case 'crystal_maiden':
       return log(state, 'Arcane Aura is an aura.')
     case 'dark_seer':
@@ -1379,12 +1430,13 @@ function effect(state: Game, resume: CastResume): Game {
       if (!heroes[0]) return state
       const loc = findHero(state, heroes[0])
       const attrs = loc ? attrsOf(state, loc.hero) : []
-      state = exileBoard(state, heroes[0])
+      state = exileBoard(state, heroes[0], actor)
       if (attrs[0]) state = { ...state, attrBan: { attr: attrs[0], caster: actor } }
       return log(state, "Reaper's Scythe.")
     }
     case 'oracle': {
       if (!heroes[0]) return state
+      if (immuneFrom(state, heroes[0], actor)) return log(state, immuneNote(state, heroes[0]))
       const loc = findHero(state, heroes[0])
       if (!loc) return state
       const removed = removeHero(state, heroes[0])
@@ -1406,7 +1458,7 @@ function effect(state: Game, resume: CastResume): Game {
         for (const uid of cards.slice(0, 4)) next = discardUid(next, enemy, uid)
         return next
       }
-      if (teams[0]) return exileTeam(state, teams[0], "Sanity's Eclipse")
+      if (teams[0]) return exileTeam(state, teams[0], "Sanity's Eclipse", actor)
       return state
     }
     case 'puck':
@@ -1427,6 +1479,7 @@ function effect(state: Game, resume: CastResume): Game {
       return stealSpell(state, actor, resume.sourceUid, heroes[0])
     case 'shadow_demon': {
       if (!heroes[0]) return state
+      if (immuneFrom(state, heroes[0], actor)) return log(state, immuneNote(state, heroes[0]))
       const removed = removeHero(state, heroes[0])
       if (!removed.hero) return state
       const card = { uid: removed.hero.uid, defId: removed.hero.defId, kind: 'hero' as const }
@@ -1441,7 +1494,7 @@ function effect(state: Game, resume: CastResume): Game {
     case 'silencer':
       return log({ ...state, silence: stamp }, 'Global Silence.')
     case 'skywrath_mage':
-      return discardRandom(log(state, 'Mystic Flare.'), enemy, home ? intelCount(state, home.team) : 1)
+      return queueDiscard(log(state, 'Mystic Flare.'), enemy, home ? intelCount(state, home.team) : 1, 'Mystic Flare')
     case 'storm_spirit': {
       const discarded = Math.min(2, cards.length)
       let next = state
@@ -1479,7 +1532,7 @@ function effect(state: Game, resume: CastResume): Game {
     case 'marci':
       return startIo(state, actor)
     case 'magnus':
-      return polarity(state, enemy, heroes)
+      return polarity(state, enemy, heroes, actor)
     case 'sand_king': {
       // Picks may include card: (hand hero discards) and hero: (board destroys).
       let next = log(state, 'Epicenter.')
@@ -1512,7 +1565,7 @@ function effect(state: Game, resume: CastResume): Game {
     case 'double_damage':
       return log({ ...state, freeItems: Math.max(state.freeItems, 2) }, 'Amplify Rune: play up to 2 items for free.')
     case 'clarity':
-      return searchTerrain(state, actor, resume.picked.find((id) => id.startsWith('type:'))?.slice(5) ?? '')
+      return clarityDig(state, actor)
     case 'gloves':
       return stealRandom(state, enemy, actor, 1)
     case 'pangolier': {
@@ -1527,7 +1580,7 @@ function effect(state: Game, resume: CastResume): Game {
     }
     case 'abyssal': {
       const where = resume.picked.includes('deck:bottom') ? 'bottom' : 'top'
-      state = toDeck(state, heroes[0], where)
+      state = toDeck(state, heroes[0], where, actor)
       return queueDraw(state, actor, 1)
     }
     case 'orchid': {
@@ -1551,7 +1604,7 @@ function effect(state: Game, resume: CastResume): Game {
     case 'satanic':
       return satanic(state, resume)
     case 'euls':
-      return eul(state, heroes[0])
+      return eul(state, heroes[0], actor)
     case 'glyph':
       if (!teams[0]) return state
       return log(updateTeamTimed(state, teams[0], 'glyph', stamp), 'Glyph.')
@@ -1627,27 +1680,32 @@ function destroyTeam(state: Game, teamId: string, cause: string, by: PlayerId, f
   return found.team.heroes.reduce((current, hero) => enqueue(current, hero.uid, cause, force, true, by), state)
 }
 
-function exileBoard(state: Game, uid: string | undefined): Game {
+function exileBoard(state: Game, uid: string | undefined, by: PlayerId | null): Game {
   if (!uid) return state
+  if (immuneFrom(state, uid, by)) return log(state, immuneNote(state, uid))
+  const tag = heroTag(state, uid)
   const removed = removeHero(state, uid)
   if (!removed.hero) return state
   const card: CardInst = { uid: removed.hero.uid, defId: removed.hero.defId, kind: removed.hero.token ? 'neutral' : 'hero' }
-  return toExile(removed.state, card)
+  return toExile(removed.state, card, `${tag} is exiled.`)
 }
 
-function toDeck(state: Game, uid: string | undefined, where: 'top' | 'bottom'): Game {
+function toDeck(state: Game, uid: string | undefined, where: 'top' | 'bottom', by: PlayerId | null): Game {
   if (!uid) return state
+  if (immuneFrom(state, uid, by)) return log(state, immuneNote(state, uid))
+  const tag = heroTag(state, uid)
   const removed = removeHero(state, uid)
   if (!removed.hero) return state
   const card: CardInst = { uid: removed.hero.uid, defId: removed.hero.defId, kind: 'hero' }
   const deck = where === 'top' ? [card, ...removed.state.deck] : [...removed.state.deck, card]
-  return log({ ...removed.state, deck }, `${display(card.defId).name} goes to the ${where} of the deck.`)
+  return log({ ...removed.state, deck }, `${tag} goes to the ${where} of the deck.`)
 }
 
 function toHand(state: Game, uid: string, player: PlayerId, cause: string): Game {
   const loc = findHero(state, uid)
   // Prefer bounce → owner hand (PA / owner rules) when the destination is the owner.
-  if (loc && loc.hero.owner === player) return bounce(state, uid, cause)
+  if (loc && loc.hero.owner === player) return bounce(state, uid, cause, false, player)
+  if (immuneFrom(state, uid, player)) return log(state, immuneNote(state, uid))
   const removed = removeHero(state, uid)
   if (!removed.hero) return state
   const card: CardInst = { uid: removed.hero.uid, defId: removed.hero.defId, kind: 'hero' }
@@ -1676,7 +1734,7 @@ function dump(state: Game, id: PlayerId): Game {
 function give(state: Game, from: PlayerId, to: PlayerId, uid: string): Game {
   const card = state.players[from].hand.find((entry) => entry.uid === uid)
   if (!card) return state
-  return log(addHand(removeHand(state, from, uid), to, [card]), `${pname(state, to)} takes a card.`)
+  return log(addHand(removeHand(state, from, uid), to, [card]), `${pname(state, to)} takes a card from ${pname(state, from)}.`)
 }
 
 function stealRandom(state: Game, from: PlayerId, to: PlayerId, count: number): Game {
@@ -1730,11 +1788,11 @@ function moveOnto(
   uid: string,
   destPlayer: PlayerId,
   destTeam: string,
-  opts: { takeControl?: boolean } = {},
+  opts: { takeControl?: boolean; by?: PlayerId } = {},
 ): Game {
   const loc = findHero(state, uid)
   if (!loc) return state
-  if (loc.hero.controller !== destPlayer && (loc.hero.bkb || loc.player.bkb)) return log(state, 'Black King Bar prevents the theft.')
+  if (immuneFrom(state, uid, opts.by ?? destPlayer)) return log(state, immuneNote(state, uid))
   if (loc.team.noLeave) return log(state, 'Dream Coil holds them in place.')
   const thief = opts.takeControl ? destPlayer : null
   // Puck: cannot leave — but your own Puck must not block your take-control / toss transfers.
@@ -1801,7 +1859,7 @@ function infest(state: Game, resume: CastResume, uid: string | undefined, dest: 
   if (!landed || landed.hero.controller !== resume.actor) return state
   if (!resume.picked.includes('yes')) return log(state, 'Infest leaves the stolen ability quiet.')
   if (state.stolenCast) return log(state, 'Stolen abilities cannot chain.')
-  if (state.silence || landed.hero.muted) return log(state, 'The stolen ability does not fire.')
+  if (silenced(state, uid) || landed.hero.muted) return log(state, 'The stolen ability does not fire.')
   if (!firesAbility(landed.hero.defId)) return log(state, 'That hero has no ability to fire.')
   state = cast(log({ ...state, stolenCast: true }, 'Infest fires the stolen ability this turn.'), {
     kind: 'cast',
@@ -1833,7 +1891,7 @@ function relocate(state: Game, resume: CastResume): Game {
     resume.defId === 'force_staff' ? loc?.hero.owner ?? resume.actor
       : resume.defId === 'tusk' ? loc?.hero.controller ?? resume.actor
         : resume.actor
-  return moveOnto(state, uid, owner, dest.startsWith('team:') ? dest.slice(5) : dest)
+  return moveOnto(state, uid, owner, dest.startsWith('team:') ? dest.slice(5) : dest, { by: resume.actor })
 }
 
 function protectCombo(state: Game, resume: CastResume): Game {
@@ -1936,12 +1994,12 @@ function spray(state: Game, resume: CastResume): Game {
   return next
 }
 
-function exileTeam(state: Game, teamId: string | undefined, cause: string): Game {
+function exileTeam(state: Game, teamId: string | undefined, cause: string, by: PlayerId): Game {
   if (!teamId) return state
   const found = teamById(state, teamId)
   if (!found) return state
   return found.team.heroes.reduce(
-    (current, hero) => exileBoard(current, hero.uid),
+    (current, hero) => exileBoard(current, hero.uid, by),
     log(state, `${cause} exiles the team.`),
   )
 }
@@ -1952,6 +2010,7 @@ function imprison(state: Game, resume: CastResume, uid: string | undefined): Gam
   if (holder?.hero.held) state = releaseHeld(state, holder.hero)
   const loc = findHero(state, uid)
   if (!loc) return state
+  if (immuneFrom(state, uid, resume.actor)) return log(state, immuneNote(state, uid))
   const removed = removeHero(state, uid)
   if (!removed.hero) return state
   const card: CardInst = { uid: removed.hero.uid, defId: removed.hero.defId, kind: 'hero' }
@@ -2015,7 +2074,7 @@ function satanic(state: Game, resume: CastResume): Game {
   if (!landed || landed.hero.controller !== resume.actor) return state
   if (!resume.picked.includes('yes')) return log(state, 'Satanic takes control for the turn.')
   if (state.stolenCast) return log(state, 'Stolen abilities cannot chain.')
-  if (state.silence || landed.hero.muted) return log(state, 'The stolen ability does not fire.')
+  if (silenced(state, uid) || landed.hero.muted) return log(state, 'The stolen ability does not fire.')
   if (!firesAbility(landed.hero.defId)) return log(state, 'That hero has no ability to fire.')
   state = cast(log({ ...state, stolenCast: true }, 'Satanic fires the stolen ability.'), {
     kind: 'cast',
@@ -2038,11 +2097,13 @@ function strike(state: Game, uid: string | undefined, actor: PlayerId): Game {
   }, state)
 }
 
-function sunder(state: Game, yourTeam: string | undefined, theirTeam: string | undefined): Game {
+function sunder(state: Game, yourTeam: string | undefined, theirTeam: string | undefined, actor: PlayerId): Game {
   if (!yourTeam || !theirTeam) return state
   const yours = teamById(state, yourTeam)
   const theirs = teamById(state, theirTeam)
   if (!yours || !theirs) return state
+  const shielded = theirs.team.heroes.find((hero) => immuneFrom(state, hero.uid, actor))
+  if (shielded) return log(state, `Sunder fails — ${immuneNote(state, shielded.uid)}`)
   const players = state.players.map((player) => {
     const teams = player.teams.filter((team) => team.id !== yourTeam && team.id !== theirTeam)
     if (player.id === yours.player.id) teams.push({ ...theirs.team, heroes: theirs.team.heroes.map((hero) => ({ ...hero, controller: player.id })) })
@@ -2062,7 +2123,8 @@ function netherSwap(state: Game, selfUid: string, otherUid: string | undefined):
   const otherWeight = heroWeight(other.hero)
   if (teamSize(self.team) - selfWeight + otherWeight > 5) return log(state, 'Nether Swap would overfill the team.')
   if (teamSize(other.team) - otherWeight + selfWeight > 5) return log(state, 'Nether Swap would overfill the team.')
-  const first = moveOnto(state, selfUid, other.player.id, other.team.id)
+  if (immuneFrom(state, otherUid, self.hero.controller)) return log(state, immuneNote(state, otherUid))
+  const first = moveOnto(state, selfUid, other.player.id, other.team.id, { by: self.hero.controller })
   let next = moveOnto(first, otherUid, self.player.id, self.team.id)
   const stolen = findHero(next, otherUid)
   if (stolen && firesAbility(stolen.hero.defId)) {
@@ -2079,10 +2141,53 @@ function netherSwap(state: Game, selfUid: string, otherUid: string | undefined):
   return next
 }
 
-function timeLapse(state: Game): Game {
-  if (state.grave.length === 0) return log(state, 'The grave is empty.')
-  const [shuffled, deck] = shuffle(state, [...state.grave, ...state.deck])
-  return log({ ...shuffled, grave: [], deck, lastGrave: null }, 'Time Lapse shuffles the grave into the deck.')
+/** Depth bands the Weaver player may choose for The Ancient (fraction of the deck above it). */
+export const WEAVER_BANDS = [
+  { id: 'top', label: 'Near the top', at: 0.1 },
+  { id: 'upper', label: 'Upper middle', at: 0.3 },
+  { id: 'middle', label: 'Middle', at: 0.5 },
+  { id: 'lower', label: 'Lower middle', at: 0.7 },
+  { id: 'bottom', label: 'Near the bottom', at: 0.9 },
+] as const
+
+/** Shuffle the deck and grave together; if The Ancient is still in the deck, its owner of the turn picks how deep it goes. */
+function timeLapse(state: Game, actor: PlayerId): Game {
+  const isAncient = (card: CardInst) => card.kind === 'ancient' || card.defId === ANCIENT_ID
+  const ancient = state.deck.find(isAncient) ?? null
+  const pool = [...state.deck.filter((card) => !isAncient(card)), ...state.grave]
+  const [shuffled, deck] = shuffle(state, pool)
+  let next: Game = log({ ...shuffled, grave: [], deck, lastGrave: null }, 'Time Lapse shuffles the grave into the deck.')
+  if (!ancient) return next
+  next = { ...next, limbo: [...next.limbo, ancient] }
+  return ask(next, {
+    actor,
+    prompt: 'Time Lapse: where does The Ancient go?',
+    mode: 'pick',
+    min: 1,
+    max: 1,
+    choices: WEAVER_BANDS.map((band) => ({
+      id: `depth:${band.id}`,
+      label: band.label,
+      hint: `about ${Math.round(band.at * deck.length)} of ${deck.length} cards down`,
+    })),
+    resume: { kind: 'weaver-ancient', actor, card: ancient },
+  })
+}
+
+/** Put The Ancient back at the chosen band, ±5% so the exact card stays hidden. */
+export function finishTimeLapse(state: Game, actor: PlayerId, card: CardInst, pick: string): Game {
+  const band = WEAVER_BANDS.find((entry) => `depth:${entry.id}` === pick) ?? WEAVER_BANDS[2]
+  const placed = insertAtDepth({ ...state, limbo: state.limbo.filter((entry) => entry.uid !== card.uid) }, card, band.at - 0.05, band.at + 0.05)
+  return log(placed, `${pname(state, actor)} puts The Ancient ${band.label.toLowerCase()} of the deck.`)
+}
+
+export function insertAtDepth(state: Game, card: CardInst, lo: number, hi: number): Game {
+  const len = state.deck.length
+  const minIdx = Math.max(0, Math.min(len, Math.floor(lo * len)))
+  const maxIdx = Math.max(minIdx, Math.min(len, Math.floor(hi * len)))
+  const [rolled, offset] = randInt(state, maxIdx - minIdx + 1)
+  const index = minIdx + offset
+  return { ...rolled, deck: [...rolled.deck.slice(0, index), card, ...rolled.deck.slice(index)] }
 }
 
 function stealSpell(state: Game, actor: PlayerId, sourceUid: string, heroUid: string | undefined): Game {
@@ -2164,18 +2269,18 @@ function splitTeam(state: Game, resume: CastResume): Game {
     }
     first = false
     for (const uid of members) {
-      if (findHero(next, uid)?.team.id !== dest) next = moveOnto(next, uid, owner, dest)
+      if (findHero(next, uid)?.team.id !== dest) next = moveOnto(next, uid, owner, dest, { by: resume.actor })
     }
   }
   return log(next, 'Primal Roar splits the team.')
 }
 
-function polarity(state: Game, enemy: PlayerId, uids: string[]): Game {
+function polarity(state: Game, enemy: PlayerId, uids: string[], actor: PlayerId): Game {
   const kept: string[] = []
   let weight = 0
   for (const uid of uids) {
     const loc = findHero(state, uid)
-    if (!loc || loc.hero.controller !== enemy) continue
+    if (!loc || loc.hero.controller !== enemy || immuneFrom(state, uid, actor)) continue
     const size = heroWeight(loc.hero)
     if (weight + size > 5) continue
     kept.push(uid)
@@ -2196,7 +2301,7 @@ function polarity(state: Game, enemy: PlayerId, uids: string[]): Game {
   }
   let next = putOnTeam(created[0], enemy, created[1], { ...removed.hero, controller: enemy })
   next = arrived(next, firstId).state
-  for (const uid of kept.slice(1)) next = moveOnto(next, uid, enemy, created[1])
+  for (const uid of kept.slice(1)) next = moveOnto(next, uid, enemy, created[1], { by: actor })
   return log(next, 'Reverse Polarity gathers a team.')
 }
 
@@ -2241,18 +2346,59 @@ function regen(state: Game, actor: PlayerId): Game {
   return log(addHand({ ...state, grave: state.grave.slice(0, -1) }, actor, [card]), `${display(card.defId).name} returns.`)
 }
 
-function searchTerrain(state: Game, actor: PlayerId, kind: string, label = 'Clarity'): Game {
-  const card = state.deck.find((entry) => entry.defId === kind)
-  if (!card) return log(state, `${label} finds nothing.`)
-  const deck = state.deck.filter((entry) => entry.uid !== card.uid)
-  const [shuffled, mixed] = shuffle(state, deck)
-  return log(addHand({ ...shuffled, deck: mixed }, actor, [card]), `${label} takes ${display(card.defId).name}.`)
+/**
+ * Reveal from the top until a terrain and take it. The other revealed cards go back on top
+ * in the order the player picks, so Clarity can also stack the next draws.
+ */
+function clarityDig(state: Game, actor: PlayerId): Game {
+  const index = state.deck.findIndex((card) => card.kind === 'terrain')
+  if (index < 0) return log(state, 'Clarity finds no terrain.')
+  const terrain = state.deck[index]!
+  const revealed = state.deck.slice(0, index)
+  const rest = state.deck.slice(index + 1)
+  const shown = revealed.length > 0 ? ` after ${revealed.map((card) => display(card.defId).name).join(', ')}` : ''
+  let next = log(addHand({ ...state, deck: rest }, actor, [terrain]), `Clarity reveals ${display(terrain.defId).name}${shown}.`)
+  if (revealed.length <= 1 || rest.length === 0) return { ...next, deck: [...revealed, ...rest] }
+  next = { ...next, limbo: [...next.limbo, ...revealed] }
+  return askRestack(next, actor, revealed.map((card) => card.uid), [])
 }
 
-function eul(state: Game, uid: string | undefined): Game {
+function askRestack(state: Game, actor: PlayerId, cards: string[], placed: string[]): Game {
+  const left = cards.filter((uid) => !placed.includes(uid))
+  if (left.length <= 1) {
+    const order = [...placed, ...left]
+    const stack = order.map((uid) => state.limbo.find((card) => card.uid === uid)).filter((card): card is CardInst => !!card)
+    return log(
+      { ...state, limbo: state.limbo.filter((card) => !order.includes(card.uid)), deck: [...stack, ...state.deck] },
+      `Clarity puts ${stack.length} card${stack.length === 1 ? '' : 's'} back on top.`,
+    )
+  }
+  const position = placed.length === 0 ? 'on top' : `card ${placed.length + 1} from the top`
+  return ask(state, {
+    actor,
+    prompt: `Clarity: choose the card to put ${position}.`,
+    mode: 'pick',
+    min: 1,
+    max: 1,
+    choices: left.map((uid) => {
+      const card = state.limbo.find((entry) => entry.uid === uid)
+      return { id: `card:${uid}`, label: card ? display(card.defId).name : uid, defId: card?.defId }
+    }),
+    resume: { kind: 'restack', actor, cards, placed },
+  })
+}
+
+export function continueRestack(state: Game, actor: PlayerId, cards: string[], placed: string[], pick: string): Game {
+  const uid = pick.startsWith('card:') ? pick.slice(5) : pick
+  const next = cards.includes(uid) && !placed.includes(uid) ? [...placed, uid] : placed
+  return askRestack(state, actor, cards, next)
+}
+
+function eul(state: Game, uid: string | undefined, by: PlayerId): Game {
   if (!uid) return state
   const loc = findHero(state, uid)
   if (!loc) return state
+  if (immuneFrom(state, uid, by)) return log(state, immuneNote(state, uid))
   const pulled = extract(state, uid)
   if (!pulled.hero) return state
   return log(
@@ -2260,7 +2406,7 @@ function eul(state: Game, uid: string | undefined): Game {
       ...pulled.state,
       phased: [...pulled.state.phased, { hero: pulled.hero, teamId: loc.team.id, owner: pulled.hero.owner, fromTurn: state.turn }],
     },
-    `${display(pulled.hero.defId).name} is set aside.`,
+    `${pname(state, loc.hero.controller)}'s ${display(pulled.hero.defId).name} is set aside until the end of the turn.`,
   )
 }
 
@@ -2474,7 +2620,7 @@ function tinyToss(state: Game, resume: CastResume): Game {
   if (!src || src.team.id !== home.team.id) return log(state, 'Toss needs a hero in this team.')
   const destInfo = teamById(state, teamId)
   if (!destInfo || destInfo.player.id === actor) return log(state, 'Toss needs an enemy team.')
-  let next = moveOnto(state, tossed, destInfo.player.id, teamId, { takeControl: true })
+  let next = moveOnto(state, tossed, destInfo.player.id, teamId, { takeControl: true, by: actor })
   const dest = teamById(next, teamId)
   if (!dest || !dest.team.heroes.some((hero) => hero.uid === tossed)) {
     return log(next, 'Toss fails — that hero could not enter.')
@@ -2696,7 +2842,12 @@ export function offerInstantWindow(
 function gateAbility(state: Game, heroUid: string, resume: CastResume): Game {
   const loc = findHero(state, heroUid)
   if (!loc) return log(state, 'The hero is gone — the ability fizzles.')
-  if (loc.hero.muted || state.silence || state.players[resume.actor]?.orchid) {
+  const orchid = state.players[resume.actor]?.orchid
+  if (
+    loc.hero.muted ||
+    (state.silence && !immuneFrom(state, heroUid, state.silence.caster)) ||
+    (orchid && !immuneFrom(state, heroUid, orchid.caster))
+  ) {
     return log(state, 'The ability is nullified.')
   }
   if (state.spellNullify.some((entry) => entry.uid === heroUid)) {
@@ -2712,12 +2863,12 @@ function gateAbility(state: Game, heroUid: string, resume: CastResume): Game {
   ) {
     return ask(state, {
       actor: resume.actor,
-      prompt: 'Nether Ward: discard 1, or the hero does not fire.',
+      prompt: 'Nether Ward: discard a card, or the hero does not fire.',
       mode: 'pick',
       min: 1,
       max: 1,
       choices: [
-        { id: 'discard', label: 'Discard 1' },
+        ...handCards(state, resume.actor).map((choice) => ({ ...choice, label: `Discard ${choice.label}` })),
         { id: 'fizzle', label: 'The hero does not fire' },
       ],
       resume: { kind: 'pugna', cast: resume },

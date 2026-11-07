@@ -43,6 +43,7 @@ import { log, scoreState } from './game/flow.ts'
 import {
   cloneRules,
   DEFAULT_SCORE_RULES,
+  forSeats,
   getScoreRules,
   resetScoreRules,
   setScoreRules,
@@ -64,6 +65,7 @@ import { Rules } from './ui/Rules.tsx'
 import { type DebugSpeed, type DebugView } from './ui/DebugRail.tsx'
 import { OnlinePlay } from './ui/OnlinePlay.tsx'
 import { ScoreRulesPanel } from './ui/ScoreRulesPanel.tsx'
+import { WinConditionPanel, winSummary } from './ui/WinConditionPanel.tsx'
 import { Table } from './ui/Table.tsx'
 
 export type SeatCount = 2 | 3 | 4 | 5 | 6 | 7 | 8
@@ -763,6 +765,7 @@ function Lobby({
   const [lab, setLab] = useState(false)
   const [rules, setRules] = useState(false)
   const [scoreOpen, setScoreOpen] = useState(false)
+  const [winOpen, setWinOpen] = useState(false)
   const [lobbyRules, setLobbyRules] = useState<ScoreRules>(() => cloneRules(getScoreRules()))
   const [savedLocal, setSavedLocal] = useState<SavedLocalMatch | null>(() => loadLocalMatch())
   const [trainNeural, setTrainNeural] = useState(false)
@@ -798,9 +801,21 @@ function Lobby({
     try {
       const rules = debug
         ? lobbyRules
-        : { ...DEFAULT_SCORE_RULES, ancientEndgame: lobbyRules.ancientEndgame }
+        : {
+            ...DEFAULT_SCORE_RULES,
+            ancientEndgame: lobbyRules.ancientEndgame,
+            scoreWin: lobbyRules.scoreWin,
+            winScores: lobbyRules.winScores,
+            ancientDepths: lobbyRules.ancientDepths,
+          }
       onStart(
-        createGame({ seed, seats: roster, ancientEndgame: rules.ancientEndgame }),
+        createGame({
+          seed,
+          seats: roster,
+          ancientEndgame: rules.ancientEndgame,
+          winScore: rules.scoreWin ? forSeats(rules.winScores, roster.length) : null,
+          ancientDepth: forSeats(rules.ancientDepths, roster.length),
+        }),
         seed,
         debug,
         count,
@@ -961,7 +976,7 @@ function Lobby({
           <summary>
             <span>Match options</span>
             <span className="quiet">
-              AI {thoughtPower}/10 · {lobbyRules.ancientEndgame ? 'Ancient on' : 'Ancient off'}{debugMode ? ' · debug' : ''}
+              AI {thoughtPower}/10 · {winSummary(lobbyRules, count)}{debugMode ? ' · debug' : ''}
             </span>
           </summary>
           <div className="debug-lobby">
@@ -997,19 +1012,11 @@ function Lobby({
               })()}
             </span>
           </label>
-          <label className="check-row">
-            <input
-              data-testid="lobby-ancient-endgame"
-              type="checkbox"
-              checked={lobbyRules.ancientEndgame}
-              onChange={(event) => setLobbyRules((current) => ({ ...current, ancientEndgame: event.target.checked }))}
-            />
-            Ancient endgame
-          </label>
-          <p className="quiet">
-            {lobbyRules.ancientEndgame
-              ? 'The Ancient is in the deck. Whoever draws it puts it on the board, worth +10 to whoever holds it at the end, and the final round begins.'
-              : 'No Ancient — the match ends when the shared deck empties.'}
+          <button type="button" data-testid="lobby-win" onClick={() => setWinOpen(true)}>
+            Win condition…
+          </button>
+          <p className="quiet" data-testid="lobby-win-summary">
+            {count} players: {winSummary(lobbyRules, count)}.
           </p>
           <label className="check-row">
             <input
@@ -1076,6 +1083,24 @@ function Lobby({
       {glossary ? <Glossary onClose={() => setGlossary(false)} /> : null}
       {rules ? <Rules onClose={() => setRules(false)} /> : null}
       {lab ? <Lab onClose={() => setLab(false)} onPlay={onLab} /> : null}
+      {winOpen ? (
+        <div className="scrim" onClick={() => setWinOpen(false)}>
+          <section
+            className="sheet score-sheet"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="win-title"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <p className="eyebrow">Match options</p>
+            <h2 id="win-title">Win condition</h2>
+            <WinConditionPanel value={lobbyRules} onChange={setLobbyRules} />
+            <button type="button" className="primary block" data-testid="win-done" onClick={() => setWinOpen(false)}>
+              Done
+            </button>
+          </section>
+        </div>
+      ) : null}
       {scoreOpen ? (
         <div className="scrim" onClick={() => setScoreOpen(false)}>
           <section

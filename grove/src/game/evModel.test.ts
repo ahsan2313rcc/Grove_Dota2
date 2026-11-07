@@ -159,7 +159,7 @@ function uid(game: Game, player: PlayerId, defId: string): string {
 function passInstants(game: Game): Game {
   let next = game
   let guard = 0
-  while (next.pending?.resume.kind === 'instant-window' && guard++ < 12) {
+  while ((next.pending?.resume.kind === 'instant-window' || next.pending?.resume.kind === 'response') && guard++ < 12) {
     next = apply(next, { type: 'choose', ids: ['pass'] })
   }
   return next

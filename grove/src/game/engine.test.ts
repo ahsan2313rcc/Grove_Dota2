@@ -231,7 +231,7 @@ describe('turn', () => {
     expect(raw.ancient).toBeNull()
   })
 
-  it('places The Ancient by seat count (mid / deep / last)', () => {
+  it('places The Ancient at 50/60/60/80/80/90/90% (±5) by seat count', () => {
     const depth = (seats: number, seed: number) => {
       const names = Array.from({ length: seats }, (_, index) => `P${index + 1}`)
       const game = createGame({
@@ -248,18 +248,14 @@ describe('turn', () => {
       return { insertIndex, preInsertLen, postInsertLen }
     }
 
+    const expected = [50, 60, 60, 80, 80, 90, 90]
     for (const seed of [2, 7, 19, 58, 91]) {
-      const d2 = depth(2, seed)
-      expect(d2.insertIndex).toBeGreaterThanOrEqual(Math.floor(0.4 * d2.preInsertLen))
-      expect(d2.insertIndex).toBeLessThanOrEqual(Math.floor(0.6 * d2.preInsertLen))
-
-      const d5 = depth(5, seed)
-      expect(d5.insertIndex).toBeGreaterThanOrEqual(Math.floor(0.7 * d5.preInsertLen))
-      expect(d5.insertIndex).toBeLessThanOrEqual(Math.floor(0.8 * d5.preInsertLen))
-
-      const d8 = depth(8, seed)
-      expect(d8.insertIndex).toBe(d8.preInsertLen)
-      expect(d8.insertIndex).toBe(d8.postInsertLen - 1)
+      for (let seats = 2; seats <= 8; seats += 1) {
+        const at = depth(seats, seed)
+        const pct = expected[seats - 2]!
+        expect(at.insertIndex).toBeGreaterThanOrEqual(Math.floor(((pct - 5) / 100) * at.preInsertLen))
+        expect(at.insertIndex).toBeLessThanOrEqual(Math.floor(((pct + 5) / 100) * at.preInsertLen))
+      }
     }
   })
 
@@ -288,6 +284,7 @@ describe('turn', () => {
     game = apply(game, { type: 'draw' })
     expect(game.players[1].hand.length).toBe(over + 1)
     expect(game.players[1].actions).toBe(1)
+    game = passInstants(game)
     // Ending while over the limit opens the discard prompt.
     game = apply(game, { type: 'end' })
     expect(game.pending?.resume.kind).toBe('limit')
@@ -1141,7 +1138,7 @@ function ready(): Game {
 function passInstants(game: Game): Game {
   let next = game
   let guard = 0
-  while (next.pending?.resume.kind === 'instant-window' && guard++ < 12) {
+  while ((next.pending?.resume.kind === 'instant-window' || next.pending?.resume.kind === 'response') && guard++ < 12) {
     next = apply(next, { type: 'choose', ids: ['pass'] })
   }
   return next

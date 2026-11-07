@@ -121,7 +121,7 @@ describe('team movement', () => {
   it('Grimstroke steals a whole team without losing heroes', () => {
     let game = toHand(ready(4), 0, ['grimstroke', 'river', 'jungle', 'lane'])
     const terrains = game.players[0].hand.filter((card) => card.kind === 'terrain').map((card) => card.uid)
-    game = apply(game, { type: 'combo', uids: terrains })
+    game = drain(apply(game, { type: 'combo', uids: terrains }))
     ;[game] = team(game, 1, ['axe', 'sven', 'tiny'])
     game = drain(apply(game, { type: 'play', uid: uidOf(game, 0, 'grimstroke'), team: 'new' }))
     expect(heroCount(game, 1)).toBe(0)
@@ -477,3 +477,39 @@ function attrsOfAncient(game: Game, uid: string) {
   const loc = allLocs(game).find((entry) => entry.hero.uid === uid)!
   return attrsOf(game, loc.hero)
 }
+
+describe('Time Lapse and Clarity', () => {
+  it('Time Lapse shuffles grave and deck together and lets the Weaver player place The Ancient', () => {
+    let game = toHand(ready(4), 0, ['weaver'])
+    const graveCards = game.deck.slice(-4)
+    game = { ...game, deck: game.deck.slice(0, -4), grave: graveCards }
+    const total = game.deck.length + game.grave.length
+    game = apply(game, { type: 'play', uid: uidOf(game, 0, 'weaver'), team: 'new' })
+    game = drain(game, (g) => (g.pending?.resume.kind === 'weaver-ancient' ? ['depth:bottom'] : null))
+    expect(game.grave).toHaveLength(0)
+    expect(game.limbo).toHaveLength(0)
+    expect(game.deck).toHaveLength(total)
+    const depth = game.deck.findIndex((card) => card.kind === 'ancient') / game.deck.length
+    expect(depth).toBeGreaterThanOrEqual(0.84)
+    expect(depth).toBeLessThanOrEqual(0.96)
+    expect(game.log.join(' ')).toContain('near the bottom')
+  })
+
+  it('Clarity takes the first terrain and restacks the rest in the chosen order', () => {
+    let game = toHand(ready(5), 0, ['clarity'])
+    const heroes = game.deck.filter((card) => card.kind === 'hero').slice(0, 3)
+    const lane = game.deck.find((card) => card.defId === 'lane')!
+    const rest = game.deck.filter((card) => !heroes.includes(card) && card.uid !== lane.uid)
+    game = { ...game, deck: [...heroes, lane, ...rest] }
+    game = apply(game, { type: 'play', uid: uidOf(game, 0, 'clarity'), team: '' })
+    expect(game.pending?.resume.kind).toBe('restack')
+    // Reverse the three revealed heroes.
+    game = apply(game, { type: 'choose', ids: [`card:${heroes[2]!.uid}`] })
+    game = apply(game, { type: 'choose', ids: [`card:${heroes[1]!.uid}`] })
+    expect(game.pending).toBeNull()
+    expect(game.players[0].hand.some((card) => card.uid === lane.uid)).toBe(true)
+    expect(game.deck.slice(0, 3).map((card) => card.uid)).toEqual([heroes[2]!.uid, heroes[1]!.uid, heroes[0]!.uid])
+    expect(game.deck.slice(3).map((card) => card.uid)).toEqual(rest.map((card) => card.uid))
+    expect(game.limbo).toHaveLength(0)
+  })
+})

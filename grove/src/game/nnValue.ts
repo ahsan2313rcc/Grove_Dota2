@@ -506,7 +506,7 @@ export function chooseAiPendingNeural(state: Game, opts: { explore?: number } = 
   if (!pending) return []
   const actor = pending.actor
   if (pending.choices.length <= 1) return pending.choices[0] ? [pending.choices[0].id] : []
-  if (['weaver-ancient', 'restack', 'discard', 'limit'].includes(pending.resume.kind)) return chooseAiPendingChallenge(state)
+  if (['weaver-ancient', 'restack', 'discard', 'limit', 'response', 'response-place'].includes(pending.resume.kind)) return chooseAiPendingChallenge(state)
   if (pending.min > 1 || pending.mode === 'split' || pending.mode === 'assign' || pending.mode === 'groups' || pending.mode === 'keep') {
     return chooseAiPendingChallenge(state)
   }

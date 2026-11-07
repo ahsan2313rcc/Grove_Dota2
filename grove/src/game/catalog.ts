@@ -228,7 +228,7 @@ export const HEROES: HeroDef[] = [
     'cast',
   ),
   hero('viper', 'Viper', 'AGI', 'Ranged', 'Nethertoxin', "Nullify all enemy heroes' Aura abilities.", 'aura'),
-  hero('weaver', 'Weaver', 'AGI', 'Ranged', 'Time Lapse', 'Shuffle the grave into the deck.', 'cast'),
+  hero('weaver', 'Weaver', 'AGI', 'Ranged', 'Time Lapse', 'Shuffle the grave into the deck. If The Ancient is in the deck, you choose how deep it goes.', 'cast'),
 
   // —— Intelligence ——
   hero('ancient_apparition', 'Ancient Apparition', 'INT', 'Ranged', 'Ice Blast', 'Cards that would enter the grave are exiled instead.', 'aura'),
@@ -336,7 +336,7 @@ export const HEROES: HeroDef[] = [
 ]
 
 export const ITEMS: ItemDef[] = [
-  { id: 'clarity', name: 'Clarity', copies: 3, instant: false, text: 'Search the deck for a terrain card and put it into your hand. Shuffle.' },
+  { id: 'clarity', name: 'Clarity', copies: 3, instant: false, text: 'Reveal cards from the top of the deck until you reveal a terrain. Put it in your hand and the rest back on top in any order.' },
   { id: 'tp_scroll', name: 'Teleportation Scroll', copies: 3, instant: false, text: 'Move target hero you own to another team you control.' },
   { id: 'ward', name: 'Observer Ward', copies: 3, instant: false, text: "Remove target trap, or reveal target opponent's hand." },
   { id: 'gloves', name: 'Gloves of Haste', copies: 3, instant: false, text: "Steal a random card from an opponent's hand." },

@@ -837,7 +837,8 @@ button.debug-mode-cycle:hover {
 .log-line.log-ability { color: #7ec8e3; }
 .log-line.log-instant { color: #e3b87e; }
 .log-line.log-aura { color: #a8d08d; }
-.log-line.log-other { color: var(--cream-dim); }
+.log-line.log-detail { color: var(--cream-dim); padding-left: 0.85rem; }
+.log-line strong { font-weight: 650; color: var(--cream); }
 
 .handbar {
   flex: 0 0 auto;
@@ -1492,4 +1493,47 @@ button.debug-mode-cycle:hover {
 @media (max-width: 640px) {
   .lab-split { grid-template-columns: 1fr; }
   .lab-cards { max-height: 28dvh; }
+}
+
+.win-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.win-table {
+  border-collapse: collapse;
+  width: 100%;
+  font-variant-numeric: tabular-nums;
+}
+.win-table th,
+.win-table td {
+  padding: 4px 6px;
+  text-align: left;
+}
+.win-table thead th {
+  font-size: 0.8rem;
+  opacity: 0.75;
+  font-weight: 600;
+}
+.win-table input {
+  width: 5.5em;
+}
+.win-table input:disabled {
+  opacity: 0.45;
+}
+
+.grave-list {
+  max-height: 50vh;
+  overflow-y: auto;
+  flex-wrap: wrap;
+}
+.grave-slot {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+.grave-slot.top small {
+  color: var(--gold);
+  font-weight: 600;
 }

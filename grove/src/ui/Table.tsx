@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { display } from '../game/catalog.ts'
 import { comboPlans, morphCasts, needsTeam, playableFromGrave, teamsFor, undyingRevive } from '../game/engine.ts'
 import { findHero, isTrapHero, scoreState, scoreTeam } from '../game/flow.ts'
@@ -590,6 +590,11 @@ export function Table({
               <span className="turn-line">
                 <span>T{game.turn}</span>
                 <span className="quiet">{whoseTurn}</span>
+                {game.winScore ? (
+                  <span className="quiet" data-testid="target-score" title="Target score: end your turn on it and still hold it alone at your next turn to win">
+                    · target {game.winScore}
+                  </span>
+                ) : null}
               </span>
               <span className="action-line">
                 <strong data-testid="actions">{game.players[game.active].actions}</strong>
@@ -756,7 +761,7 @@ export function Table({
       ) : null}
       {rules ? <Rules onClose={() => setRules(false)} /> : null}
       {glossary ? <Glossary onClose={() => setGlossary(false)} /> : null}
-      {logOpen ? <LogSheet log={game.log} onClose={() => setLogOpen(false)} /> : null}
+      {logOpen ? <LogSheet log={game.log} names={names} onClose={() => setLogOpen(false)} /> : null}
       {pile ? (
         <PileDialog
           game={game}
@@ -1095,8 +1100,8 @@ function PileButton({
   )
 }
 
-function LogSheet({ log, onClose }: { log: string[]; onClose: () => void }) {
-  const pages = paginateLog(log)
+function LogSheet({ log, names, onClose }: { log: string[]; names: string[]; onClose: () => void }) {
+  const pages = paginateLog(condenseLog(log))
   const [page, setPage] = useState(Math.max(0, pages.length - 1))
   const safe = Math.min(page, pages.length - 1)
   const current = pages[safe] ?? { title: 'Match', lines: [] as { text: string; kind: LogKind }[] }
@@ -1116,7 +1121,7 @@ function LogSheet({ log, onClose }: { log: string[]; onClose: () => void }) {
         <ol className="log-list">
           {current.lines.map((entry, index) => (
             <li key={`${safe}-${index}-${entry.text}`} className={`log-line log-${entry.kind}`}>
-              {entry.text}
+              {emphasize(entry.text, names)}
             </li>
           ))}
         </ol>
@@ -1126,7 +1131,65 @@ function LogSheet({ log, onClose }: { log: string[]; onClose: () => void }) {
   )
 }
 
-type LogKind = 'turn' | 'action' | 'ability' | 'instant' | 'aura' | 'other'
+type LogKind = 'turn' | 'action' | 'ability' | 'instant' | 'aura' | 'detail'
+
+/** Fold repeated destroys and exiles into one line each, so a wipe reads as a list. */
+function condenseLog(log: string[]): string[] {
+  const out: string[] = []
+  let destroy: { cause: string; owner: string; names: string[] } | null = null
+  let exile: string[] = []
+  const flushDestroy = () => {
+    if (!destroy) return
+    const list = destroy.names.join(', ')
+    out.push(destroy.owner ? `${destroy.cause} destroys ${destroy.owner}'s ${list}.` : `${destroy.cause} destroys ${list}.`)
+    destroy = null
+  }
+  const flushExile = () => {
+    if (exile.length === 0) return
+    out.push(exile.length === 1 ? `${exile[0]} is exiled.` : `Exiled: ${exile.join(', ')}.`)
+    exile = []
+  }
+  for (const line of log) {
+    const killed = /^(.+?) destroys (.+)$/.exec(line)
+    if (killed) {
+      flushExile()
+      const rest = killed[2]!
+      const owned = /^(.+?)'s (.+)\.$/.exec(rest)
+      const cause = killed[1]!
+      const owner = owned ? owned[1]! : ''
+      const hero = owned ? owned[2]! : rest.replace(/\.$/, '')
+      if (destroy && destroy.cause === cause && destroy.owner === owner) destroy.names.push(hero)
+      else {
+        flushDestroy()
+        destroy = { cause, owner, names: [hero] }
+      }
+      continue
+    }
+    const gone = /^(.+) is exiled\.$/.exec(line)
+    if (gone) {
+      flushDestroy()
+      exile.push(gone[1]!)
+      continue
+    }
+    flushDestroy()
+    flushExile()
+    out.push(line)
+  }
+  flushDestroy()
+  flushExile()
+  return out
+}
+
+function emphasize(text: string, names: string[]): ReactNode {
+  const known = [...names].filter((name) => name.length > 0).sort((a, b) => b.length - a.length)
+  if (known.length === 0) return text
+  const re = new RegExp(`(${known.map(escapeRe).join('|')})`, 'g')
+  return text.split(re).map((part, index) => (known.includes(part) ? <strong key={index}>{part}</strong> : part))
+}
+
+function escapeRe(text: string): string {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
 
 function paginateLog(log: string[]): { title: string; lines: { text: string; kind: LogKind }[] }[] {
   // One page per full round. A new round starts when the first seat's turn returns. Turn lines stay highlighted.
@@ -1166,11 +1229,11 @@ function paginateLog(log: string[]): { title: string; lines: { text: string; kin
 
 function classifyLog(line: string): LogKind {
   if (/'s turn\./.test(line)) return 'turn'
-  if (/plays Instant |Instant /.test(line) || /nullifies|Spiked Carapace|Battle Trance stops Instant/.test(line)) return 'instant'
-  if (/ is an aura|aura\./i.test(line)) return 'aura'
-  if (/fires|ability|Enchant|Toss|Vacuum|Orchid|Blade Fury|Chronosphere|Global Silence|nullified|does not fire/i.test(line)) return 'ability'
-  if (/plays |fields |draws |discards |plants |combo|takes control|Destroy|destroy/i.test(line)) return 'action'
-  return 'other'
+  if (/plays Instant /.test(line)) return 'instant'
+  if (/ is an aura|aura\./i.test(line) || line.startsWith('Arcane Aura')) return 'aura'
+  if (/plays |fields |calls |draws \d+ (for the turn|as an action)|sets /.test(line)) return 'action'
+  if (/— /.test(line) || /stops |nullif|counters |Global Silence|Orchid|Shiva/.test(line)) return 'ability'
+  return 'detail'
 }
 
 function HandSheet({
@@ -1264,20 +1327,24 @@ function PileDialog({
         ) : null}
         {!sealed && cards.length === 0 ? <p className="quiet">Nothing here yet.</p> : null}
         {!sealed && pile === 'grave' ? (
-          <div className="hand-row dialog-cards">
-            {top ? (
-              <CardFace
-                key={top.uid}
-                defId={top.defId}
-                compact
-                selected={!!gravePlay}
-                onClick={() => onRead(top.defId)}
-              />
-            ) : null}
+          <>
             {cards.length > 1 ? (
-              <p className="quiet">{cards.length - 1} buried under the top card — play from the top only.</p>
+              <p className="quiet">Newest first. Only the top card can be played or taken from the top.</p>
             ) : null}
-          </div>
+            <div className="hand-row dialog-cards grave-list" data-testid="grave-list">
+              {[...cards].reverse().map((card, index) => (
+                <div key={card.uid} className={index === 0 ? 'grave-slot top' : 'grave-slot'}>
+                  <CardFace
+                    defId={card.defId}
+                    compact
+                    selected={index === 0 && !!gravePlay}
+                    onClick={() => onRead(card.defId)}
+                  />
+                  <small className="quiet">{index === 0 ? 'Top' : `#${index + 1}`}</small>
+                </div>
+              ))}
+            </div>
+          </>
         ) : null}
         {!sealed && pile !== 'grave' ? (
           <div className="hand-row dialog-cards">

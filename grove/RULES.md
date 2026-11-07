@@ -8,7 +8,7 @@ Authoritative rules for agents and implementers. Card text lives in `src/game/ca
 
 Grove is a competitive multiplayer card game (typically **2 seats**; engine supports more). Players build **teams of heroes** and play **terrain combos** for points. One **shared deck**, shared **grave**, and shared **exile**. Separate face-down reward piles: **runes**, **neutrals**, **towers**.
 
-**Win condition:** The match ends when **The Ancient** is revealed and each player has taken one final turn, **or** when the shared deck is empty. Highest total score wins (teams + terrain combo points + 10 for whoever controls The Ancient). Ties are possible (no forced tiebreak in engine finish).
+**Win condition:** The match ends when **The Ancient** is revealed and each player has taken one final turn, when a player **holds the target score** alone (see 4.6), **or** when the shared deck is empty. Highest total score wins (teams + terrain combo points + 10 for whoever controls The Ancient). Ties are possible (no forced tiebreak in engine finish).
 
 ---
 
@@ -28,7 +28,7 @@ Grove is a competitive multiplayer card game (typically **2 seats**; engine supp
 
 - **`cast`** — Ability fires when the hero is played as the **active** hero (unless silenced/blocked).
 - **`aura`** — No on-play fire; passive while on the board.
-- **`instant`** — Free (no action). Playable on **your turn** and on **opponents’ turns** to interrupt. Before a hero ability fires, opponents get an Instant window.
+- **`instant`** — Free (no action). Playable on **your turn** and on **opponents’ turns**. After the active player draws, plays, or sets a combo, each opponent may play one Instant in response (or pass for the rest of the turn). Before a hero ability fires, opponents also get an Instant window.
 - **`trap`** — Played face down onto a team. Does **not** fire on play. Reveals and resolves when the next hero enters that team (see §7.1).
 
 **Item / reward `instant: true`:** Does not cost an action.
@@ -50,9 +50,7 @@ Engine should track a `stolenCast` (or depth) flag for the duration of that nest
 2. Fill and shuffle reward piles from `REWARDS` by kind.
 3. Each seat is dealt **3** cards.
 4. Insert **The Ancient** into the remaining deck by seat count (deck top = next draw):
-   - **2–4 players:** random depth in **40–60%**
-   - **5–6 players:** random depth in **70–80%**
-   - **7–8 players:** **last card**
+   - Depth by seat count 2/3/4/5/6/7/8: **50 / 60 / 60 / 80 / 80 / 90 / 90%**, each **±5%** at random (editable in Match options → Win condition).
 5. Seat 0 starts turn 1 as usual: **draw 2** + **2 actions**.
 
 `handLimit` = **7**. `TEAM_CAP` = **12** teams per player. `TURN_DRAW` = **2**.
@@ -98,13 +96,25 @@ While `pending` is set, only **choose** (answer the prompt) is legal. AI/`autoAl
 
 ### 4.4 The Ancient (endgame)
 
-One copy of **The Ancient** sits in the main deck after the opening deal, placed by player count (mid-deck for 2–4, deep for 5–6, last card for 7–8).
+One copy of **The Ancient** sits in the main deck after the opening deal, placed by player count (see setup step 4).
 
 - **Revealed by draw:** the drawer plays it **for free** into a team they control or a new team (`ancient-place` prompt). It is a neutral body: 0 flat points, counts as **any one attribute** (whichever scores best), can be targeted, moved, stolen, or destroyed like a hero.
 - **+10** goes to whoever **controls** it when the match ends — not to whoever drew it.
 - Drawing it starts the **final round**: finish the current turn, then each opponent takes one more turn.
 - **Revealed from grave or exile** (milled / exiled into those zones): it is not placed; it only starts the final round.
 - Empty-deck finish still applies if the deck empties before The Ancient is revealed.
+- **Weaver's Time Lapse** shuffles the grave into the deck. If The Ancient is still in the deck, the Weaver player picks its depth band (near the top / upper middle / middle / lower middle / near the bottom, ±5%), so the shuffle cannot move it by accident.
+- **Clarity** reveals from the top until a terrain, takes it, and puts the other revealed cards back on top in any order the player picks. The Ancient can be revealed this way without being drawn.
+
+### 4.6 Target score
+
+Optional (on by default). Targets by seat count 2/3/4/5/6/7/8: **50 / 40 / 35 / 30 / 30 / 30 / 30**.
+
+- End your turn at or above the target to claim it; that starts a final round for you.
+- At the start of your next turn you win if you still have at least the target **and nobody else does**.
+- Opponents answer by reaching the target themselves or by knocking you below it; either resets your claim (you can claim again at the end of a later turn).
+- A Refresher extra turn straight after the claim does not count as your next turn.
+- The Ancient's final round still runs in parallel; whichever ends the match first wins.
 
 ### 4.5 Empty deck
 
@@ -142,7 +152,7 @@ Combos remain as scored terrain piles; some effects destroy/protect them (Hoodwi
 ### 6.1 Cost and locks
 
 - Non-instant plays cost 1 action (check before resolve).
-- **Instant** cards cost 0 and may be played on an opponent’s turn (including to interrupt before an ability fires).
+- **Instant** cards cost 0 and may be played on an opponent’s turn: once in response to each of their actions, and again before a hero ability fires.
 - **Chronosphere / lockPlay:** Opponents of the lock caster cannot play cards or combo.
 - **Doom (aura):** Opponents cannot play items.
 - **Doom / Halberd (`noHeroNow`):** Cannot play heroes this turn.
@@ -173,7 +183,7 @@ Combos remain as scored terrain piles; some effects destroy/protect them (Hoodwi
 
 1. If mined, queue cast for if-still-alive.
 2. Else **Instant interrupt window**: each opponent may play one Instant (or pass). Battle Trance skips a seat and logs if they held Instant cards. Nyx played here counters the ability (destroying an Intelligence caster); Spirit Breaker redirects it.
-3. Else if enemy **Pugna**: choose discard 1 or fizzle fire.
+3. Else if enemy **Pugna**: choose a card to discard, or the ability fizzles.
 4. Else `cast(...)` the ability.
 
 ### 6.4 Neutrals (tokens)
@@ -233,6 +243,8 @@ Timed flags store `{ caster, fromTurn }`. They clear at the **start** of that ca
 
 ## 8. Destroy, bounce, exile, discard
 
+Discards are chosen by the discarding player unless the card says "at random" (Chaos Knight). Owed discards (Meat Hook, Ravage, Mystic Flare, Retaliate) resolve right after the effect; with that many cards or fewer, the whole hand goes.
+
 ### 8.1 Destroy stack
 
 Effects **enqueue** destroys; `settle` drains the queue via `performDestroy`.
@@ -250,7 +262,11 @@ Order of protection (unless `force`, or Troll Warlord “your destroys cannot be
 9. **Save window** (if `window`): controller may play an instant save from hand (Dawnbreaker, Dazzle, Shadow Demon, Shield, Glyph, BKB, Euls — see `SAVE_IDS`).
 10. Else remove from board → **grave** (heroes) or **exile** (tokens); fire **onDestroyed** auras (Shadow Fiend, Death Prophet, Bristleback, Fatal Bonds, Soulbind, …).
 
-**Force** bypasses soft prevention and most substitutes (Lina, etc.).
+**Force** bypasses soft prevention and most substitutes (Lina, etc.), but not immunity.
+
+### 8.0 Immunity
+
+"Immune to all effects" (Black King Bar and Glyph on a team, Ursa's Enrage, Ringmaster's Wheel of Wonder, Shield Rune, Omniknight's Guardian Angel) blocks every opponent effect on that hero: destroy (even forced), exile, bounce, tuck into the deck, move, steal, Dark Seer's Vacuum, and Global Silence / Shiva's Guard / Orchid on its own ability. The controller's own effects still work on it.
 
 ### 8.2 Bounce / return to hand
 
@@ -385,7 +401,7 @@ AI strats: `balanced` | `tempo` | `architect` | `spite`.
 5. Mono attr and attack bonus **do not stack** (default); mix + attack **do**.
 6. UNI is its **own** mono color; it does not patch STR/AGI/INT holes.
 7. Team cap **12**; team size weight cap **5**.
-8. Instant cards **are** playable on an opponent’s turn (and before abilities fire); Battle Trance is the lockout.
+8. Instant cards **are** playable in response to an opponent’s action and before abilities fire; Battle Trance is the lockout. Nyx and Spirit Breaker only work in the ability window; Illusion only counters a card being played.
 9. Destroy is asynchronous via **queue**; protection order matters.
 10. Card text in `catalog.ts` is the player-facing contract; if code and text disagree, treat text as design intent and code as current behavior — prefer aligning them.
 
