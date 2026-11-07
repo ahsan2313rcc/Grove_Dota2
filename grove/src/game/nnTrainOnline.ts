@@ -7,9 +7,9 @@
  *  - +5 turn differential
  *  - full-game margin vs the decision-time margin
  *
- * Train matches play Neural (with exploration) on every AI seat; Challenge is
- * only a sparring opponent when you leave some seats on heuristic strats and
- * use Watch — batch Train forces Neural learners.
+ * Default train policy is Neural self-play with exploration. Pass
+ * `policy: 'seat'` to let seats play their strat (e.g. Balanced vs Balanced)
+ * while still learning from multi-horizon outcomes on those decisions.
  */
 import { chooseAiAction, chooseAiPending, searchModeForStrat } from './ai.ts'
 import { chooseAiPendingChallenge } from './aiChallenge.ts'
@@ -200,16 +200,26 @@ function applyPlayReward(step: TraceStep, before: Game, after: Game) {
   step.playDone = true
 }
 
+export type TrainPolicy = 'neural' | 'seat'
+
 /**
- * Train match: every AI seat plays Neural with exploration and learns from
- * multi-horizon score differentials (play / +3 turns / +5 turns / game).
- * Full balance tracking stays on.
+ * Train match: learn from multi-horizon score differentials
+ * (play / +3 turns / +5 turns / game). Full balance tracking stays on.
+ *
+ * - `policy: 'neural'` (default when train): every AI seat plays Neural + explore
+ * - `policy: 'seat'`: seats keep their strat (Balanced vs Balanced, etc.) and the
+ *   net learns from those decisions' outcomes
  */
 export function runMatchWithOptionalTrain(
   seed: number,
   seats: SeatSpec[],
-  train: boolean,
+  train: boolean | { train: boolean; policy?: TrainPolicy },
 ): { game: Game; samples: number; report: MatchReport } {
+  const opts = typeof train === 'boolean' ? { train, policy: 'neural' as TrainPolicy } : train
+  const doTrain = opts.train
+  const policy: TrainPolicy = opts.policy ?? (doTrain ? 'neural' : 'seat')
+  const neuralPlay = doTrain && policy === 'neural'
+
   let game = createGame({ seed, seats })
   const tracker = new BalanceTracker(seed, { lite: false })
   tracker.start(game)
@@ -231,7 +241,7 @@ export function runMatchWithOptionalTrain(
         const actor = game.pending.actor
         const before = game
         const options = before.pending?.choices.map((c) => c.id) ?? []
-        const ids = train
+        const ids = neuralPlay
           ? chooseAiPendingNeural(before, { explore: EXPLORE })
           : (() => {
             const strat = before.players[actor]?.strat ?? 'balanced'
@@ -242,10 +252,10 @@ export function runMatchWithOptionalTrain(
                 ? chooseAiPendingChallenge(before)
                 : chooseAiPending(before)
           })()
-        if (train) recordPendingStep(steps, before, actor, ids, options)
+        if (doTrain) recordPendingStep(steps, before, actor, ids, options)
         game = apply(game, { type: 'choose', ids })
         tracker.observe(before, { type: 'choose', ids }, game)
-        if (train && steps.length > 0) {
+        if (doTrain && steps.length > 0) {
           const step = steps[steps.length - 1]!
           if (step.actor === actor && !step.playDone) applyPlayReward(step, before, game)
         }
@@ -258,16 +268,16 @@ export function runMatchWithOptionalTrain(
 
       const actor = game.active
       const before = game
-      // Train mode: everyone is a Neural learner. Otherwise honor seat strat.
-      const action: Action = train
-        ? chooseAiActionNeural(before, actor, before.players[actor]?.strat ?? 'balanced', { explore: EXPLORE })
-        : chooseAiAction(before, searchModeForStrat(before.players[actor]?.strat ?? 'balanced', false))
+      const strat = before.players[actor]?.strat ?? 'balanced'
+      const action: Action = neuralPlay
+        ? chooseAiActionNeural(before, actor, strat, { explore: EXPLORE })
+        : chooseAiAction(before, searchModeForStrat(strat, false))
 
-      if (train) recordActionStep(steps, before, actor, action)
+      if (doTrain) recordActionStep(steps, before, actor, action)
       game = apply(game, action)
       tracker.observe(before, action, game)
 
-      if (train && steps.length > 0) {
+      if (doTrain && steps.length > 0) {
         const step = steps[steps.length - 1]!
         if (step.actor === actor && !step.playDone) applyPlayReward(step, before, game)
       }
@@ -281,12 +291,12 @@ export function runMatchWithOptionalTrain(
   }
 
   if (!game.over) game = softFinish(game)
-  if (train) {
+  if (doTrain) {
     flushGame(steps, game)
     samples = steps.length
     const model = getNnMemory()
     model.trainedGames += 1
-    model.note = `outcome-RL; games=${model.trainedGames}; horizons=play/3/5/game; ${new Date().toISOString()}`
+    model.note = `outcome-RL policy=${policy}; games=${model.trainedGames}; horizons=play/3/5/game; ${new Date().toISOString()}`
     replaceNnMemory(model)
     if (model.trainedGames % AUTOSAVE_EVERY === 0) saveNnMemory()
   }

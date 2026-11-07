@@ -1,0 +1,18 @@
+{
+  "trainMode": "Balanced vs Balanced (outcome RL on seat policy)",
+  "trainedGames": 25,
+  "trainedSamples": 40152,
+  "thoughtPower": 5,
+  "evalGames": 100,
+  "foe": "balanced",
+  "wins": 0,
+  "losses": 100,
+  "draws": 0,
+  "neuralWinRate": 0,
+  "heuristicWinRate": 1,
+  "avgTurns": 29.06,
+  "trainSec": 115.6,
+  "evalSec": 115.6,
+  "weights": "/agent/repos/dota-tactics/grove/src/game/data/nn-value-balanced.json",
+  "at": "2026-11-07T01:30:35.042Z"
+}
