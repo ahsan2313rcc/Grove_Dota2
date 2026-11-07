@@ -1822,7 +1822,8 @@ function relocate(state: Game, resume: CastResume): Game {
   if (resume.defId === 'underlord' || resume.defId === 'tp_scroll') {
     const dest = destinations[0]
     if (!dest) return state
-    return heroes.reduce((current, uid) => moveOnto(current, uid, resume.actor, dest), state)
+    const teamId = dest.startsWith('team:') ? dest.slice(5) : dest
+    return heroes.reduce((current, uid) => moveOnto(current, uid, resume.actor, teamId), state)
   }
   const uid = heroes[0]
   const dest = destinations[0]
