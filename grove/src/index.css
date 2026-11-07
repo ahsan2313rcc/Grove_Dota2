@@ -39,7 +39,7 @@ button {
   padding: 0.55rem 0.9rem;
   cursor: pointer;
 }
-button:hover:not(:disabled) { background: rgba(255, 255, 255, 0.09); }
+button:not(.card):hover:not(:disabled) { background: rgba(255, 255, 255, 0.09); }
 button:disabled { opacity: 0.45; cursor: not-allowed; }
 button:focus-visible, input:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
 button.primary {
@@ -315,8 +315,7 @@ button.debug-mode-cycle:hover {
   color: var(--gold);
 }
 .debug-graph svg {
-  width: 100%;
-  height: auto;
+  max-width: 100%;
   display: block;
 }
 .debug-axis {
@@ -391,8 +390,12 @@ button.debug-mode-cycle:hover {
   font-size: 0.78rem;
 }
 .debug-table td.debug-num,
-.debug-table th:has(+ th) {
+.debug-table th.debug-num {
   font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+.debug-low-n {
+  opacity: 0.5;
 }
 .debug-table-sort th .debug-sort {
   font-size: 0.72rem;
@@ -559,13 +562,14 @@ button.debug-mode-cycle:hover {
 .hand-count { align-self: flex-start; padding: 2px 8px; font-size: 0.78rem; }
 .hand-count strong { color: var(--gold); font-family: Fraunces, Georgia, serif; }
 
-.banners { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 4px; flex: 0 0 auto; }
+.banners { list-style: none; padding: 0; margin: 0; display: flex; flex-wrap: wrap; gap: 6px; flex: 0 0 auto; }
 .banners li, .banner {
   background: rgba(157, 59, 50, 0.18);
   border: 1px solid rgba(240, 194, 180, 0.3);
   border-radius: 10px;
   padding: 6px 10px;
 }
+.banners li { border-radius: 999px; padding: 4px 12px; font-size: 0.85rem; }
 
 .stage {
   position: relative;
@@ -654,9 +658,9 @@ button.debug-mode-cycle:hover {
 .teams, .hand-row, .combos { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 4px; max-width: 100%; min-width: 0; }
 .combos { gap: 4px; }
 .team {
-  min-width: 156px;
-  max-width: 168px;
-  width: 156px;
+  min-width: 172px;
+  max-width: 180px;
+  width: 172px;
   padding: 8px;
   background:
     linear-gradient(180deg, rgba(224, 201, 138, 0.06), transparent 40%),
@@ -713,6 +717,16 @@ button.debug-mode-cycle:hover {
   background: rgba(8, 16, 13, 0.88);
   backdrop-filter: blur(8px);
   box-shadow: 0 10px 28px rgba(0, 0, 0, 0.35);
+}
+.shell:not(.debug) .stage { flex-direction: row; gap: 10px; }
+.shell:not(.debug) .hud {
+  position: static;
+  flex: 0 0 300px;
+  width: 300px;
+  align-self: flex-start;
+  max-height: 100%;
+  overflow: auto;
+  backdrop-filter: none;
 }
 .hud .actions { flex-wrap: wrap; }
 .hud .actions button { padding: 0.4rem 0.7rem; font-size: 0.85rem; }
@@ -837,6 +851,7 @@ button.debug-mode-cycle:hover {
   scrollbar-color: rgba(224, 201, 138, 0.35) transparent;
 }
 .hand-label { justify-content: space-between; color: var(--cream-dim); font-size: 0.82rem; padding: 0 4px; }
+.hand-label .over-limit { color: #f0c2b4; font-weight: 600; }
 .handbar .hand-row { gap: 8px; scroll-snap-type: x mandatory; padding-bottom: 2px; }
 .handbar .card {
   width: 108px;
@@ -1013,6 +1028,8 @@ button.debug-mode-cycle:hover {
   transform: rotate(-20deg);
 }
 
+.handbar .card:not(.selected):hover { transform: translateY(-4px); box-shadow: 0 16px 28px rgba(0, 0, 0, 0.4); }
+.card.peek:hover { filter: brightness(1.06); }
 .card.selected { transform: translateY(-8px); outline: 2px solid var(--gold); box-shadow: 0 16px 28px rgba(0, 0, 0, 0.4); }
 .card[data-attr="STR"] { box-shadow: inset 4px 0 0 var(--str), 0 12px 24px rgba(0, 0, 0, 0.28); }
 .card[data-attr="AGI"] { box-shadow: inset 4px 0 0 var(--agi), 0 12px 24px rgba(0, 0, 0, 0.28); }
@@ -1430,6 +1447,8 @@ button.debug-mode-cycle:hover {
   .seat strong { font-size: 1.25rem; }
   .turn-chip strong { font-size: 1.05rem; }
   .board-arrow { width: 28px; height: 48px; font-size: 1.35rem; }
+  .shell:not(.debug) .stage { flex-direction: column; }
+  .shell:not(.debug) .hud { flex: none; width: 100%; max-height: none; }
   .hud {
     position: static;
     width: 100%;
@@ -1443,7 +1462,7 @@ button.debug-mode-cycle:hover {
     background: rgba(8, 16, 13, 0.45);
   }
   .lobby { grid-template-columns: 1fr; align-items: start; }
-  .team { min-width: 148px; max-width: 156px; width: 148px; }
+  .team { min-width: 160px; max-width: 168px; width: 160px; }
   .detail { max-height: none; }
 }
 

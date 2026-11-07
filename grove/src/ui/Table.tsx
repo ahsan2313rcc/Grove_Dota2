@@ -712,7 +712,10 @@ export function Table({
       <footer className="handbar" data-testid="hand">
         <div className="hand-label">
           <span>{debug ? `${activeName}'s hand` : 'Your hand'}</span>
-          <span>{you.hand.length} / {you.handLimit}</span>
+          <span className={you.hand.length > you.handLimit ? 'over-limit' : undefined}>
+            {you.hand.length} / {you.handLimit}
+            {you.hand.length > you.handLimit ? ` · discard ${you.hand.length - you.handLimit} at end of turn` : ''}
+          </span>
         </div>
         {you.hand.length === 0 && clinkzPlayable.length === 0 ? <p className="quiet">Nothing in hand.</p> : null}
         <div className="hand-row">

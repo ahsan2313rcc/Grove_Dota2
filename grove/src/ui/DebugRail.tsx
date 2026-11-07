@@ -1,4 +1,4 @@
-import { useMemo, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { AI_STRATS, stratLabel } from '../game/ai.ts'
 import {
   buildTurnGraph,
@@ -287,7 +287,7 @@ export function DebugRail({
       <div className="debug-block">
         <h3>Summary</h3>
         <p className="quiet" data-testid="debug-summary-line">
-          {summary.finished}/{summary.matches} done · avg T{fmt(summary.avgTurns)} · spread {fmt(summary.avgFinalSpread)} · win {fmt(summary.avgWinnerScore)}
+          {summary.finished}/{summary.matches} games done · avg length T{fmt(summary.avgTurns)} · final spread {fmt(summary.avgFinalSpread)} pts · winner avg {fmt(summary.avgWinnerScore)} pts
         </p>
         <p className="quiet debug-legend">
           Rel = mean score Δ vs opponents · Self = own score Δ · Impact = EV of deploy + disruption + economy (not Rel). Hover for effect mix. Win% = play-weighted seat wins.
@@ -302,7 +302,7 @@ export function DebugRail({
         ) : (
           <table className="debug-table debug-table-compact">
             <thead>
-              <tr><th>Strat</th><th>W</th><th>Avg</th><th>Place</th><th>Self</th><th>Rel</th></tr>
+              <tr><th>Strat</th><th className="debug-num" title="Wins / finished seats">W</th><th className="debug-num" title="Average final score">Avg</th><th className="debug-num">Place</th><th className="debug-num">Self</th><th className="debug-num">Rel</th></tr>
             </thead>
             <tbody>
               {summary.byStrat.map((row) => (
@@ -379,7 +379,7 @@ export function DebugRail({
         <p className="quiet debug-legend">
           Core ×N = same-attr stack N (5+ → ×5). Mix · M = M distinct attrs. Dual-count allowed.
           Avg pts = mean team score (pure core ≤15; mix gets attack by default).
-          Pts/card = points ÷ heroes on those teams. Pure = mono cores only.
+          Pts/card = points ÷ heroes (cards for terrain). Pure = mono cores, or mixes with one hero per attribute. Terrain: 3 alike = 8 + reward, 2 + 1 = 3, 1 of each = 5.
         </p>
         <ShapeTable rows={shapeRows} />
       </div>
@@ -390,8 +390,8 @@ export function DebugRail({
           empty="No events yet."
           columns={[
             { key: 'label', label: 'Event', get: (row) => row.label, sortValue: (row) => row.label },
-            { key: 'total', label: 'Total', get: (row) => String(row.total), sortValue: (row) => row.total },
-            { key: 'per', label: '/match', get: (row) => fmt(row.perMatch), sortValue: (row) => row.perMatch },
+            { key: 'total', label: 'Total', get: (row) => String(row.total), sortValue: (row) => row.total, className: 'debug-num' },
+            { key: 'per', label: '/match', get: (row) => fmt(row.perMatch), sortValue: (row) => row.perMatch, className: 'debug-num' },
           ]}
           rows={summary.eventStats}
           rowKey={(row) => row.id}
@@ -708,25 +708,22 @@ function ShapeTable({ rows }: { rows: ShapeCompareRow[] }) {
       <thead>
         <tr>
           <th>Shape</th>
-          <th title="Teams counted (dual-count allowed)">n</th>
-          <th title="Mean count per match">/match</th>
-          <th title="Mean team score in bucket (core ≤15 / mix ≤12)">Avg pts</th>
-          <th title="Points ÷ heroes on those teams">Pts/card</th>
-          <th title="Mono cores, or mix with matching hero count">Pure</th>
+          <th className="debug-num" title="Teams or combos counted (dual-count allowed)">n</th>
+          <th className="debug-num" title="Mean count per match">/match</th>
+          <th className="debug-num" title="Mean points per team or combo">Avg pts</th>
+          <th className="debug-num" title="Points ÷ heroes (terrain: ÷ 3 cards)">Pts/card</th>
+          <th className="debug-num" title="Mono cores, or mixes with one hero per attribute">Pure</th>
         </tr>
       </thead>
       <tbody>
         {rows.map((row) => (
           <tr key={row.id} data-shape={row.id}>
-            <td>
-              <strong>{row.label}</strong>
-              <small>{row.id.replaceAll('_', ' ')}</small>
-            </td>
+            <td><strong>{row.label}</strong></td>
             <td className="debug-num">{row.count}</td>
             <td className="debug-num">{fmt(row.avgCount)}</td>
             <td className="debug-num">{fmt(row.avgPoints)}</td>
             <td className="debug-num">{fmt(row.avgPtsPerCard)}</td>
-            <td className="debug-num">{row.pureCount}</td>
+            <td className="debug-num">{row.pureCount ?? '—'}</td>
           </tr>
         ))}
       </tbody>
@@ -887,7 +884,7 @@ function pctCell(rate: number, wins: number, samples: number, seats = 0): ReactN
   const shown = winRateShown(rate, seats)
   const fair = seats > 0 ? ` · fair raw ${(100 / seats).toFixed(0)}%` : ''
   return (
-    <span title={`${wins}/${samples} raw ${Math.round(rate * 100)}%${fair}`}>
+    <span className={samples < 3 ? 'debug-low-n' : undefined} title={`${wins}/${samples} raw ${Math.round(rate * 100)}%${fair}${samples < 3 ? ' · too few samples' : ''}`}>
       {Math.round(shown * 100)}%
     </span>
   )
@@ -943,8 +940,19 @@ function Sparkline({
   const right = 8
   const top = 8
   const bottom = 18
-  const width = 280
-  const height = 96
+  const frameRef = useRef<HTMLDivElement>(null)
+  const [width, setWidth] = useState(280)
+  useEffect(() => {
+    const node = frameRef.current
+    if (!node || typeof ResizeObserver === 'undefined') return
+    const observer = new ResizeObserver(([entry]) => {
+      const next = Math.round(entry.contentRect.width)
+      if (next > 0) setWidth(next)
+    })
+    observer.observe(node)
+    return () => observer.disconnect()
+  }, [])
+  const height = 110
   const plotW = width - left - right
   const plotH = height - top - bottom
   if (values.length === 0) return <p className="quiet" data-testid={testId}>No turn samples yet.</p>
@@ -961,8 +969,8 @@ function Sparkline({
   const firstLabel = labels?.[0] ?? 1
   const lastLabel = labels?.[labels.length - 1] ?? values.length
   return (
-    <div className="debug-graph" data-testid={testId}>
-      <svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label={`${yLabel} by turn`}>
+    <div className="debug-graph" data-testid={testId} ref={frameRef}>
+      <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`} role="img" aria-label={`${yLabel} by turn`}>
         <line x1={left} y1={top} x2={left} y2={top + plotH} className="debug-axis" />
         <line x1={left} y1={top + plotH} x2={left + plotW} y2={top + plotH} className="debug-axis" />
         {yMin < 0 && yMax > 0 ? <line x1={left} y1={zeroY} x2={left + plotW} y2={zeroY} className="debug-axis-zero" /> : null}

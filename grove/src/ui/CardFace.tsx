@@ -9,13 +9,6 @@ const TIMING_BADGE: Record<Timing, string> = {
   trap: 'Trap',
 }
 
-const TIMING_PEEK: Record<Timing, string> = {
-  cast: 'P',
-  aura: 'A',
-  instant: 'I',
-  trap: 'T',
-}
-
 export function CardFace({
   defId,
   compact = false,
@@ -75,7 +68,7 @@ export function CardFace({
   const className = `card has-art${selected ? ' selected' : ''}${compact ? ' compact' : ''}${peek ? ' peek' : ''}`
   const timingBadge = timing ? (
     <span className={`type-pill timing-${timing}`} title={TIMING_BADGE[timing]}>
-      {peek ? TIMING_PEEK[timing] : TIMING_BADGE[timing]}
+      {TIMING_BADGE[timing]}
     </span>
   ) : null
 
@@ -94,7 +87,7 @@ export function CardFace({
         </span>
         <span className="card-name">{info.name}</span>
       </span>
-      {timingBadge}
+      {timing === 'aura' ? timingBadge : null}
     </>
   ) : (
     <>
