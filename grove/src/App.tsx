@@ -153,8 +153,9 @@ function advanceTracked(run: LiveRun): LiveRun {
     }
     if (game.pending) {
       if (game.players[game.pending.actor]?.ai || game.autoAll) {
-        const mode = liveTrainNeural ? 'neural' : modeForSeat(game, game.pending.actor)
-        const ids = liveTrainNeural || mode === 'neural'
+        const seatStrat = game.players[game.pending.actor]?.strat ?? DEFAULT_STRAT
+        const mode = liveTrainNeural || seatStrat === 'neural' ? 'neural' : modeForSeat(game, game.pending.actor)
+        const ids = mode === 'neural'
           ? chooseAiPendingNeural(game, liveTrainNeural ? { explore: LIVE_TRAIN_EXPLORE } : {})
           : mode === 'challenge'
             ? chooseAiPendingChallenge(game)
@@ -163,7 +164,7 @@ function advanceTracked(run: LiveRun): LiveRun {
         run.tracker.observe(game, { type: 'choose', ids }, next)
         if (next.pending && pendingMark(next.pending) === pendingMark(game.pending)) {
           const stall = run.stall + 1
-          if (stall >= 3) {
+          if (stall >= 2) {
             next = { ...next, pending: null, log: [...next.log, 'Forced past a stuck choice.'] }
             return { ...run, game: next, stuck: false, stall: 0 }
           }
@@ -175,7 +176,7 @@ function advanceTracked(run: LiveRun): LiveRun {
     }
     if (!game.players[game.active]?.ai) return run
 
-    // Escalating escapes when prior ticks made no progress.
+    // Escalating escapes when prior ticks made no progress (Neural soft-locks especially).
     if (run.stall >= 8) {
       const finished = softFinishLive(game, 'Match halted (soft-lock).')
       return { ...run, game: finished, stuck: false, stall: 0 }
@@ -186,7 +187,7 @@ function advanceTracked(run: LiveRun): LiveRun {
       const progressed = next.active !== game.active || next.turn !== game.turn || !!next.over
       return { ...run, game: next, stuck: !progressed, stall: progressed ? 0 : run.stall + 1 }
     }
-    if (run.stall >= 3) {
+    if (run.stall >= 2) {
       const hand = game.players[game.active]?.hand ?? []
       const pitch = hand.find((card) => card.kind === 'terrain') ?? hand[0]
       if (pitch && (game.players[game.active]?.actions ?? 0) > 0) {
@@ -197,13 +198,13 @@ function advanceTracked(run: LiveRun): LiveRun {
       }
     }
 
-    const mode = liveTrainNeural ? 'neural' : modeForSeat(game, game.active)
-    const strat = game.players[game.active]?.strat ?? DEFAULT_STRAT
-    const action = liveTrainNeural
-      ? chooseAiActionNeural(game, game.active, strat, { explore: LIVE_TRAIN_EXPLORE })
+    const seatStrat = game.players[game.active]?.strat ?? DEFAULT_STRAT
+    const mode = liveTrainNeural || seatStrat === 'neural' ? 'neural' : modeForSeat(game, game.active)
+    const action = mode === 'neural'
+      ? chooseAiActionNeural(game, game.active, seatStrat, liveTrainNeural ? { explore: LIVE_TRAIN_EXPLORE } : {})
       : chooseAiAction(game, mode)
     const next = apply(game, action)
-    if (liveTrainNeural) learnFromImmediateOutcome(game, next, game.active, action)
+    if (liveTrainNeural && mode === 'neural') learnFromImmediateOutcome(game, next, game.active, action)
     run.tracker.observe(game, action, next)
     const same = next === game
       || (next.active === game.active
@@ -349,7 +350,9 @@ export default function App() {
 
   useEffect(() => {
     if (debug) return
-    if (!game || game.over || stuck) return
+    if (!game || game.over) return
+    // Keep ticking while stuck so discard → end → softFinish escapes can run
+    // (Neural used to freeze vs humans on the first no-op).
     const pendingAi = !!game.pending && (!!game.players[game.pending.actor]?.ai || game.autoAll)
     const activeAi = !game.pending && (game.veil || !!game.players[game.active]?.ai)
     if (!pendingAi && !activeAi) return

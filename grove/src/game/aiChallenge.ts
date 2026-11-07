@@ -149,7 +149,15 @@ export function chooseAiPendingChallenge(state: Game): string[] {
   for (const id of tryIds) {
     if (id === 'pass' && pending.min > 0) continue
     const pick = [id]
-    const next = apply({ ...state, autoAll: true }, { type: 'choose', ids: pick })
+    // Speculative: disable AI auto-pending so settle cannot re-enter this picker.
+    const next = apply(
+      {
+        ...state,
+        autoAll: false,
+        players: state.players.map((player) => ({ ...player, ai: false })),
+      },
+      { type: 'choose', ids: pick },
+    )
     const score = evaluateChallenge(next, actor, strat)
     if (score > bestScore) {
       bestScore = score
@@ -157,7 +165,14 @@ export function chooseAiPendingChallenge(state: Game): string[] {
     }
   }
   if (pending.choices.some((choice) => choice.id === 'pass') && pending.min === 0) {
-    const next = apply({ ...state, autoAll: true }, { type: 'choose', ids: ['pass'] })
+    const next = apply(
+      {
+        ...state,
+        autoAll: false,
+        players: state.players.map((player) => ({ ...player, ai: false })),
+      },
+      { type: 'choose', ids: ['pass'] },
+    )
     const score = evaluateChallenge(next, actor, strat)
     if (score > bestScore) return ['pass']
   }

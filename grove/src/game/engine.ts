@@ -275,6 +275,8 @@ export function settle(state: Game): Game {
     if (state.pending) {
       if (state.autoAll || state.players[state.pending.actor].ai) {
         const stuck = state.pending
+        // Nested cascade always uses the heuristic pending picker (no apply inside).
+        // Top-level Watch/sim routes Neural via chooseAiPendingForSeat in App/balance.
         const ids = chooseAiPending(state)
         state = satisfy(state, ids)
         // If auto-pick couldn't meet min/max (empty choices, bad assign), skip the prompt.

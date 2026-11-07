@@ -262,6 +262,7 @@ function bump(model: NnModel, stateFeats: Float64Array, actionFeats: Float64Arra
 
 /**
  * Neural play: 1-ply apply + value(after). Optional explore for training.
+ * Skips no-op candidates and falls back to discard/end so it cannot soft-lock.
  */
 export function chooseAiActionNeural(
   state: Game,
@@ -273,21 +274,35 @@ export function chooseAiActionNeural(
   const net = loadModel()
   const stateFeats = encodeStateFeatures(state, actor)
   const candidates = listNeuralCandidates(state, actor)
-  if (candidates.length === 0) return { type: 'end' }
+  const ranked = candidates
+    .map((action) => {
+      const after = apply(speculative(state), action)
+      if (!neuralMoved(state, after) && action.type !== 'end') return null
+      const prior = scoreAction(net, stateFeats, encodeActionFeatures(state, actor, action))
+      const leaf = valueOfState(net, after, actor)
+      return { action, score: leaf * 1.35 + prior * 0.35 }
+    })
+    .filter((row): row is { action: Action; score: number } => row != null)
+    .sort((a, b) => b.score - a.score)
 
-  const ranked = candidates.map((action) => {
-    const prior = scoreAction(net, stateFeats, encodeActionFeatures(state, actor, action))
-    const after = apply({ ...state, autoAll: true }, action)
-    const leaf = valueOfState(net, after, actor)
-    return { action, score: leaf * 1.35 + prior * 0.35 }
-  }).sort((a, b) => b.score - a.score)
+  let pick: Action =
+    ranked.length === 0
+      ? { type: 'end' }
+      : (() => {
+        const explore = opts.explore ?? 0
+        if (explore > 0 && Math.random() < explore && ranked.length > 1) {
+          const top = ranked.slice(0, Math.min(4, ranked.length))
+          return top[Math.floor(Math.random() * top.length)]!.action
+        }
+        return ranked[0]!.action
+      })()
 
-  const explore = opts.explore ?? 0
-  if (explore > 0 && Math.random() < explore && ranked.length > 1) {
-    const top = ranked.slice(0, Math.min(4, ranked.length))
-    return top[Math.floor(Math.random() * top.length)]!.action
+  // Never leave actions on the table with a dead hand — pitch a card.
+  if (pick.type === 'end' && (state.players[actor]?.actions ?? 0) > 0) {
+    const uid = neuralDiscardUid(state, actor)
+    if (uid) pick = { type: 'discard', uid }
   }
-  return ranked[0]!.action
+  return pick
 }
 
 /** Score pending choices with 1-ply value — targets, ability fire, instants, traps. */
@@ -296,6 +311,15 @@ export function chooseAiPendingNeural(state: Game, opts: { explore?: number } = 
   if (!pending) return []
   const actor = pending.actor
   if (pending.choices.length <= 1) return pending.choices[0] ? [pending.choices[0].id] : []
+  // Multi-select / structured modes are handled by chooseAiPendingForSeat → heuristic.
+  if (
+    pending.min > 1
+    || pending.mode === 'split'
+    || pending.mode === 'assign'
+    || pending.mode === 'groups'
+  ) {
+    return pending.choices.slice(0, Math.max(pending.min, 1)).map((c) => c.id)
+  }
 
   const net = loadModel()
   const take = Math.max(pending.min, Math.min(pending.max, 1))
@@ -304,12 +328,16 @@ export function chooseAiPendingNeural(state: Game, opts: { explore?: number } = 
   for (const id of ids) {
     if (id === 'pass' && pending.min > 0) continue
     const pick = [id]
-    const after = apply({ ...state, autoAll: true }, { type: 'choose', ids: pick })
+    const after = apply(speculative(state), { type: 'choose', ids: pick })
+    // Prefer picks that actually resolve the prompt.
+    if (after.pending && after.pending.prompt === pending.prompt && after.pending.actor === pending.actor) {
+      continue
+    }
     const score = valueOfState(net, after, actor)
     ranked.push({ ids: pick, score })
   }
   if (pending.choices.some((c) => c.id === 'pass') && pending.min === 0) {
-    const after = apply({ ...state, autoAll: true }, { type: 'choose', ids: ['pass'] })
+    const after = apply(speculative(state), { type: 'choose', ids: ['pass'] })
     ranked.push({ ids: ['pass'], score: valueOfState(net, after, actor) })
   }
   ranked.sort((a, b) => b.score - a.score)
@@ -345,8 +373,9 @@ export function listNeuralCandidates(state: Game, actor: PlayerId): Action[] {
   const plans = comboPlans(state)
   const core = plans.find((plan) => plan.detail.startsWith('core'))
   const mixed = plans.find((plan) => plan.detail.startsWith('mixed'))
-  if (core) return [{ type: 'combo', uids: core.uids }]
-  if (mixed) return [{ type: 'combo', uids: mixed.uids }]
+  // Prefer free combos, but still offer fallbacks if the combo somehow no-ops.
+  if (core) out.push({ type: 'combo', uids: core.uids })
+  else if (mixed) out.push({ type: 'combo', uids: mixed.uids })
 
   const morph = morphCasts(state)[0]
   if (morph) out.push({ type: 'morph', uid: morph.uid })
@@ -378,8 +407,48 @@ export function listNeuralCandidates(state: Game, actor: PlayerId): Action[] {
     for (const team of teams) out.push({ type: 'play', uid: card.uid, team: team.id })
   }
   if (state.players[actor].actions > 0 && state.deck.length > 0) out.push({ type: 'draw' })
+  const discardUid = neuralDiscardUid(state, actor)
+  if (discardUid && state.players[actor].actions > 0) {
+    out.push({ type: 'discard', uid: discardUid })
+  }
   out.push({ type: 'end' })
   return out
+}
+
+/** Speculative apply must not re-enter settle's AI pending auto-picker (stack overflow). */
+function speculative(state: Game): Game {
+  return {
+    ...state,
+    autoAll: false,
+    players: state.players.map((player) => ({ ...player, ai: false })),
+  }
+}
+
+function neuralDiscardUid(state: Game, actor: PlayerId): string | null {
+  const hand = state.players[actor]?.hand ?? []
+  if (hand.length === 0) return null
+  const terrain = hand.find((card) => card.kind === 'terrain')
+  if (terrain) return terrain.uid
+  const item = hand.find((card) => card.kind === 'item')
+  if (item) return item.uid
+  return hand[0]?.uid ?? null
+}
+
+function neuralMoved(before: Game, after: Game): boolean {
+  if (after.over || after.active !== before.active) return true
+  if (after.deck.length !== before.deck.length) return true
+  if (after.turn !== before.turn) return true
+  if (!!after.pending !== !!before.pending) return true
+  return before.players.some((player, index) => {
+    const next = after.players[index]
+    return (
+      !next
+      || next.actions !== player.actions
+      || next.hand.length !== player.hand.length
+      || next.teams.length !== player.teams.length
+      || next.combos.length !== player.combos.length
+    )
+  })
 }
 
 function enemyFilled(state: Game, actor: PlayerId): number {

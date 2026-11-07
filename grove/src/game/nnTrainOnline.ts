@@ -121,17 +121,21 @@ function flushGame(steps: TraceStep[], game: Game) {
   }
 }
 
-function softFinish(game: Game): Game {
+function softFinish(game: Game, reason = 'Match halted (soft-lock).'): Game {
   const parts = game.players.map((p) => scoreState(game, p.id))
   return {
     ...game,
-    over: { reason: 'halt', scores: parts.map((p) => p.total), parts },
+    over: { reason, scores: parts.map((p) => p.total), parts },
     pending: null,
     veil: false,
     queue: [],
     echoes: [],
     after: null,
   }
+}
+
+function mark(game: Game): string {
+  return `${game.turn}|${game.active}|${game.deck.length}|${game.pending?.prompt ?? ''}|${game.log.at(-1) ?? ''}`
 }
 
 function recordActionStep(
@@ -227,17 +231,18 @@ export function runMatchWithOptionalTrain(
   let samples = 0
   let guard = 0
   let lastTurn = game.turn
+  let stall = 0
+  let lastMark = mark(game)
 
-  while (!game.over && guard < 900) {
+  while (!game.over && guard < 1200) {
     guard += 1
+    const beforeMark = lastMark
     try {
       if (game.veil) {
         const before = game
         game = apply(game, { type: 'ready' })
         tracker.observe(before, { type: 'ready' }, game)
-        continue
-      }
-      if (game.pending) {
+      } else if (game.pending) {
         const actor = game.pending.actor
         const before = game
         const options = before.pending?.choices.map((c) => c.id) ?? []
@@ -255,42 +260,55 @@ export function runMatchWithOptionalTrain(
         if (doTrain) recordPendingStep(steps, before, actor, ids, options)
         game = apply(game, { type: 'choose', ids })
         tracker.observe(before, { type: 'choose', ids }, game)
+        if (game.pending && game.pending.prompt === before.pending?.prompt && stall >= 2) {
+          game = { ...game, pending: null, log: [...game.log, 'Forced past a stuck choice.'] }
+        }
         if (doTrain && steps.length > 0) {
           const step = steps[steps.length - 1]!
           if (step.actor === actor && !step.playDone) applyPlayReward(step, before, game)
         }
-        if (game.turn !== lastTurn) {
-          flushHorizons(steps, game, game.turn)
-          lastTurn = game.turn
+      } else {
+        const actor = game.active
+        const before = game
+        const strat = before.players[actor]?.strat ?? 'balanced'
+        let action: Action = neuralPlay
+          ? chooseAiActionNeural(before, actor, strat, { explore: EXPLORE })
+          : chooseAiAction(before, searchModeForStrat(strat, false))
+        if (stall >= 3 && (before.players[actor]?.actions ?? 0) > 0) {
+          const hand = before.players[actor]?.hand ?? []
+          const pitch = hand.find((c) => c.kind === 'terrain') ?? hand[0]
+          if (pitch) action = { type: 'discard', uid: pitch.uid }
+        } else if (stall >= 5) {
+          action = { type: 'end' }
         }
-        continue
-      }
-
-      const actor = game.active
-      const before = game
-      const strat = before.players[actor]?.strat ?? 'balanced'
-      const action: Action = neuralPlay
-        ? chooseAiActionNeural(before, actor, strat, { explore: EXPLORE })
-        : chooseAiAction(before, searchModeForStrat(strat, false))
-
-      if (doTrain) recordActionStep(steps, before, actor, action)
-      game = apply(game, action)
-      tracker.observe(before, action, game)
-
-      if (doTrain && steps.length > 0) {
-        const step = steps[steps.length - 1]!
-        if (step.actor === actor && !step.playDone) applyPlayReward(step, before, game)
+        if (doTrain) recordActionStep(steps, before, actor, action)
+        game = apply(game, action)
+        tracker.observe(before, action, game)
+        if (doTrain && steps.length > 0) {
+          const step = steps[steps.length - 1]!
+          if (step.actor === actor && !step.playDone) applyPlayReward(step, before, game)
+        }
       }
       if (game.turn !== lastTurn) {
         flushHorizons(steps, game, game.turn)
         lastTurn = game.turn
       }
-    } catch {
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : 'sim error'
+      game = softFinish(game, `Match halted (${reason}).`)
+      break
+    }
+    const afterMark = mark(game)
+    if (afterMark === beforeMark) stall += 1
+    else stall = 0
+    lastMark = afterMark
+    if (stall >= 12) {
+      game = softFinish(game, 'Match halted (soft-lock).')
       break
     }
   }
 
-  if (!game.over) game = softFinish(game)
+  if (!game.over) game = softFinish(game, guard >= 1200 ? 'Match halted (step cap).' : 'Match halted (soft-lock).')
   if (doTrain) {
     flushGame(steps, game)
     samples = steps.length

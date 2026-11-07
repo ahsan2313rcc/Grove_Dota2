@@ -1,4 +1,4 @@
-import { chooseAiAction, chooseAiPending, cycleStrat, DEFAULT_STRAT } from './ai.ts'
+import { chooseAiAction, chooseAiPendingForSeat, cycleStrat, DEFAULT_STRAT, searchModeForStrat } from './ai.ts'
 import { display, firesAbility, HERO_BY_ID } from './catalog.ts'
 import { apply, createGame, type SeatSpec } from './engine.ts'
 import {
@@ -1405,14 +1405,16 @@ export function runMatchFast(seed: number, seats: number, strats?: AiStrat[], gu
         tracker.observe(before, { type: 'ready' }, game)
       } else if (game.pending) {
         const before = game
-        const ids = chooseAiPending(game)
+        const ids = chooseAiPendingForSeat(game)
         game = apply(game, { type: 'choose', ids })
         tracker.observe(before, { type: 'choose', ids }, game)
         if (game.pending && pendingKey(game.pending) === pendingKey(before.pending)) {
           game = { ...game, pending: null, log: [...game.log, 'Forced past a stuck choice.'] }
         }
       } else {
-        const action = chooseAiAction(game, 'fast')
+        const strat = game.players[game.active]?.strat ?? DEFAULT_STRAT
+        const mode = searchModeForStrat(strat, true)
+        const action = chooseAiAction(game, mode)
         const before = game
         game = apply(game, action)
         tracker.observe(before, action, game)
@@ -1463,8 +1465,19 @@ export function runMatchFast(seed: number, seats: number, strats?: AiStrat[], gu
       lastMark = afterMark
     }
 
-    // Recycle loops / endless final-round thrash — cut them short.
-    if (endsWithoutDeckDrop >= 16 || noProgress >= 14 || steps >= 700) break
+    // Recycle loops / endless final-round thrash — cut them short with distinct reasons.
+    if (endsWithoutDeckDrop >= 16) {
+      game = softFinish(game, 'Match halted (recycle loop).')
+      break
+    }
+    if (noProgress >= 14) {
+      game = softFinish(game, 'Match halted (soft-lock).')
+      break
+    }
+    if (steps >= 700) {
+      game = softFinish(game, 'Match halted (step cap).')
+      break
+    }
   }
   if (!game.over) game = softFinish(game, 'Match halted (soft-lock).')
   return tracker.finish(game)
@@ -1499,7 +1512,7 @@ function nudgeStuck(game: Game, tracker: BalanceTracker, depth: number): Game {
   }
   if (game.pending) {
     const before = game
-    const ids = chooseAiPending(game)
+    const ids = chooseAiPendingForSeat(game)
     let next = apply(game, { type: 'choose', ids })
     tracker.observe(before, { type: 'choose', ids }, next)
     if (next.pending && pendingKey(next.pending) === pendingKey(before.pending)) {

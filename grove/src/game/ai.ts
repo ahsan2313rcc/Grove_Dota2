@@ -467,6 +467,32 @@ function playBiasFast(
   return bonus
 }
 
+/**
+ * Pending picker that honors the seat strat (Neural / Challenge / heuristic).
+ * Used by engine settle so nested AI choices match the brain on that seat.
+ */
+export function chooseAiPendingForSeat(state: Game): string[] {
+  const pending = state.pending
+  if (!pending) return []
+  const strat = state.players[pending.actor]?.strat ?? DEFAULT_STRAT
+  if (strat === 'neural') {
+    // Multi-select prompts need the heuristic splitter/assigner.
+    if (
+      pending.min > 1
+      || pending.mode === 'split'
+      || pending.mode === 'assign'
+      || pending.mode === 'groups'
+    ) {
+      return chooseAiPending(state)
+    }
+    return chooseAiPendingNeural(state)
+  }
+  if (searchModeForStrat(strat, false) === 'challenge') {
+    return chooseAiPendingChallenge(state)
+  }
+  return chooseAiPending(state)
+}
+
 /** Smart answers for pending prompts (also used by engine settle for AI / autoAll). */
 export function chooseAiPending(state: Game): string[] {
   const pending = state.pending
