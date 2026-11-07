@@ -56,8 +56,11 @@ import {
   saveLocalMatch,
   type SavedLocalMatch,
 } from './local/save.ts'
+import { HEROES, ITEMS, TERRAINS } from './game/catalog.ts'
+import { CardArt } from './ui/CardArt.tsx'
 import { Glossary } from './ui/Glossary.tsx'
 import { Lab } from './ui/Lab.tsx'
+import { Rules } from './ui/Rules.tsx'
 import { type DebugSpeed, type DebugView } from './ui/DebugRail.tsx'
 import { OnlinePlay } from './ui/OnlinePlay.tsx'
 import { ScoreRulesPanel } from './ui/ScoreRulesPanel.tsx'
@@ -717,6 +720,10 @@ export default function App() {
   )
 }
 
+const LOBBY_FAN = ['crystal_maiden', 'juggernaut', 'axe', 'io', 'techies']
+const ITEM_COUNT = ITEMS.reduce((sum, item) => sum + item.copies, 0)
+const TERRAIN_COUNT = TERRAINS.length * 12
+
 function Lobby({
   onStart,
   onOnline,
@@ -745,6 +752,7 @@ function Lobby({
   const [fault, setFault] = useState('')
   const [glossary, setGlossary] = useState(false)
   const [lab, setLab] = useState(false)
+  const [rules, setRules] = useState(false)
   const [scoreOpen, setScoreOpen] = useState(false)
   const [lobbyRules, setLobbyRules] = useState<ScoreRules>(() => cloneRules(getScoreRules()))
   const [savedLocal, setSavedLocal] = useState<SavedLocalMatch | null>(() => loadLocalMatch())
@@ -805,15 +813,38 @@ function Lobby({
       <div className="lobby-copy">
         <p className="eyebrow">A shared deck of heroes</p>
         <h1>Grove</h1>
-        <p className="lede">Each player scores for themselves. Two actions a turn — draw a card, or play one. Terrains are played three at a time for free: two of a kind plus one scores 3, one of each scores 5, and three of a kind scores 8 and takes a hidden reward. Heroes score in teams by attribute — core up to 15, mix up to 12 with an attack bonus.</p>
-        <dl>
-          <div><dt>Deck</dt><dd>127 heroes, 36 items, 36 terrains</dd></div>
-          <div><dt>Hand</dt><dd>Five to open. Seven is the limit.</dd></div>
-          <div><dt>End</dt><dd>Ancient final round, or when the deck is empty.</dd></div>
+        <p className="lede">Draft heroes into teams, lay terrain in sets of three, and race for the most points before The Ancient ends the game.</p>
+        <div className="lobby-fan" aria-hidden>
+          {LOBBY_FAN.map((id) => (
+            <CardArt key={id} defId={id} className="lobby-fan-card" />
+          ))}
+        </div>
+        <ol className="lobby-steps">
+          <li>
+            <strong>Draw two</strong>
+            <span>Start each turn with two cards, then spend two actions: draw one more or play a card.</span>
+          </li>
+          <li>
+            <strong>Build teams</strong>
+            <span>Up to five heroes a team. Matching attributes score up to 15, mixed teams up to 12.</span>
+          </li>
+          <li>
+            <strong>Lay terrain</strong>
+            <span>Any three terrains, free: 3 for a pair, 5 for one of each, 8 and a reward for three alike.</span>
+          </li>
+        </ol>
+        <dl className="lobby-facts">
+          <div><dt>Heroes</dt><dd>{HEROES.length}</dd></div>
+          <div><dt>Items</dt><dd>{ITEM_COUNT}</dd></div>
+          <div><dt>Terrains</dt><dd>{TERRAIN_COUNT}</dd></div>
+          <div><dt>Hand limit</dt><dd>7</dd></div>
         </dl>
       </div>
       <form className="lobby-card" onSubmit={(event) => event.preventDefault()}>
-        <h2>Sit down</h2>
+        <header className="lobby-card-head">
+          <h2>Sit down</h2>
+          <p className="quiet">Pick who plays, then start.</p>
+        </header>
         <fieldset className="player-count">
           <legend>Players</legend>
           <div className="layout-picks" role="group" aria-label="How many players">
@@ -879,8 +910,61 @@ function Lobby({
             )
           })}
         </ul>
-        <fieldset className="debug-lobby">
-          <legend>Match options</legend>
+        {savedLocal && !debugPreview ? (
+          <div className="resume-box" data-testid="resume-local-box">
+            <p className="quiet">Unfinished local match found.</p>
+            <p className="quiet">{describeLocalMatch(savedLocal)}</p>
+            <button
+              type="button"
+              className="primary block"
+              data-testid="resume-local"
+              onClick={() => onResumeLocal(savedLocal)}
+            >
+              Return to game
+            </button>
+            <button
+              type="button"
+              className="block"
+              data-testid="discard-local"
+              onClick={() => {
+                clearLocalMatch()
+                setSavedLocal(null)
+              }}
+            >
+              Discard saved match
+            </button>
+          </div>
+        ) : null}
+        <button type="button" className="primary block lobby-start" data-testid="play-solo" onClick={start}>
+          {debugPreview ? `Sim ${queue} game${queue === 1 ? '' : 's'}` : savedLocal ? 'New match' : 'Start match'}
+        </button>
+        <p className="quiet lobby-hint">
+          {debugPreview
+            ? 'Seat strats apply to every simulated match. Blank seed rolls a random start.'
+            : humans >= 2
+              ? 'Multiple humans pass the seat automatically.'
+              : humans === 1
+                ? 'You go first. AI seats take their turns on their own.'
+                : 'All AI is fine for spectating and debugging.'}
+        </p>
+        <button type="button" className="block" data-testid="play-online" onClick={onOnline}>Play online (ranked)</button>
+        <details className="lobby-options">
+          <summary>
+            <span>Match options</span>
+            <span className="quiet">
+              AI {thoughtPower}/10 · {lobbyRules.ancientEndgame ? 'Ancient on' : 'Ancient off'}{debugMode ? ' · debug' : ''}
+            </span>
+          </summary>
+          <div className="debug-lobby">
+          <label>
+            Seed
+            <input
+              data-testid="seed"
+              placeholder="Random"
+              value={seedText}
+              onChange={(event) => setSeedText(event.target.value)}
+            />
+          </label>
           <p className="quiet">
             Heuristic seats (Balanced / Tempo / Architect / Spite) use Challenge search. Pick <strong>Neural</strong> on a seat to play the trained net.
           </p>
@@ -915,7 +999,7 @@ function Lobby({
           </label>
           <p className="quiet">
             {lobbyRules.ancientEndgame
-              ? 'The Ancient is in the deck: draw reveal awards +10, then each seat gets one final turn.'
+              ? 'The Ancient is in the deck. Whoever draws it puts it on the board, worth +10 to whoever holds it at the end, and the final round begins.'
               : 'No Ancient — the match ends when the shared deck empties.'}
           </p>
           <label className="check-row">
@@ -971,59 +1055,17 @@ function Lobby({
               </p>
             </>
           ) : null}
-        </fieldset>
-        <p className="quiet">
-          {debugPreview
-            ? 'Seat strats apply to every simulated match. Blank seed rolls a random start.'
-            : humans >= 2
-              ? 'Multiple humans pass the seat automatically.'
-              : humans === 1
-                ? 'You go first. AI seats take their turns on their own.'
-                : 'All AI is fine for spectating and debugging.'}
-        </p>
-        {savedLocal && !debugPreview ? (
-          <div className="resume-box" data-testid="resume-local-box">
-            <p className="quiet">Unfinished local match found.</p>
-            <p className="quiet">{describeLocalMatch(savedLocal)}</p>
-            <button
-              type="button"
-              className="primary block"
-              data-testid="resume-local"
-              onClick={() => onResumeLocal(savedLocal)}
-            >
-              Return to game
-            </button>
-            <button
-              type="button"
-              className="block"
-              data-testid="discard-local"
-              onClick={() => {
-                clearLocalMatch()
-                setSavedLocal(null)
-              }}
-            >
-              Discard saved match
-            </button>
           </div>
-        ) : null}
-        <button type="button" className="primary block" data-testid="play-solo" onClick={start}>
-          {debugPreview ? `Sim ${queue} game${queue === 1 ? '' : 's'}` : savedLocal ? 'New match' : 'Start match'}
-        </button>
-        <button type="button" className="block" data-testid="play-online" onClick={onOnline}>Play online (ranked)</button>
-        <button type="button" className="block" data-testid="glossary-open" onClick={() => setGlossary(true)}>Glossary</button>
-        <button type="button" className="block" data-testid="lab-open" onClick={() => setLab(true)}>Ability Lab</button>
-        <label>
-          Seed
-          <input
-            data-testid="seed"
-            placeholder="Random"
-            value={seedText}
-            onChange={(event) => setSeedText(event.target.value)}
-          />
-        </label>
+        </details>
+        <div className="lobby-links">
+          <button type="button" data-testid="rules-open" onClick={() => setRules(true)}>Rules</button>
+          <button type="button" data-testid="glossary-open" onClick={() => setGlossary(true)}>Glossary</button>
+          <button type="button" data-testid="lab-open" onClick={() => setLab(true)}>Ability Lab</button>
+        </div>
         {fault ? <p className="warn">{fault}</p> : null}
       </form>
       {glossary ? <Glossary onClose={() => setGlossary(false)} /> : null}
+      {rules ? <Rules onClose={() => setRules(false)} /> : null}
       {lab ? <Lab onClose={() => setLab(false)} onPlay={onLab} /> : null}
       {scoreOpen ? (
         <div className="scrim" onClick={() => setScoreOpen(false)}>
