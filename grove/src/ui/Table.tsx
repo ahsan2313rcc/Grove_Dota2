@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react'
-import { display, RECAST_IDS, RECAST_RULE, TRAP_RULES } from '../game/catalog.ts'
+import { display, RECAST_IDS, RECAST_RULE, TRAP_RULE_STEPS } from '../game/catalog.ts'
 import { comboPlans, morphCasts, needsTeam, playableFromGrave, teamsFor, undyingRevive } from '../game/engine.ts'
 import { allLocs, findHero, isTrapHero, scoreState, scoreTeam } from '../game/flow.ts'
 import { teamShapes } from '../game/scoring.ts'
@@ -999,13 +999,7 @@ function Detail({
           {' — pick a team above.'}
         </p>
         {info?.spell ? <p className="spell">{info.spell}</p> : null}
-        {trap ? (
-          <p className="trap-blurb">
-            <button type="button" className="trap-hint" title={TRAP_RULES} data-testid="trap-hint">
-              Trap rules
-            </button>
-          </p>
-        ) : null}
+        {trap ? <TrapRulesHint /> : null}
         {info?.text ? <p>{info.text}</p> : null}
       </div>
     )
@@ -1068,13 +1062,7 @@ function Detail({
     <div className="detail" data-testid="card-detail">
       <DetailHead name={info.name} timing={timing} free={free} />
       {info.spell ? <p className="spell">{info.spell}</p> : null}
-      {timing === 'trap' ? (
-        <p className="trap-blurb">
-          <button type="button" className="trap-hint" title={TRAP_RULES} data-testid="trap-hint">
-            Trap rules
-          </button>
-        </p>
-      ) : null}
+      {timing === 'trap' ? <TrapRulesHint /> : null}
       <p>{info.text}</p>
       {RECAST_IDS.has(card.defId) ? (
         <p className="trap-blurb">
@@ -1134,6 +1122,21 @@ function DetailHead({
           {free ? <small className="detail-free" data-testid="detail-free">Free</small> : null}
         </span>
       ) : null}
+    </div>
+  )
+}
+
+function TrapRulesHint() {
+  return (
+    <div className="trap-blurb trap-rules-wrap" data-testid="trap-hint">
+      <button type="button" className="trap-hint">
+        Trap rules
+      </button>
+      <ol className="trap-rules-list">
+        {TRAP_RULE_STEPS.map((step) => (
+          <li key={step}>{step}</li>
+        ))}
+      </ol>
     </div>
   )
 }

@@ -62,9 +62,16 @@ function hero(
   return { id, name, attr, range, spell, text, timing }
 }
 
-/** Shared trap rules — shown via the Trap rules hover hint in the UI. */
-export const TRAP_RULES =
-  'Play face-down on any team with room for another hero (yours or an enemy\'s) — one trap per team, never on a full or closed team. While face down, that team scores no attribute bonus. When another hero enters, reveal and resolve this before that hero\'s ability (the controller is whoever controls the team). Afterwards a trap that does not sacrifice itself joins the team if there is room; otherwise it goes to the grave. Snares hurt the controller; wards help them.'
+/** Shared trap rules — action sequence shown via the Trap rules hover hint. */
+export const TRAP_RULE_STEPS = [
+  'Play face-down on any team with room for another hero (yours or an enemy’s).',
+  'One trap per team — never on a full or closed team.',
+  'While face down, that team scores no attribute bonus.',
+  'Trigger: another hero enters that team.',
+  'Reveal and resolve this before that hero’s ability (the controller is whoever controls the team).',
+  'Afterwards, a trap that does not sacrifice itself joins the team if there is room; otherwise it goes to the grave.',
+  'Snares hurt the controller; wards help them.',
+] as const
 
 /** Anti-loop reminder — shown via the Recast rule hint in the UI, not pasted onto every card. */
 export const RECAST_RULE =
@@ -118,7 +125,7 @@ export const HEROES: HeroDef[] = [
     'aura',
   ),
   hero('night_stalker', 'Night Stalker', 'STR', 'Melee', 'Dark Ascension', 'Steal 2 cards at random from target opponent.', 'cast'),
-  hero('ogre_magi', 'Ogre Magi', 'STR', 'Melee', 'Multicast', 'The entering hero activates its ability twice.', 'trap'),
+  hero('ogre_magi', 'Ogre Magi', 'STR', 'Melee', 'Multicast', 'Place face-down. When triggered, the entering hero activates its ability twice.', 'trap'),
   hero('omniknight', 'Omniknight', 'STR', 'Melee', 'Guardian Angel', 'You cannot add more heroes into this team. All allied heroes in this team are immune to all effects.', 'aura'),
   hero('phoenix', 'Phoenix', 'STR', 'Ranged', 'Supernova', 'You may exile Phoenix, then return target enemy team to the bottom of the deck.', 'cast'),
   hero('primal_beast', 'Primal Beast', 'STR', 'Melee', 'Uproar', 'Until your next turn, you cannot play hero cards, but you may play item cards as if they were instants.', 'cast'),
@@ -147,7 +154,7 @@ export const HEROES: HeroDef[] = [
     'AGI',
     'Melee',
     'Track',
-    "The controller reveals target opponent's hand and takes a hero card from it.",
+    'Place face-down. When triggered, the controller reveals target opponent\'s hand and takes a hero card from it.',
     'trap',
   ),
   hero(
@@ -156,7 +163,7 @@ export const HEROES: HeroDef[] = [
     'AGI',
     'Melee',
     'Spin Web',
-    'Exile the entering hero.',
+    'Place face-down. When triggered, exile the entering hero.',
     'trap',
   ),
   hero('clinkz', 'Clinkz', 'AGI', 'Ranged', 'Death Pact', 'Exile the top 5 cards of the deck. You may play any number of those exiled item cards for free this turn.', 'cast'),
@@ -172,7 +179,7 @@ export const HEROES: HeroDef[] = [
     'AGI',
     'Melee',
     'Switch Discipline',
-    "The controller may play a hero from their hand into this team for free. Its ability resolves, then the entering hero's.",
+    'Place face-down. When triggered, the controller may play a hero from their hand into this team for free. Its ability resolves, then the entering hero\'s.',
     'trap',
   ),
   hero('lone_druid', 'Lone Druid', 'AGI', 'Ranged', 'Summon Spirit Bear', 'Take the top Tower card into your hand. You may play it immediately for free.', 'cast'),
@@ -180,7 +187,7 @@ export const HEROES: HeroDef[] = [
   hero('medusa', 'Medusa', 'AGI', 'Ranged', 'Stone Gaze', 'Exile target enemy team. Return it to its owner whenever Medusa leaves the board.', 'cast'),
   hero('meepo', 'Meepo', 'AGI', 'Melee', 'Divided We Stand', 'Gain +1 point for each terrain type you control.', 'aura'),
   hero('mirana', 'Mirana', 'AGI', 'Ranged', 'Sacred Arrow', 'Reveal the top card of the deck. If it is a hero, you may play it immediately for free; otherwise put it into the grave.', 'cast'),
-  hero('monkey_king', 'Monkey King', 'AGI', 'Melee', 'Wukong\'s Command', 'The controller loses their next turn.', 'trap'),
+  hero('monkey_king', 'Monkey King', 'AGI', 'Melee', 'Wukong\'s Command', 'Place face-down. When triggered, the controller loses their next turn.', 'trap'),
   hero(
     'morphling',
     'Morphling',
@@ -201,7 +208,7 @@ export const HEROES: HeroDef[] = [
     'AGI',
     'Melee',
     'Cloak and Dagger',
-    'The controller cannot activate abilities until their next turn.',
+    'Place face-down. When triggered, the controller cannot activate abilities until their next turn.',
     'trap',
   ),
   hero('shadow_fiend', 'Shadow Fiend', 'AGI', 'Ranged', 'Necromastery', 'Whenever an enemy hero is destroyed, draw 1.', 'aura'),
@@ -211,7 +218,7 @@ export const HEROES: HeroDef[] = [
     'AGI',
     'Melee',
     'Shadow Dance',
-    'The controller discards 3 cards, then every other player draws 1.',
+    'Place face-down. When triggered, the controller discards 3 cards, then every other player draws 1.',
     'trap',
   ),
   hero('sniper', 'Sniper', 'AGI', 'Ranged', 'Assassinate', 'Destroy a hero an opponent controls that has more heroes in its team than Sniper.', 'cast'),
@@ -222,7 +229,7 @@ export const HEROES: HeroDef[] = [
     'AGI',
     'Ranged',
     'Refraction',
-    "Until the controller's next turn, heroes in this team cannot be destroyed.",
+    'Place face-down. When triggered, until the controller\'s next turn, heroes in this team cannot be destroyed.',
     'trap',
   ),
   hero('terrorblade', 'Terrorblade', 'AGI', 'Melee', 'Sunder', 'Swap control of target team you control with a team an opponent controls.', 'cast'),
@@ -314,13 +321,13 @@ export const HEROES: HeroDef[] = [
     'INT',
     'Ranged',
     'Shackles',
-    'Sacrifice Shadow Shaman. The controller sacrifices a hero from another team they control.',
+    'Place face-down. When triggered, sacrifice Shadow Shaman. The controller sacrifices a hero from another team they control.',
     'trap',
   ),
   hero('silencer', 'Silencer', 'INT', 'Ranged', 'Global Silence', 'Until your next turn, opponents cannot activate ability effects. Instant.', 'instant'),
   hero('skywrath_mage', 'Skywrath Mage', 'INT', 'Ranged', 'Mystic Flare', 'Target opponent discards a card for each Intelligence hero in this team.', 'cast'),
   hero('storm_spirit', 'Storm Spirit', 'INT', 'Ranged', 'Ball Lightning', 'Discard up to 2 cards from your hand. Gain +1 action for each discarded card this turn.', 'cast'),
-  hero('techies', 'Techies', 'INT', 'Ranged', 'Proximity Mines', 'Sacrifice this team, including Techies.', 'trap'),
+  hero('techies', 'Techies', 'INT', 'Ranged', 'Proximity Mines', 'Place face-down. When triggered, sacrifice this team, including Techies.', 'trap'),
   hero('tinker', 'Tinker', 'INT', 'Ranged', 'Rearm', 'Search the grave for an item card and put it into your hand. You may play it immediately.', 'cast'),
   hero('visage', 'Visage', 'INT', 'Ranged', 'Soul Assumption', 'You may discard up to 2 cards. Destroy an enemy hero for each discarded card.', 'cast'),
   hero('warlock', 'Warlock', 'INT', 'Ranged', 'Fatal Bonds', 'Target an enemy team. Until your next turn, whenever an enemy hero is destroyed, destroy another hero in that team (if any).', 'cast'),

@@ -42,8 +42,8 @@ describe('card retunes', () => {
     expect(TRAP_IDS.has('shadow_shaman')).toBe(true)
     expect(TRAP_IDS.has('broodmother')).toBe(true)
     expect(HERO_BY_ID.techies?.timing).toBe('trap')
-    expect(HERO_BY_ID.techies?.text).toMatch(/Sacrifice this team/i)
-    expect(HERO_BY_ID.techies?.text).not.toMatch(/Play face down/i)
+    expect(HERO_BY_ID.techies?.text).toMatch(/^Place face-down\. When triggered,/i)
+    expect(HERO_BY_ID.techies?.text).toMatch(/sacrifice this team/i)
   })
 
   it('keeps the Recast rule as a shared hint, not pasted onto card text', () => {
