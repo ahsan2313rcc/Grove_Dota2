@@ -176,9 +176,6 @@ export function cast(state: Game, resume: CastResume): Game {
     const spell = `${heroTag(state, resume.sourceUid, display(resume.defId).name)}'s ability`
     if (state.silence && !shielded(state.silence.caster)) return log(state, `Global Silence stops ${spell}.`)
     if (abilitiesLocked(state, resume.actor) && !shielded(state.frost!.caster)) return log(state, `Shiva's Guard stops ${spell}.`)
-    if (state.disarm && state.disarm.caster !== resume.actor && !shielded(state.disarm.caster)) {
-      return log(state, `Disarm stops ${spell}.`)
-    }
     const orchid = state.players[resume.actor]?.orchid
     if (orchid && !shielded(orchid.caster)) return log(state, `Orchid stops ${spell}.`)
     const source = findHero(state, resume.sourceUid)
@@ -1321,7 +1318,8 @@ function effect(state: Game, resume: CastResume): Game {
       return bounce(state, uid, 'Frost Bind', false, actor)
     }
     case 'roshan':
-      return log({ ...state, disarm: stamp }, 'Roshan disarms all enemies — they cannot activate abilities until your next turn.')
+      return log({ ...state, silence: stamp }, 'Roshan silences opponents — they cannot activate abilities until your next turn.')
+
     case 'bloodseeker':
       return log({ ...state, rupture: stamp }, 'Rupture: leavers are destroyed until your next turn.')
     case 'huskar': {
@@ -2907,8 +2905,7 @@ function gateAbility(state: Game, heroUid: string, resume: CastResume): Game {
   if (
     loc.hero.muted ||
     (state.silence && !immuneFrom(state, heroUid, state.silence.caster)) ||
-    (orchid && !immuneFrom(state, heroUid, orchid.caster)) ||
-    (state.disarm && state.disarm.caster !== resume.actor && !immuneFrom(state, heroUid, state.disarm.caster))
+    (orchid && !immuneFrom(state, heroUid, orchid.caster))
   ) {
     return log(state, 'The ability is nullified.')
   }

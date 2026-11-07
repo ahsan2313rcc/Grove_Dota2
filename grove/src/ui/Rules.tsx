@@ -83,7 +83,7 @@ const MORE: Block[] = [
     summary: 'Draw 2 at turn start, then two actions. Ancient or empty deck starts the final round.',
     detail: [
       'Everyone is dealt 3. The Ancient is placed deeper by table size (about mid for 2, then 60% / 80% / 90% for larger tables, ±5%).',
-      'The Ancient is a neutral: play it free when drawn; +10 to whoever controls it at the end. Drawing it — or emptying the shared deck — starts the final round (one more turn each), then highest score wins.',
+      'Ancient Draw: Drawing the Ancient card starts the final round: each player gets one more turn, then the highest score wins — +10 to whoever controls the Ancient. Emptying the shared deck starts the same final round.',
       'Target score (default on): end your turn on it and still hold it alone at the start of your next turn to win early.',
       'Discards are your choice unless a card says at random. Immune heroes ignore every opponent effect.',
     ],

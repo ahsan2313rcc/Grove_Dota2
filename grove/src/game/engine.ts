@@ -224,7 +224,6 @@ function blank(seed: number, mode: 'hotseat' | 'ai' | 'online', seats: SeatSpec[
     naga: null,
     lockPlay: null,
     frost: null,
-    disarm: null,
     troll: null,
     viper: [],
     maledict: [],
@@ -1055,8 +1054,7 @@ function morphCast(state: Game, uid: string): Game {
     loc.hero.castTurn === state.turn ||
     loc.hero.muted ||
     silenced(state, uid) ||
-    (state.frost && state.frost.caster !== state.active) ||
-    (state.disarm && state.disarm.caster !== state.active)
+    (state.frost && state.frost.caster !== state.active)
   ) {
     return state
   }

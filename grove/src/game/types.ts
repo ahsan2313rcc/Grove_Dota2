@@ -261,8 +261,6 @@ export interface Game {
   lockPlay: Timed | null
   /** Shiva: opponents of caster cannot fire/reactivate hero abilities. */
   frost: Timed | null
-  /** Roshan Bash: opponents of caster cannot activate abilities until caster's next turn. */
-  disarm: Timed | null
   troll: { player: PlayerId; turn: number } | null
   viper: { uid: string; owner: PlayerId; fromTurn: number }[]
   maledict: { player: PlayerId; turn: number }[]

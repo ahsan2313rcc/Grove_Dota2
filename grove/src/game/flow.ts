@@ -377,7 +377,7 @@ export function abilitiesLocked(state: Game, id: PlayerId): boolean {
 }
 
 /**
- * Heaven's Halberd / Huskar / Doom: this seat cannot play hero cards.
+ * Heaven's Halberd / Huskar: this seat cannot play hero cards.
  * Does not stop reactivating a hero already in play (Satanic, Arcane, Keeper).
  */
 export function heroPlayBanned(state: Game, id: PlayerId): boolean {
@@ -1478,7 +1478,6 @@ export function expireStart(state: Game): Game {
     naga: drop(next.naga),
     lockPlay: drop(next.lockPlay),
     frost: drop(next.frost),
-    disarm: drop(next.disarm),
     noDraw: drop(next.noDraw),
     primalItems: drop(next.primalItems),
     rupture: drop(next.rupture),

@@ -21,25 +21,33 @@ describe('neutral abilities', () => {
     expect(REWARD_BY_ID.roshan?.spell).toBe('Bash')
   })
 
-  it('Roshan disarms enemies until the caster\'s next turn', () => {
+  it('Roshan silences opponents until the caster\'s next turn without blocking hero plays', () => {
     let game = ready()
     game = only(game, 0, ['roshan', 'sven'])
     game = only(game, 1, ['lina'])
     game = apply(game, { type: 'play', uid: uid(game, 0, 'roshan'), team: 'new' })
     game = passInstants(game)
-    expect(game.disarm).toBeTruthy()
-    expect(game.log.some((line) => /disarms all enemies/i.test(line))).toBe(true)
+    expect(game.silence).toBeTruthy()
+    expect(game.players[1].noHeroNow).toBe(false)
+    expect(game.log.some((line) => /silences opponents/i.test(line))).toBe(true)
 
     game = apply(game, { type: 'end' })
     game = apply(game, { type: 'ready' })
+    expect(game.silence).toBeTruthy()
+    const before = game.log.length
     const lina = game.players[1].hand.find((card) => card.defId === 'lina')!
     game = apply(game, { type: 'play', uid: lina.uid, team: 'new' })
     game = passInstants(game)
-    expect(game.log.some((line) => /Disarm stops|nullified/i.test(line))).toBe(true)
+    expect(find(game, 'lina')).toBeTruthy()
+    const added = game.log.slice(before)
+    expect(added.some((line) => /plays Lina/i.test(line))).toBe(true)
+    expect(added.some((line) => /Laguna|Choose an enemy/i.test(line))).toBe(false)
+    expect(game.pending).toBeNull()
+    expect(added.some((line) => /cannot play hero cards/i.test(line))).toBe(false)
 
     game = apply(game, { type: 'end' })
     game = apply(game, { type: 'ready' })
-    expect(game.disarm).toBeNull()
+    expect(game.silence).toBeNull()
   })
 
   it('Stone Golem is immune to enemy abilities', () => {

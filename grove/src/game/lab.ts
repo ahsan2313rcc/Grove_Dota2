@@ -324,7 +324,7 @@ function fingerprint(game: Game, skip: string, spend = 0): string {
       actions: seat.id === game.active ? seat.actions - spend : seat.actions,
     })),
     globals: [
-      game.silence, game.naga, game.lockPlay, game.frost, game.disarm, game.noDraw, game.primalItems, game.rupture, game.taxAction,
+      game.silence, game.naga, game.lockPlay, game.frost, game.noDraw, game.primalItems, game.rupture, game.taxAction,
       game.attrBan, game.darkSeer, game.troll, game.bonds, game.sdBan, game.maledict, game.soulbind, game.viper,
       game.reveal, game.freeItems, game.clinkzExile, game.freePlay, game.spellNullify, game.extraTurn, game.lassos,
       game.phased, game.medusaHold, game.infests, game.multicast,

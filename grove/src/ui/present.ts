@@ -57,7 +57,7 @@ export function shownRange(hero: BoardHero): Range | null {
 export function statusLines(game: Game, viewer: PlayerId): string[] {
   const lines: string[] = []
   const me = game.players[viewer]
-  if (me.noHeroNow) lines.push("You cannot play hero cards (Heaven's Halberd). Abilities already in play can still be reactivated.")
+  if (me.noHeroNow) lines.push('You cannot play hero cards this turn. Abilities already in play can still be reactivated.')
   if (me.skip) lines.push('You skip your next turn.')
   for (const player of game.players) {
     if (player.id !== viewer && player.skip) lines.push(`${player.name} skips their next turn.`)
@@ -65,7 +65,6 @@ export function statusLines(game: Game, viewer: PlayerId): string[] {
   if (game.lockPlay && game.lockPlay.caster !== viewer) lines.push('Chronosphere: you cannot play cards.')
   if (game.silence) lines.push('Global Silence: hero abilities do not fire.')
   if (me.orchid) lines.push('Orchid: you cannot activate abilities.')
-  if (game.disarm && game.disarm.caster !== viewer) lines.push('Disarmed: you cannot activate abilities.')
   if (game.naga) lines.push('Song of the Siren: heroes cannot be destroyed.')
   if (itemsLocked(game, viewer)) lines.push('Doom: you cannot play items.')
   if (instantsLocked(game, viewer)) lines.push('Battle Trance: you cannot play Instant cards.')
@@ -111,7 +110,7 @@ export function playBlock(game: Game, viewer: PlayerId, card: CardInst): string 
   const offTurn = game.active !== viewer
   if (offTurn && !instant) return "Only Instant cards play on an opponent's turn."
   if (catalogInstant && instantsLocked(game, viewer)) return 'Battle Trance stops Instant cards.'
-  if (card.kind === 'hero' && game.players[viewer].noHeroNow) return "Heaven's Halberd stops hero cards."
+  if (card.kind === 'hero' && game.players[viewer].noHeroNow) return 'You cannot play hero cards this turn.'
   if (card.kind === 'item' && itemsLocked(game, viewer)) return 'Doom stops items.'
   if (!instant && game.players[viewer].actions < 1) return 'No actions left.'
   return null

@@ -475,7 +475,7 @@ export const REWARDS: RewardDef[] = [
     range: 'Melee',
     timing: 'cast',
     spell: 'Bash',
-    text: 'A Melee Universal body. Whenever another hero in this team is destroyed, destroy Roshan instead. On play: disarm all enemies until your next turn (they cannot activate abilities). Aura.',
+    text: 'A Melee Universal body. Whenever another hero in this team is destroyed, destroy Roshan instead. On play: until your next turn, opponents cannot activate ability effects. Aura.',
   },
   { id: 'lotus', name: 'Lotus of Purification', kind: 'tower', copies: 2, instant: false, token: false, text: 'Draw cards from the deck until your hand has 7 cards.' },
   { id: 'glyph', name: 'Glyph of Fortification', kind: 'tower', copies: 2, instant: true, token: false, text: 'Until your next turn, all heroes in target allied team become immune to all effects. Instant.' },

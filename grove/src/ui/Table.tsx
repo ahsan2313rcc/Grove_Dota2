@@ -1266,7 +1266,7 @@ function WinConditionSheet({
         <h2 id="win-live-title">Win condition</h2>
         <p data-testid="win-final-rule">
           {game.ancientEnabled
-            ? 'The Ancient is a neutral. Drawing it starts the final round: each player gets one more turn, then the highest score wins — +10 to whoever controls The Ancient.'
+            ? 'Ancient Draw: Drawing the Ancient card starts the final round: each player gets one more turn, then the highest score wins — +10 to whoever controls the Ancient.'
             : 'When the shared deck empties, the final round begins: each player gets one more turn, then the highest score wins.'}
         </p>
         {target ? (

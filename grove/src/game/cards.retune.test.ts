@@ -71,7 +71,7 @@ describe('card retunes', () => {
     expect(REWARD_BY_ID.black_dragon?.instant).toBe(true)
     expect(REWARD_BY_ID.black_dragon?.text).toMatch(/discards 1/i)
     expect(REWARD_BY_ID.roshan?.timing).toBe('cast')
-    expect(REWARD_BY_ID.roshan?.text).toMatch(/disarm all enemies/i)
+    expect(REWARD_BY_ID.roshan?.text).toMatch(/cannot activate ability effects/i)
     expect(REWARD_BY_ID.tormentor?.timing).toBe('aura')
     expect(REWARD_BY_ID.stone_golem?.range).toBe('Melee')
     expect(REWARD_BY_ID.tormentor?.range).toBe('Melee')
