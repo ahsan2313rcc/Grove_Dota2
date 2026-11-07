@@ -949,7 +949,7 @@ function Lobby({
                 Scoring…
               </button>
               <p className="quiet">
-                Core combo {lobbyRules.coreCombo} · mix combo {lobbyRules.mixCombo}
+                Core combo {lobbyRules.coreCombo} · mix combo {lobbyRules.mixCombo} · pair combo {lobbyRules.pairCombo}
                 {lobbyRules.attackOnCore ? ' · atk on core' : ''}
                 {lobbyRules.attackOnMix ? ' · atk on mix' : ''}
                 {lobbyRules.ancientEndgame ? ' · Ancient on' : ' · Ancient off'}

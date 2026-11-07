@@ -343,7 +343,7 @@ describe('turn', () => {
     const actions = game.players[0].actions
     game = apply(game, { type: 'combo', uids: rivers })
     expect(game.players[0].actions).toBe(actions)
-    expect(game.players[0].combos[0]?.points).toBe(5)
+    expect(game.players[0].combos[0]?.points).toBe(8)
     expect(game.players[0].hand.some((card) => ['haste', 'double_damage', 'regen', 'arcane', 'shield', 'illusion'].includes(card.defId))).toBe(true)
   })
 

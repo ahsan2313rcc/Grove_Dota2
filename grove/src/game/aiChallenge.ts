@@ -6,7 +6,7 @@
  * important pending picks instead of keyword heuristics alone.
  */
 import { display, HERO_BY_ID } from './catalog.ts'
-import { apply, comboPlans, emberMoves, morphCasts, needsTeam, playableFromGrave, teamsFor, undyingRevive } from './engine.ts'
+import { aiComboPick, apply, comboPlans, emberMoves, morphCasts, needsTeam, playableFromGrave, teamsFor, undyingRevive } from './engine.ts'
 import {
   findHero,
   isTrapHero,
@@ -57,11 +57,8 @@ type BeamNode = {
 
 export function chooseAiActionChallenge(state: Game, actor: PlayerId, strat: AiStrat): Action {
   const budget = aiSearchBudget()
-  const plans = comboPlans(state)
-  const core = plans.find((plan) => plan.detail.startsWith('core'))
-  const mixed = plans.find((plan) => plan.detail.startsWith('mixed'))
-  if (core) return { type: 'combo', uids: core.uids }
-  if (mixed) return { type: 'combo', uids: mixed.uids }
+  const cash = aiComboPick(state)
+  if (cash) return { type: 'combo', uids: cash }
 
   const rootScore = evaluateChallenge(state, actor, strat)
   let beam: BeamNode[] = [{ state, first: null, score: rootScore, steps: 0 }]

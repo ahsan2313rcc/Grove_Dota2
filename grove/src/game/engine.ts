@@ -447,6 +447,13 @@ function resolveComboCard(state: Game, actor: PlayerId, uid: string): CardInst |
   return null
 }
 
+export function comboShape(cards: { defId: string }[]): 'core' | 'mixed' | 'pair' {
+  const kinds = new Set(cards.map((card) => card.defId))
+  if (kinds.size === 1) return 'core'
+  if (kinds.size === 3) return 'mixed'
+  return 'pair'
+}
+
 function combo(state: Game, uids: string[]): Game {
   const actor = state.active
   if (cardsLocked(state, actor)) return log(state, 'Chronosphere stops you from playing cards.')
@@ -454,10 +461,11 @@ function combo(state: Game, uids: string[]): Game {
   const cards = uids.map((uid) => resolveComboCard(state, actor, uid))
   if (cards.some((card) => !card || card.kind !== 'terrain')) return state
   const picked = cards as CardInst[]
-  const same = picked.every((card) => card.defId === picked[0]?.defId)
+  const shape = comboShape(picked)
+  const same = shape === 'core'
   const rules = getScoreRules()
-  const points = same ? rules.coreCombo : rules.mixCombo
-  const kind = same ? (picked[0]?.defId as 'river' | 'jungle' | 'lane') : 'mixed'
+  const points = same ? rules.coreCombo : shape === 'mixed' ? rules.mixCombo : rules.pairCombo
+  const kind = same ? (picked[0]?.defId as 'river' | 'jungle' | 'lane') : shape
   const graveTop = playableFromGrave(state, actor)
   const fromGraveUid = graveTop && uids.includes(graveTop.uid) ? graveTop.uid : null
   let next = state
@@ -474,7 +482,8 @@ function combo(state: Game, uids: string[]): Game {
     ...player,
     combos: [...player.combos, { id: comboId, owner: actor, cards: picked, points, kind, protectedBy: null }],
   }))
-  next = log(next, `${pname(next, actor)} sets ${same ? `three ${picked[0]?.defId}s` : 'a mixed path'} for ${points}.`)
+  const setName = same ? `three ${picked[0]?.defId}s` : shape === 'mixed' ? 'a mixed path' : 'a split path'
+  next = log(next, `${pname(next, actor)} sets ${setName} for ${points}.`)
   if (same && picked[0]) {
     const pile = picked[0].defId === 'river' ? 'runes' : picked[0].defId === 'jungle' ? 'neutrals' : 'towers'
     const reward = next[pile][0]
@@ -1280,7 +1289,27 @@ export function comboPlans(state: Game): { uids: string[]; label: string; detail
   if (river && jungle && lane) {
     push([river.uid, jungle.uid, lane.uid], 'River, Jungle, Lane', `mixed · ${rules.mixCombo}`)
   }
+  for (const kind of ['river', 'jungle', 'lane'] as const) {
+    const twins = pool.filter((card) => card.defId === kind).slice(0, 2)
+    const odd = pool.find((card) => card.defId !== kind)
+    if (twins.length === 2 && odd) {
+      push([...twins.map((card) => card.uid), odd.uid], `Two ${kind}s + ${odd.defId}`, `pair · ${rules.pairCombo}`)
+    }
+  }
   return plans
+}
+
+/** Best terrain set the AI should cash now: core / mixed always, a pair only when holding out stops paying. */
+export function aiComboPick(state: Game): string[] | null {
+  const plans = comboPlans(state)
+  const full = plans.find((plan) => plan.detail.startsWith('core')) ?? plans.find((plan) => plan.detail.startsWith('mixed'))
+  if (full) return full.uids
+  const pair = plans.find((plan) => plan.detail.startsWith('pair'))
+  if (!pair) return null
+  const seat = state.players[state.active]
+  const late = !!state.ancient || state.deck.length <= 12
+  const crowded = seat.hand.length >= seat.handLimit
+  return late || crowded ? pair.uids : null
 }
 
 export function emberMoves(state: Game): { uid: string; name: string }[] {

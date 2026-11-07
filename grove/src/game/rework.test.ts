@@ -129,3 +129,29 @@ describe('team movement', () => {
     expect(scoreState(game, 0).teams).toBeGreaterThan(0)
   })
 })
+
+describe('terrain sets', () => {
+  it('scores any three terrains: pair 3, mixed 5, core 8', () => {
+    let game = toHand(ready(), 0, ['river', 'river', 'lane', 'jungle', 'jungle', 'jungle'])
+    const hand = game.players[0].hand
+    const pair = [hand[0]!.uid, hand[1]!.uid, hand[2]!.uid]
+    game = apply(game, { type: 'combo', uids: pair })
+    expect(game.players[0].combos.at(-1)).toMatchObject({ kind: 'pair', points: 3 })
+    const jungles = game.players[0].hand.filter((card) => card.defId === 'jungle').map((card) => card.uid)
+    game = apply(game, { type: 'combo', uids: jungles })
+    expect(game.players[0].combos.at(-1)).toMatchObject({ kind: 'jungle', points: 8 })
+    expect(scoreState(game, 0).terrains).toBe(11)
+  })
+
+  it('Meepo scores each terrain type and Slardar draws per River card', () => {
+    let game = toHand(ready(), 0, ['river', 'river', 'lane', 'slardar'])
+    const terrains = game.players[0].hand.filter((card) => card.kind === 'terrain').map((card) => card.uid)
+    game = apply(game, { type: 'combo', uids: terrains })
+    ;[game] = team(game, 0, ['meepo'])
+    const meepo = scoreState(game, 0)
+    expect(meepo.total - meepo.teams - meepo.terrains).toBe(2)
+    const hand = game.players[0].hand.length
+    game = drain(apply(game, { type: 'play', uid: uidOf(game, 0, 'slardar'), team: 'new' }))
+    expect(game.players[0].hand.length).toBe(hand - 1 + 2)
+  })
+})

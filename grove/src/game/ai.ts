@@ -1,5 +1,5 @@
 import { display, HERO_BY_ID } from './catalog.ts'
-import { apply, comboPlans, emberMoves, morphCasts, needsTeam, playableFromGrave, teamsFor, undyingRevive } from './engine.ts'
+import { aiComboPick, apply, comboPlans, emberMoves, morphCasts, needsTeam, playableFromGrave, teamsFor, undyingRevive } from './engine.ts'
 import {
   allLocs,
   drawsLocked,
@@ -125,13 +125,10 @@ export function chooseAiAction(state: Game, mode: AiSearchMode = 'full'): Action
   const resolved: AiSearchMode =
     seatStrat === 'neural' ? 'neural' : mode === 'fast' ? 'fast' : mode === 'neural' ? 'neural' : mode === 'challenge' ? 'challenge' : mode
   const strat = heuristicFace(seatStrat)
-  const plans = comboPlans(state)
-  const core = plans.find((plan) => plan.detail.startsWith('core'))
-  const mixed = plans.find((plan) => plan.detail.startsWith('mixed'))
 
-  // Free terrain combos first. Prefer core (reward + same points). Never play a lone terrain.
-  if (core) return { type: 'combo', uids: core.uids }
-  if (mixed) return { type: 'combo', uids: mixed.uids }
+  // Free terrain combos first (core > mixed; pairs only once holding stops paying).
+  const cash = aiComboPick(state)
+  if (cash) return { type: 'combo', uids: cash }
 
   const freeExile = clinkzPick(state, actor)
   if (freeExile) return freeExile

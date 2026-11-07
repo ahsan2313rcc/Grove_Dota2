@@ -8,7 +8,7 @@
  * `chooseAiActionNeural` uses 1-ply apply + value(after) — quality over speed.
  */
 import { display, HERO_BY_ID } from './catalog.ts'
-import { apply, comboPlans, morphCasts, needsTeam, playableFromGrave, teamsFor, undyingRevive } from './engine.ts'
+import { aiComboPick, apply, morphCasts, needsTeam, playableFromGrave, teamsFor, undyingRevive } from './engine.ts'
 import { isTrapHero, preferredFoe, scoreState, teamById } from './flow.ts'
 import type { Action, AiStrat, CardInst, Game, PlayerId } from './types.ts'
 import baked from './data/nn-value.json'
@@ -370,12 +370,9 @@ export function encodePendingChoiceFeatures(choiceId: string): Float64Array {
 
 export function listNeuralCandidates(state: Game, actor: PlayerId): Action[] {
   const out: Action[] = []
-  const plans = comboPlans(state)
-  const core = plans.find((plan) => plan.detail.startsWith('core'))
-  const mixed = plans.find((plan) => plan.detail.startsWith('mixed'))
   // Prefer free combos, but still offer fallbacks if the combo somehow no-ops.
-  if (core) out.push({ type: 'combo', uids: core.uids })
-  else if (mixed) out.push({ type: 'combo', uids: mixed.uids })
+  const cash = aiComboPick(state)
+  if (cash) out.push({ type: 'combo', uids: cash })
 
   const morph = morphCasts(state)[0]
   if (morph) out.push({ type: 'morph', uid: morph.uid })

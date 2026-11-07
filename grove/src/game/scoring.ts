@@ -22,10 +22,12 @@ export interface ScoreRules {
   attackOnCore: boolean
   /** When true, teams without CORE take the attack bonus (mix or open). */
   attackOnMix: boolean
-  /** Three-of-a-kind terrain combo points. */
+  /** Three-of-a-kind terrain combo points (also takes the reward). */
   coreCombo: number
-  /** Mixed River/Jungle/Lane combo points. */
+  /** One River, one Jungle, one Lane. */
   mixCombo: number
+  /** Two of one terrain plus one other. */
+  pairCombo: number
   /** When true, The Ancient is shuffled into the deck after the opening deal. */
   ancientEndgame: boolean
 }
@@ -37,8 +39,9 @@ export const DEFAULT_SCORE_RULES: ScoreRules = {
   attackBonus: [0, 0, 1, 2, 3],
   attackOnCore: false,
   attackOnMix: true,
-  coreCombo: 5,
+  coreCombo: 8,
   mixCombo: 5,
+  pairCombo: 3,
   ancientEndgame: true,
 }
 
@@ -70,6 +73,7 @@ export function cloneRules(rules: ScoreRules): ScoreRules {
     attackOnMix: rules.attackOnMix,
     coreCombo: rules.coreCombo,
     mixCombo: rules.mixCombo,
+    pairCombo: rules.pairCombo ?? DEFAULT_SCORE_RULES.pairCombo,
     ancientEndgame: rules.ancientEndgame !== false,
   }
 }
@@ -88,6 +92,7 @@ export function normalizeRules(rules: ScoreRules): ScoreRules {
     attackOnMix: !!rules.attackOnMix,
     coreCombo: clamp(rules.coreCombo),
     mixCombo: clamp(rules.mixCombo),
+    pairCombo: clamp(rules.pairCombo ?? DEFAULT_SCORE_RULES.pairCombo),
     ancientEndgame: rules.ancientEndgame !== false,
   }
 }

@@ -70,7 +70,7 @@ export interface Combo {
   owner: PlayerId
   cards: CardInst[]
   points: number
-  kind: TerrainKind | 'mixed'
+  kind: TerrainKind | 'mixed' | 'pair'
   protectedBy: string | null
 }
 

@@ -20,7 +20,7 @@ export function ScoreRulesPanel({
     onChange(normalized)
   }
 
-  function setNum<K extends 'heroPoints' | 'coreCombo' | 'mixCombo'>(key: K, raw: number) {
+  function setNum<K extends 'heroPoints' | 'coreCombo' | 'mixCombo' | 'pairCombo'>(key: K, raw: number) {
     commit({ ...draft, [key]: raw })
   }
 
@@ -44,6 +44,10 @@ export function ScoreRulesPanel({
         <label>
           Mix combo
           <input data-testid="score-mix-combo" type="number" min={0} max={99} value={draft.mixCombo} onChange={(event) => setNum('mixCombo', Number(event.target.value) || 0)} />
+        </label>
+        <label>
+          Pair combo
+          <input data-testid="score-pair-combo" type="number" min={0} max={99} value={draft.pairCombo} onChange={(event) => setNum('pairCombo', Number(event.target.value) || 0)} />
         </label>
       </div>
       <p className="quiet debug-score-label">Core bonus · heroes 1–5 (applies at 3+)</p>

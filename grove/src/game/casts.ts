@@ -46,6 +46,8 @@ import {
   shuffle,
   strengthCount,
   teamById,
+  terrainCount,
+  terrainKinds,
   teamChoices,
   teamSize,
   toExile,
@@ -666,8 +668,8 @@ function questions(state: Game, resume: CastResume): Ask {
       }
     case 'hoodwink': {
       if (at > 0) return ready()
-      if (!state.players[actor].combos.some((combo) => combo.kind === 'jungle')) {
-        return fizzle('Sharpshooter needs a Jungle terrain combo.')
+      if (terrainCount(state, actor, 'jungle') === 0) {
+        return fizzle('Sharpshooter needs a Jungle terrain.')
       }
       const heroes = enemyHeroes(state, actor, kind)
       const combos: Choice[] = []
@@ -883,8 +885,8 @@ function questions(state: Game, resume: CastResume): Ask {
       return pose(actor, 'Return an enemy team to the bottom of the deck.', teamChoices(state, actor, kind, (_team, player) => player.id !== actor))
     }
     case 'ember_spirit': {
-      const lanes = state.players[actor].combos.filter((combo) => combo.kind === 'lane').length
-      if (lanes === 0) return fizzle('Sleight of Fist needs a Lane terrain combo.')
+      const lanes = terrainKinds(state, actor).size
+      if (lanes === 0) return fizzle('Fire Remnant needs a terrain.')
       if (at === 0) {
         return pose(actor, `Move up to ${lanes} hero(es) you own.`, ownHeroes(state, actor, kind), 1, lanes)
       }
@@ -1069,7 +1071,7 @@ function effect(state: Game, resume: CastResume): Game {
       return discardRandom(log(state, 'Meat Hook.'), loc.hero.controller, 1)
     }
     case 'slardar': {
-      const rivers = state.players[actor].combos.filter((combo) => combo.kind === 'river').length
+      const rivers = terrainCount(state, actor, 'river')
       return queueDraw(log(state, `Corrosive Haze draws ${rivers}.`), actor, rivers)
     }
     case 'spirit_breaker': {
@@ -1144,7 +1146,7 @@ function effect(state: Game, resume: CastResume): Game {
     case 'ember_spirit': {
       const dest = teams[0]
       if (!dest) return state
-      let next = log(state, 'Sleight of Fist.')
+      let next = log(state, 'Fire Remnant.')
       for (const uid of heroes) next = moveOnto(next, uid, actor, dest)
       return next
     }

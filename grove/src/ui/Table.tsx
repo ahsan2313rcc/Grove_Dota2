@@ -903,7 +903,7 @@ function Lane({
         {combos.length > 0 ? (
           <div className="combos">
             {combos.map((entry) => (
-              <article key={entry.id} className="combo-chip" title={entry.kind === 'mixed' ? 'Mixed path' : `Three ${entry.kind}s`}>
+              <article key={entry.id} className="combo-chip" title={entry.kind === 'mixed' ? 'Mixed path' : entry.kind === 'pair' ? 'Split path' : `Three ${entry.kind}s`}>
                 <strong>{entry.points}</strong>
                 <div className="combo-minis">
                   {entry.cards.map((card) => (

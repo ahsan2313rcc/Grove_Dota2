@@ -330,7 +330,7 @@ export function scoreState(state: Game, id: PlayerId): { teams: number; terrains
   const player = state.players[id]
   const teams = player.teams.reduce((sum, team) => sum + scoreTeam(state, team).points, 0)
   const terrains = player.combos.reduce((sum, combo) => sum + combo.points, 0)
-  const meepoBonus = controls(state, id, 'meepo') ? player.combos.length : 0
+  const meepoBonus = controls(state, id, 'meepo') ? terrainKinds(state, id).size : 0
   const ancientBonus = state.ancient?.bonusSeat === id ? ANCIENT_BONUS : 0
   return { teams, terrains, total: teams + terrains + meepoBonus + ancientBonus }
 }
@@ -1270,6 +1270,14 @@ export function resolveTeam(state: Game, owner: PlayerId, teamId: string): [Game
   const found = teamById(state, teamId)
   if (!found || found.player.id !== owner) return null
   return [state, teamId]
+}
+
+/** Terrain cards of one kind across every set the seat controls. */
+export function terrainCount(state: Game, id: PlayerId, kind: string): number {
+  return state.players[id].combos.reduce(
+    (sum, combo) => sum + combo.cards.filter((card) => card.defId === kind).length,
+    0,
+  )
 }
 
 export function terrainKinds(state: Game, id: PlayerId): Set<string> {

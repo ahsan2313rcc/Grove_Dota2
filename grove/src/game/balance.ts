@@ -1671,7 +1671,7 @@ function shapeCountsFor(game: Game, playerId: number): ShapeCounts {
     if (!hasCore && !hasMix) shapes.openTeams += 1
   }
   for (const combo of player.combos) {
-    if (combo.kind === 'mixed') {
+    if (combo.kind === 'mixed' || combo.kind === 'pair') {
       shapes.mixTerrains += 1
       shapes.mixTerrainPoints += combo.points
     } else {
