@@ -287,8 +287,8 @@ export interface Game {
   extraTurn: PlayerId | null
   /** Axe: opponents of caster cannot draw from the deck. */
   noDraw: Timed | null
-  /** Necrophos: opponents cannot play heroes of this attribute. */
-  attrBan: { attr: Attr; caster: PlayerId } | null
+  /** Necrophos: opponents cannot play heroes of this attribute while the source Necrophos remains on the board. */
+  attrBan: { attr: Attr; caster: PlayerId; sourceUid: string } | null
   /** Amplify / free-item grants remaining this turn. */
   freeItems: number
   /** Clinkz: item cards that may be played for free from exile this turn. */

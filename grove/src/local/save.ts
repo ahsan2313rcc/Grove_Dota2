@@ -1,8 +1,10 @@
-import type { Game } from '../game/types.ts'
+import type { MatchReport } from '../game/balance.ts'
+import type { AiStrat, Game } from '../game/types.ts'
 import type { ScoreRules } from '../game/scoring.ts'
 import { cloneRules, DEFAULT_SCORE_RULES } from '../game/scoring.ts'
 
 const LOCAL_KEY = 'grove.local.match'
+const DEBUG_KEY = 'grove.local.debug'
 const ONLINE_AUTH_KEY = 'grove.online.auth'
 
 /** In-memory fallback when localStorage is unavailable (tests / private mode). */
@@ -112,4 +114,60 @@ export function describeLocalMatch(saved: SavedLocalMatch): string {
   const mode = humans >= 2 ? 'Hotseat' : ais > 0 ? 'Solo' : 'Match'
   const turn = saved.game.turn
   return `${mode} · turn ${turn} · seed ${saved.seed}`
+}
+
+/** Last debug/sim session so lobby can reopen Stats without starting from scratch. */
+export type SavedDebugSession = {
+  v: 1
+  seed: number
+  seats: number
+  strats: AiStrat[]
+  queueSize: number
+  view: 'stats' | 'watch'
+  trainNeural: boolean
+  thoughtPower: number
+  reports: MatchReport[]
+  rules: ScoreRules
+  savedAt: number
+}
+
+export function loadDebugSession(): SavedDebugSession | null {
+  try {
+    const raw = storeGet(DEBUG_KEY)
+    if (!raw) return null
+    const data = JSON.parse(raw) as SavedDebugSession
+    if (!data || data.v !== 1 || typeof data.seed !== 'number') return null
+    if (!Array.isArray(data.strats) || !Array.isArray(data.reports)) return null
+    return {
+      ...data,
+      seats: Math.max(2, Math.min(8, Math.floor(data.seats) || 2)),
+      queueSize: Math.max(1, Math.floor(data.queueSize) || 100),
+      view: data.view === 'watch' ? 'watch' : 'stats',
+      trainNeural: !!data.trainNeural,
+      thoughtPower: Math.floor(data.thoughtPower) || 7,
+      rules: data.rules ? cloneRules(data.rules) : cloneRules(DEFAULT_SCORE_RULES),
+    }
+  } catch {
+    return null
+  }
+}
+
+export function saveDebugSession(session: Omit<SavedDebugSession, 'v' | 'savedAt'>): void {
+  const payload: SavedDebugSession = {
+    v: 1,
+    ...session,
+    rules: cloneRules(session.rules),
+    savedAt: Date.now(),
+  }
+  storeSet(DEBUG_KEY, JSON.stringify(payload))
+}
+
+export function clearDebugSession(): void {
+  storeRemove(DEBUG_KEY)
+}
+
+export function describeDebugSession(saved: SavedDebugSession): string {
+  const finished = saved.reports.filter((report) => report.over).length
+  const when = new Date(saved.savedAt).toLocaleString()
+  return `${saved.seats} AI · seed ${saved.seed} · ${finished} finished · ${when}`
 }

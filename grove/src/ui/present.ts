@@ -70,7 +70,7 @@ export function statusLines(game: Game, viewer: PlayerId): string[] {
   if (instantsLocked(game, viewer)) lines.push('Battle Trance: you cannot play Instant cards.')
   if (game.noDraw && game.noDraw.caster !== viewer) lines.push("Berserker's Call: you cannot draw.")
   if (game.attrBan && game.attrBan.caster !== viewer) {
-    lines.push(`Reaper's Scythe: ${game.attrBan.attr} heroes are banned.`)
+    lines.push(`Reaper's Scythe: ${game.attrBan.attr} heroes are banned while Necrophos remains.`)
   }
   if (graveLocked(game, viewer)) lines.push('Muerta: you cannot take cards from the grave.')
   if (game.ancient) {

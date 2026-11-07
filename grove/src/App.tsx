@@ -51,10 +51,15 @@ import {
 } from './game/scoring.ts'
 import type { Action, AiStrat, Game } from './game/types.ts'
 import {
+  clearDebugSession,
   clearLocalMatch,
+  describeDebugSession,
   describeLocalMatch,
+  loadDebugSession,
   loadLocalMatch,
+  saveDebugSession,
   saveLocalMatch,
+  type SavedDebugSession,
   type SavedLocalMatch,
 } from './local/save.ts'
 import { HEROES, ITEMS, TERRAINS } from './game/catalog.ts'
@@ -421,6 +426,22 @@ export default function App() {
     })
   }
 
+  function persistDebugSession(extra?: Partial<SavedDebugSession>) {
+    if (!debug) return
+    saveDebugSession({
+      seed,
+      seats: seatCount,
+      strats: debugStrats,
+      queueSize,
+      view: debugView,
+      trainNeural,
+      thoughtPower,
+      reports,
+      rules: getScoreRules(),
+      ...extra,
+    })
+  }
+
   function leave() {
     queueToken.current += 1
     watchAdvanceRef.current += 1
@@ -442,6 +463,7 @@ export default function App() {
       else saveLocalMatch(live.seed, live.game, getScoreRules())
     } else if (debug) {
       clearLocalMatch()
+      persistDebugSession()
     }
     setLabSession(false)
     setReturnToLab(false)
@@ -456,6 +478,35 @@ export default function App() {
     setStratFilter(ALL_STRAT_FILTER)
     setDebugStrats(Array.from({ length: 2 }, (_, index) => cycleStrat(index)))
     resetScoreRules()
+  }
+
+  function resumeDebug(saved: SavedDebugSession) {
+    queueToken.current += 1
+    watchAdvanceRef.current += 1
+    archivedWatchRef.current = null
+    setScoreRules(saved.rules)
+    setMatch((value) => value + 1)
+    setSeed(saved.seed)
+    setSeatCount(
+      SEAT_OPTIONS.includes(saved.seats as SeatCount) ? (saved.seats as SeatCount) : 2,
+    )
+    setDebug(true)
+    setDebugSpeed(1)
+    setFocus(0)
+    setReports(saved.reports)
+    setDebugStrats(saved.strats)
+    setStratFilter(ALL_STRAT_FILTER)
+    setQueueSize(saved.queueSize)
+    setQueueLeft(0)
+    setRunningFast(false)
+    setRuns([])
+    setDebugView(saved.view === 'watch' ? 'stats' : saved.view)
+    setTrainNeural(saved.trainNeural)
+    trainNeuralRef.current = saved.trainNeural
+    liveTrainNeural = saved.trainNeural
+    setThoughtPower(saved.thoughtPower)
+    setAiThoughtPower(saved.thoughtPower)
+    watchRef.current = false
   }
 
   function resumeLocal(saved: SavedLocalMatch) {
@@ -640,10 +691,27 @@ export default function App() {
     setRuns([])
     setDebugView('stats')
     watchRef.current = false
+    saveDebugSession({
+      seed: nextSeed,
+      seats,
+      strats,
+      queueSize: total,
+      view: 'stats',
+      trainNeural,
+      thoughtPower,
+      reports: [],
+      rules,
+    })
     window.setTimeout(() => {
       void runFastQueue(nextSeed, total, seats, strats)
     }, 0)
   }
+
+  // Keep debug stats recoverable after Leave / refresh.
+  useEffect(() => {
+    if (!debug) return
+    persistDebugSession()
+  }, [debug, seed, seatCount, debugStrats, queueSize, debugView, trainNeural, thoughtPower, reports])
 
   if (online) {
     return <OnlinePlay onBack={() => setOnline(false)} />
@@ -656,6 +724,7 @@ export default function App() {
         onLabOpened={() => setReturnToLab(false)}
         onOnline={() => setOnline(true)}
         onResumeLocal={resumeLocal}
+        onResumeDebug={resumeDebug}
         onLab={(next, nextSeed) => {
           // Lab boards are scratch sessions: do not overwrite a saved match.
           setLabSession(true)
@@ -758,6 +827,7 @@ function Lobby({
   onStart,
   onOnline,
   onResumeLocal,
+  onResumeDebug,
   onLab,
   startLab = false,
   onLabOpened,
@@ -765,6 +835,7 @@ function Lobby({
   onOnline: () => void
   onLab: (game: Game, seed: number) => void
   onResumeLocal: (saved: SavedLocalMatch) => void
+  onResumeDebug: (saved: SavedDebugSession) => void
   startLab?: boolean
   onLabOpened?: () => void
   onStart: (
@@ -797,6 +868,7 @@ function Lobby({
   const [winOpen, setWinOpen] = useState(false)
   const [lobbyRules, setLobbyRules] = useState<ScoreRules>(() => cloneRules(getScoreRules()))
   const [savedLocal, setSavedLocal] = useState<SavedLocalMatch | null>(() => loadLocalMatch())
+  const [savedDebug, setSavedDebug] = useState<SavedDebugSession | null>(() => loadDebugSession())
   const [trainNeural, setTrainNeural] = useState(false)
   const [thoughtPower, setThoughtPower] = useState(() => bootAiThoughtPower())
 
@@ -985,6 +1057,34 @@ function Lobby({
               }}
             >
               Discard saved match
+            </button>
+          </div>
+        ) : null}
+        {savedDebug ? (
+          <div className="resume-box" data-testid="resume-debug-box">
+            <p className="quiet">Previous debug session found.</p>
+            <p className="quiet">{describeDebugSession(savedDebug)}</p>
+            <button
+              type="button"
+              className="primary block"
+              data-testid="resume-debug"
+              onClick={() => {
+                setDebugMode(true)
+                onResumeDebug(savedDebug)
+              }}
+            >
+              Load previous debug
+            </button>
+            <button
+              type="button"
+              className="block"
+              data-testid="discard-debug"
+              onClick={() => {
+                clearDebugSession()
+                setSavedDebug(null)
+              }}
+            >
+              Discard debug session
             </button>
           </div>
         ) : null}

@@ -864,7 +864,7 @@ describe('heroes', () => {
     expect(game.pending?.resume.kind).toBe('cast')
     game = apply(game, { type: 'choose', ids: [`hero:${sven?.uid ?? ''}`] })
     expect(game.pending?.resume.kind).toBe('instant-window')
-    expect(game.pending?.prompt).toMatch(/targeting Sven/)
+    expect(game.pending?.prompt).toMatch(/Target: Sven/)
   })
 
   it('returns an Eul target at the end of the turn without firing', () => {

@@ -1433,8 +1433,14 @@ function effect(state: Game, resume: CastResume): Game {
       const loc = findHero(state, heroes[0])
       const attrs = loc ? attrsOf(state, loc.hero) : []
       state = exileBoard(state, heroes[0], actor)
-      if (attrs[0]) state = { ...state, attrBan: { attr: attrs[0], caster: actor } }
-      return log(state, "Reaper's Scythe.")
+      if (attrs[0]) {
+        state = {
+          ...state,
+          attrBan: { attr: attrs[0], caster: actor, sourceUid: resume.sourceUid },
+        }
+        state = log(state, `Reaper's Scythe bans ${attrs[0]} while Necrophos remains.`)
+      }
+      return state
     }
     case 'oracle': {
       if (!heroes[0]) return state
@@ -2828,10 +2834,10 @@ export function offerInstantWindow(
   const about = display(resume.defId)
   const caster = pname(state, resume.actor)
   const targetNote = announceTargets(state, resume)
-  const targetPart = targetNote ? ` targeting ${targetNote}` : ''
+  const targetLine = targetNote ? `Target: ${targetNote}.` : 'No target chosen.'
   return ask(state, {
     actor: seat,
-    prompt: `${caster}'s ${about.name} (${about.spell ?? 'ability'}) is about to fire${targetPart} — ${about.text} Play an Instant to interrupt, or pass.`,
+    prompt: `${caster}'s ${about.spell ?? about.name} is about to fire. ${targetLine} ${about.text} Play an Instant to interrupt, or pass.`,
     mode: 'pick',
     min: 1,
     max: 1,
@@ -2845,6 +2851,13 @@ export function offerInstantWindow(
       })),
     ],
     resume: { kind: 'instant-window', cast: resume, heroUid, seats: order, index },
+    about: {
+      defId: resume.defId,
+      name: about.name,
+      spell: about.spell,
+      text: about.text,
+      kind: about.kind,
+    },
   })
 }
 

@@ -984,6 +984,12 @@ export function removeHero(state: Game, uid: string): { state: Game; hero: Board
   if (!loc) return { state, hero: null }
   const teamId = loc.team.id
   state = releaseHeld(state, loc.hero)
+  // Necrophos leaves: lift Reaper's Scythe attribute ban.
+  if (state.attrBan?.sourceUid === uid) {
+    const attr = state.attrBan.attr
+    state = { ...state, attrBan: null }
+    state = log(state, `Reaper's Scythe ends — ${attr} heroes are playable again.`)
+  }
   // Medusa leaves: restore gazed teams.
   if (loc.hero.defId === 'medusa') {
     const holds = state.medusaHold.filter((entry) => entry.medusaUid === uid)

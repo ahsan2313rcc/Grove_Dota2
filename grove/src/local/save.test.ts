@@ -2,17 +2,22 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { createGame } from '../game/engine.ts'
 import { DEFAULT_SCORE_RULES } from '../game/scoring.ts'
 import {
+  clearDebugSession,
   clearLocalMatch,
   clearOnlineAuth,
+  describeDebugSession,
   describeLocalMatch,
+  loadDebugSession,
   loadLocalMatch,
   loadOnlineAuth,
+  saveDebugSession,
   saveLocalMatch,
   saveOnlineAuth,
 } from './save.ts'
 
 afterEach(() => {
   clearLocalMatch()
+  clearDebugSession()
   clearOnlineAuth()
 })
 
@@ -61,5 +66,26 @@ describe('local match save', () => {
     expect(loadOnlineAuth()).toEqual({ name: 'Radiant', password: 'secret' })
     clearOnlineAuth()
     expect(loadOnlineAuth()).toBeNull()
+  })
+})
+
+describe('debug session save', () => {
+  it('round-trips a previous debug session', () => {
+    saveDebugSession({
+      seed: 99,
+      seats: 3,
+      strats: ['balanced', 'aggro', 'control'],
+      queueSize: 50,
+      view: 'stats',
+      trainNeural: true,
+      thoughtPower: 8,
+      reports: [],
+      rules: DEFAULT_SCORE_RULES,
+    })
+    const loaded = loadDebugSession()
+    expect(loaded?.seed).toBe(99)
+    expect(loaded?.seats).toBe(3)
+    expect(loaded?.trainNeural).toBe(true)
+    expect(describeDebugSession(loaded!)).toMatch(/3 AI/)
   })
 })

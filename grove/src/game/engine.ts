@@ -291,6 +291,9 @@ function responseAbout(before: Game, action: Action, after: Game): string | null
     if (held && held.player.id !== actor) return null
     const card = held?.card ?? before.grave[before.grave.length - 1]
     if (card && isTrapHero(card.defId)) return `${who} sets a trap`
+    // Hero abilities already open an Instant window after targeting (Illusion has its
+    // own pre-play counter). Skipping the second post-play response avoids a double ask.
+    if (card && card.kind === 'hero' && firesAbility(card.defId)) return null
     return `${who} plays ${card ? display(card.defId).name : 'a card'}`
   }
   return null
@@ -337,7 +340,7 @@ function offerResponse(state: Game): Game {
     if (cards.length === 0) continue
     return ask({ ...state, respond: { ...window, index: index + 1 } }, {
       actor: seat,
-      prompt: `${window.about}. Play an Instant as an interrupt, pass this action, or pass this turn.`,
+      prompt: `${window.about}. Play an Instant now, pass this action, or pass the rest of this turn.`,
       mode: 'pick',
       min: 1,
       max: 1,

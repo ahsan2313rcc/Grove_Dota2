@@ -298,7 +298,7 @@ export const HEROES: HeroDef[] = [
   hero('lina', 'Lina', 'INT', 'Ranged', 'Laguna Blade', 'Destroy target enemy hero. This cannot be avoided.', 'cast'),
   hero('lion', 'Lion', 'INT', 'Ranged', 'Finger of Death', "Reveal target opponent's hand. Exile a hero card from it.", 'cast'),
   hero('muerta', 'Muerta', 'INT', 'Ranged', 'Pierce the Veil', 'Opponents cannot take or play cards from the grave.', 'aura'),
-  hero('necrophos', 'Necrophos', 'INT', 'Ranged', "Reaper's Scythe", 'Exile target enemy hero. Opponents cannot play hero cards with the same attribute.', 'cast'),
+  hero('necrophos', 'Necrophos', 'INT', 'Ranged', "Reaper's Scythe", 'Exile target enemy hero. While this Necrophos remains on the board, opponents cannot play hero cards with the same attribute.', 'cast'),
   hero('oracle', 'Oracle', 'INT', 'Ranged', 'False Promise', 'Exile target allied hero. Return it to the board at the end of this turn. Instant.', 'instant'),
   hero('outworld_destroyer', 'Outworld Destroyer', 'INT', 'Ranged', "Sanity's Eclipse", 'Target opponent discards 4 cards. If they cannot, they exile a team they control.', 'cast'),
   hero('puck', 'Puck', 'INT', 'Ranged', 'Dream Coil', 'Enemy heroes cannot enter or leave teams. New teams can still be formed.', 'aura'),
