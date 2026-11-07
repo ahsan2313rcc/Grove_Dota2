@@ -1264,7 +1264,7 @@ function effect(state: Game, resume: CastResume): Game {
     case 'broodmother':
       return log(state, 'Spin Web waits face down.')
     case 'clinkz':
-      return clinkzExile(state, actor)
+      return clinkzExile(state)
     case 'faceless_void':
       return log(setPlayer(state, enemy, (player) => ({ ...player, actions: 0 })), 'Chronosphere: they lose remaining actions.')
     case 'hoodwink':
@@ -2516,7 +2516,7 @@ function blinkPlay(state: Game, resume: CastResume): Game {
 }
 
 /** Clinkz: exile top 5; those item cards may be played free from exile this turn. */
-function clinkzExile(state: Game, actor: PlayerId): Game {
+function clinkzExile(state: Game): Game {
   const [pulled, taken] = pullTop(state, 5)
   let next = pulled
   for (const card of taken) next = toExile(next, card)
