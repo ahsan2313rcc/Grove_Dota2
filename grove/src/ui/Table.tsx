@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { display } from '../game/catalog.ts'
 import { comboPlans, morphCasts, needsTeam, playableFromGrave, teamsFor, undyingRevive } from '../game/engine.ts'
-import { findHero, isTrapHero, scoreState, scoreTeam } from '../game/flow.ts'
+import { allLocs, findHero, isTrapHero, scoreState, scoreTeam } from '../game/flow.ts'
 import { teamShapes } from '../game/scoring.ts'
 import type { Action, CardInst, Game, PlayerId } from '../game/types.ts'
 import { CardFace } from './CardFace.tsx'
@@ -590,17 +590,13 @@ export function Table({
               <span className="turn-line">
                 <span>T{game.turn}</span>
                 <span className="quiet">{whoseTurn}</span>
-                {game.winScore ? (
-                  <span className="quiet" data-testid="target-score" title="Target score: end your turn on it and still hold it alone at your next turn to win">
-                    · target {game.winScore}
-                  </span>
-                ) : null}
               </span>
               <span className="action-line">
                 <strong data-testid="actions">{game.players[game.active].actions}</strong>
                 <small>left</small>
               </span>
             </div>
+            <WinConditionBlock game={game} viewer={viewer} names={names} />
             <div className="actions">
               <button type="button" className="primary" data-testid="draw" disabled={!canAct || !!drawReason} onClick={() => onAction({ type: 'draw' })}>
                 Draw
@@ -1075,6 +1071,66 @@ function Detail({
         )}
         {block ? <span className="quiet">{block}</span> : null}
       </div>
+    </div>
+  )
+}
+
+function WinConditionBlock({ game, viewer, names }: { game: Game; viewer: PlayerId; names: string[] }) {
+  const target = game.winScore ?? null
+  const holds = game.holds ?? []
+  const scores = game.players.map((player) => scoreState(game, player.id).total)
+  const ancientHolder = game.ancient
+    ? allLocs(game).find((loc) => loc.hero.defId === 'ancient')?.hero.controller
+    : undefined
+  const ancientLine = !game.ancientEnabled
+    ? 'Ancient off'
+    : game.ancient
+      ? `Ancient · ${game.ancient.endsLeft} turn${game.ancient.endsLeft === 1 ? '' : 's'} left${
+          ancientHolder === undefined
+            ? ''
+            : ancientHolder === viewer
+              ? ' · +10 yours'
+              : ` · +10 ${names[ancientHolder] ?? 'seat'}`
+        }`
+      : 'Ancient in deck'
+  const holdLines = target
+    ? holds.map((hold) => {
+        const who = hold.seat === viewer ? 'You' : names[hold.seat] ?? 'A seat'
+        const score = scores[hold.seat] ?? 0
+        const alone = scores.every((value, id) => id === hold.seat || value < target)
+        return alone && score >= target
+          ? `${who} holds ${score}/${target}`
+          : `${who} claimed ${target} (${score})`
+      })
+    : []
+  const near = target
+    ? game.players
+        .map((player, id) => ({ id, score: scores[id] ?? 0, name: id === viewer ? 'You' : player.name }))
+        .filter((entry) => entry.score >= target - 5 && entry.score < target && !holds.some((hold) => hold.seat === entry.id))
+        .sort((a, b) => b.score - a.score)
+        .slice(0, 2)
+    : []
+  return (
+    <div className="win-block" data-testid="win-block">
+      <p className="win-block-title">Win condition</p>
+      {target ? (
+        <p className="win-block-line" data-testid="target-score">
+          Target <strong>{target}</strong>
+          {holdLines.length === 0 ? ' · end turn on it, hold alone next turn' : ''}
+        </p>
+      ) : (
+        <p className="win-block-line quiet">No target score</p>
+      )}
+      {holdLines.map((line) => (
+        <p key={line} className="win-block-line hold" data-testid="win-hold">{line}</p>
+      ))}
+      {near.map((entry) => (
+        <p key={entry.id} className="win-block-line quiet">
+          {entry.name} at {entry.score}
+        </p>
+      ))}
+      <p className="win-block-line" data-testid="win-ancient">{ancientLine}</p>
+      <p className="win-block-line quiet">Empty deck also ends the match</p>
     </div>
   )
 }

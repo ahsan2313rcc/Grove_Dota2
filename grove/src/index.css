@@ -730,6 +730,34 @@ button.debug-mode-cycle:hover {
 }
 .hud .actions { flex-wrap: wrap; }
 .hud .actions button { padding: 0.4rem 0.7rem; font-size: 0.85rem; }
+.win-block {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 8px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: rgba(0, 0, 0, 0.18);
+}
+.win-block-title {
+  margin: 0;
+  font-size: 0.68rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--gold);
+}
+.win-block-line {
+  margin: 0;
+  font-size: 0.78rem;
+  line-height: 1.25;
+  color: var(--cream);
+}
+.win-block-line.hold { color: var(--gold); }
+.win-block-line strong {
+  font-family: Fraunces, Georgia, serif;
+  font-weight: 600;
+  color: var(--gold);
+}
 .pile-row { display: flex; flex-wrap: wrap; gap: 4px; align-content: center; }
 .pile-chip {
   display: inline-flex;
