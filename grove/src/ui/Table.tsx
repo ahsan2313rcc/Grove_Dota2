@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react'
-import { display } from '../game/catalog.ts'
+import { display, TRAP_BLURB, TRAP_RULES } from '../game/catalog.ts'
 import { comboPlans, morphCasts, needsTeam, playableFromGrave, teamsFor, undyingRevive } from '../game/engine.ts'
 import { allLocs, findHero, isTrapHero, scoreState, scoreTeam } from '../game/flow.ts'
 import { teamShapes } from '../game/scoring.ts'
@@ -56,6 +56,7 @@ export function Table({
   debugThoughtPower = 7,
   onDebugThoughtPower,
   onlineSeat = null,
+  labSession = false,
   onAction,
   onLobby,
 }: {
@@ -95,6 +96,8 @@ export function Table({
   onDebugThoughtPower?: (value: number) => void
   /** When set, this seat is the networked player (no hotseat handoff). */
   onlineSeat?: PlayerId | null
+  /** Ability Lab scratch board — Leave returns to Lab and does not save. */
+  labSession?: boolean
   onAction: (action: Action) => void
   onLobby: () => void
 }) {
@@ -471,7 +474,11 @@ export function Table({
           <button type="button" data-testid="glossary-open" onClick={() => setGlossary(true)}>Glossary</button>
           <button type="button" data-testid="log-open" onClick={() => setLogOpen(true)}>Log</button>
           <button type="button" data-testid="win-open" onClick={() => setWinOpen(true)}>Win</button>
-          {game.over ? (
+          {labSession ? (
+            <button type="button" className="primary" data-testid="lab-back" onClick={onLobby}>
+              Back to Lab
+            </button>
+          ) : game.over ? (
             <button type="button" className="primary" onClick={onLobby}>New match</button>
           ) : (
             <button type="button" onClick={() => (leaveArmed ? onLobby() : setLeaveArmed(true))}>
@@ -987,6 +994,14 @@ function Detail({
             : 'Click more heroes in hand to bring them in silently. Only the active ability fires.'}
         </p>
         {info?.spell ? <p className="spell">{info.spell}</p> : null}
+        {trap ? (
+          <p className="trap-blurb">
+            <span>{TRAP_BLURB}</span>
+            <button type="button" className="trap-hint" title={TRAP_RULES} data-testid="trap-hint">
+              Trap rules
+            </button>
+          </p>
+        ) : null}
         {info?.text ? <p>{info.text}</p> : null}
         <div className="inline-choices">
           {options.map((option) => (
@@ -1043,12 +1058,17 @@ function Detail({
     <div className="detail" data-testid="card-detail">
       <DetailHead name={info.name} timing={timing} free={free} />
       {info.spell ? <p className="spell">{info.spell}</p> : null}
+      {timing === 'trap' ? (
+        <p className="trap-blurb">
+          <span>{TRAP_BLURB}</span>
+          <button type="button" className="trap-hint" title={TRAP_RULES} data-testid="trap-hint">
+            Trap rules
+          </button>
+        </p>
+      ) : null}
       <p>{info.text}</p>
       {mates.length > 0 ? (
         <p className="quiet">Companions: {mates.map((entry) => display(entry.defId).name).join(', ')} (silent)</p>
-      ) : null}
-      {canAct && card.kind === 'hero' ? (
-        <p className="quiet">Click other heroes to add silent companions, then use Play Squad — one action.</p>
       ) : null}
       {card.kind === 'terrain' ? (
         <p className="quiet">{comboReady ? 'Combo ready — use Play Combo.' : `Selected ${chosen.length}/3 terrains.`}</p>

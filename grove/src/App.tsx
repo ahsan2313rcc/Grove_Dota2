@@ -287,6 +287,9 @@ export default function App() {
   const [trainNeural, setTrainNeural] = useState(false)
   const [nnInfo, setNnInfo] = useState<NnMemoryInfo>(() => bootNnMemory())
   const [thoughtPower, setThoughtPower] = useState(() => bootAiThoughtPower())
+  const [online, setOnline] = useState(false)
+  const [labSession, setLabSession] = useState(false)
+  const [returnToLab, setReturnToLab] = useState(false)
   const queueToken = useRef(0)
   const watchRef = useRef(false)
   const watchAdvanceRef = useRef(0)
@@ -377,7 +380,7 @@ export default function App() {
         if (!run) return current
         try {
           const advanced = advanceTracked(run)
-          saveLocalMatch(advanced.seed, advanced.game, getScoreRules())
+          if (!labSession) saveLocalMatch(advanced.seed, advanced.game, getScoreRules())
           return [advanced]
         } catch (error) {
           const text = error instanceof Error ? error.message : 'The Grove could not finish a play.'
@@ -386,7 +389,7 @@ export default function App() {
       })
     }, BASE_TICK_MS)
     return () => window.clearTimeout(timer)
-  }, [debug, game, stuck])
+  }, [debug, game, stuck, labSession])
 
   function send(action: Action) {
     if (!live || debug) return
@@ -396,7 +399,7 @@ export default function App() {
       try {
         const next = apply(run.game, action)
         run.tracker.observe(run.game, action, next)
-        saveLocalMatch(run.seed, next, getScoreRules())
+        if (!labSession) saveLocalMatch(run.seed, next, getScoreRules())
         return [{ ...run, game: next, stuck: false, stall: 0 }]
       } catch (error) {
         const text = error instanceof Error ? error.message : 'That play could not resolve.'
@@ -424,6 +427,15 @@ export default function App() {
     watchRef.current = false
     archivedWatchRef.current = null
     window.history.replaceState({}, '', window.location.pathname)
+    if (labSession) {
+      // Scratch lab board: leave the saved match alone and reopen Ability Lab.
+      setLabSession(false)
+      setReturnToLab(true)
+      setRuns([])
+      setFocus(0)
+      resetScoreRules()
+      return
+    }
     // Keep unfinished local matches so the lobby can offer Return to game.
     if (live && !debug) {
       if (live.game.over) clearLocalMatch()
@@ -431,6 +443,8 @@ export default function App() {
     } else if (debug) {
       clearLocalMatch()
     }
+    setLabSession(false)
+    setReturnToLab(false)
     setRuns([])
     setReports([])
     setDebug(false)
@@ -631,8 +645,6 @@ export default function App() {
     }, 0)
   }
 
-  const [online, setOnline] = useState(false)
-
   if (online) {
     return <OnlinePlay onBack={() => setOnline(false)} />
   }
@@ -640,9 +652,14 @@ export default function App() {
   if (runs.length === 0 && !debug) {
     return (
       <Lobby
+        startLab={returnToLab}
+        onLabOpened={() => setReturnToLab(false)}
         onOnline={() => setOnline(true)}
         onResumeLocal={resumeLocal}
         onLab={(next, nextSeed) => {
+          // Lab boards are scratch sessions: do not overwrite a saved match.
+          setLabSession(true)
+          setReturnToLab(false)
           setScoreRules(DEFAULT_SCORE_RULES)
           setMatch((value) => value + 1)
           setSeed(nextSeed)
@@ -662,6 +679,7 @@ export default function App() {
             startDebugSession(nextSeed, seats, queue, strats, rules)
             return
           }
+          setLabSession(false)
           setScoreRules(rules)
           setMatch((value) => value + 1)
           setSeed(nextSeed)
@@ -725,6 +743,7 @@ export default function App() {
       seed={seed}
       stuck={stuck}
       tableGen={match}
+      labSession={labSession}
       onAction={send}
       onLobby={leave}
     />
@@ -740,10 +759,14 @@ function Lobby({
   onOnline,
   onResumeLocal,
   onLab,
+  startLab = false,
+  onLabOpened,
 }: {
   onOnline: () => void
   onLab: (game: Game, seed: number) => void
   onResumeLocal: (saved: SavedLocalMatch) => void
+  startLab?: boolean
+  onLabOpened?: () => void
   onStart: (
     game: Game,
     seed: number,
@@ -762,7 +785,13 @@ function Lobby({
   const [queue, setQueue] = useState(100)
   const [fault, setFault] = useState('')
   const [glossary, setGlossary] = useState(false)
-  const [lab, setLab] = useState(false)
+  const [lab, setLab] = useState(startLab)
+
+  useEffect(() => {
+    if (!startLab) return
+    setLab(true)
+    onLabOpened?.()
+  }, [startLab, onLabOpened])
   const [rules, setRules] = useState(false)
   const [scoreOpen, setScoreOpen] = useState(false)
   const [winOpen, setWinOpen] = useState(false)

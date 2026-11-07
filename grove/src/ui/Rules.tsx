@@ -1,56 +1,160 @@
+import { useState } from 'react'
+
+type Block = {
+  id: string
+  title: string
+  badge: string
+  badgeClass: string
+  summary: string
+  detail: string[]
+}
+
+const MECHANICS: Block[] = [
+  {
+    id: 'on-play',
+    title: 'On play',
+    badge: 'On play',
+    badgeClass: 'timing-cast',
+    summary: 'Costs one action. The ability fires when the card seats (or when an item resolves).',
+    detail: [
+      'Play a hero, item, or reward for one action. Instant cards and terrain combos are free instead.',
+      'You may seat several heroes as a squad for one action: pick the active hero, click companions to bring them in silently, then choose a team. Only the active ability fires; if countered, only the active hero is countered.',
+      'Draw one more card for an action (even above the hand limit of 7). Discard down to 7 when you end your turn.',
+    ],
+  },
+  {
+    id: 'instant',
+    title: 'Instant',
+    badge: 'Instant',
+    badgeClass: 'timing-instant',
+    summary: 'Free. Play on your turn or as an interrupt after an opponent acts.',
+    detail: [
+      'Instant cards do not spend an action.',
+      'After an opponent draws, plays, or sets a combo — and before a hero ability fires — you may interrupt with one Instant, pass this action, or pass this turn.',
+      'Nyx Assassin counters an ability (and destroys the caster if it is Intelligence). Spirit Breaker redirects an ability to itself. Tormentor destroys a hero that just entered. Troll Warlord’s Battle Trance stops opponents from playing Instants.',
+    ],
+  },
+  {
+    id: 'trap',
+    title: 'Trap',
+    badge: 'Trap',
+    badgeClass: 'timing-trap',
+    summary: 'Play face-down on any team. That team loses attribute bonus until another hero enters and the trap fires.',
+    detail: [
+      'Plant face-down on a team with room (yours or an enemy’s) — one trap per team, never on a full or closed team.',
+      'While face down, that team scores no attribute bonus. Flat and attack points still count.',
+      'When another hero enters, reveal and resolve the trap before that hero’s ability. Afterwards a non-sacrifice trap joins the team if there is room; otherwise it goes to the grave.',
+      'Snares hurt the controller; wards help them. Batrider moves a trap, Zeus clears every trap, Guardian Greaves clears one player’s traps, Observer Ward removes a trap or reveals a hand.',
+    ],
+  },
+  {
+    id: 'aura',
+    title: 'Aura',
+    badge: 'Aura',
+    badgeClass: 'timing-aura',
+    summary: 'Ongoing while the hero stays on the board — no separate play cost beyond seating the hero.',
+    detail: [
+      'Aura text stays active as long as the hero remains on its team.',
+      'Moving, bouncing, or destroying the aura hero ends the effect. Immune heroes ignore opponent effects that would remove or move them.',
+    ],
+  },
+  {
+    id: 'combo',
+    title: 'Terrain combo',
+    badge: 'Combo',
+    badgeClass: 'timing-combo',
+    summary: 'Always three terrains at once, free. Scores points and may take a face-down pile card.',
+    detail: [
+      'Terrains cannot be played alone. Select three, then Play Combo.',
+      'Two of a kind plus one other scores 3. One River, one Jungle, and one Lane scores 5. Three of a kind scores 8 and takes the top of the matching pile: River a rune, Jungle a neutral, Lane a tower.',
+    ],
+  },
+]
+
+const MORE: Block[] = [
+  {
+    id: 'turn',
+    title: 'The turn',
+    badge: 'Basics',
+    badgeClass: 'timing-cast',
+    summary: 'Draw 2 at turn start, then two actions. Ancient or empty deck starts the final round.',
+    detail: [
+      'Everyone is dealt 3. The Ancient is placed deeper by table size (about mid for 2, then 60% / 80% / 90% for larger tables, ±5%).',
+      'The Ancient is a neutral: play it free when drawn; +10 to whoever controls it at the end. Drawing it — or emptying the shared deck — starts the final round (one more turn each), then highest score wins.',
+      'Target score (default on): end your turn on it and still hold it alone at the start of your next turn to win early.',
+      'Discards are your choice unless a card says at random. Immune heroes ignore every opponent effect.',
+    ],
+  },
+  {
+    id: 'teams',
+    title: 'Teams & scoring',
+    badge: 'Score',
+    badgeClass: 'timing-aura',
+    summary: 'Teams of up to five. Heroes score 1; neutrals 0 flat but help attribute and attack bonuses.',
+    detail: [
+      'At most 12 teams per player. One neutral per team. Neutrals have Melee or Ranged and help CORE / MIXED / ATK.',
+      'CORE: three or more of the same attribute (+3 / +6 / +10) and blocks attack bonus. MIXED: three or more different attributes (+2 / +4), stacks with CORE. ATK: three or more Melee or Ranged (+1 / +2 / +3) only when there is no CORE.',
+      'Universal is its own attribute. Brewmaster counts as STR, AGI, or INT — whichever scores highest for that team.',
+    ],
+  },
+  {
+    id: 'zones',
+    title: 'Zones',
+    badge: 'Zones',
+    badgeClass: 'timing-instant',
+    summary: 'Shared deck and grave. Exile removes cards from the game.',
+    detail: [
+      'Discard: hand → grave. Destroy: board → grave. Exile: out of the game (used runes, neutrals, and towers are exiled).',
+      'Exiled cards do not interact.',
+    ],
+  },
+]
+
+function RuleBlock({ block }: { block: Block }) {
+  const [open, setOpen] = useState(false)
+  return (
+    <section className="rule-block" data-testid={`rule-${block.id}`}>
+      <header className="rule-block-head">
+        <span className={`type-pill inline ${block.badgeClass}`}>{block.badge}</span>
+        <h3>{block.title}</h3>
+      </header>
+      <p>{block.summary}</p>
+      <button type="button" className="rule-more" data-testid={`rule-more-${block.id}`} onClick={() => setOpen((value) => !value)}>
+        {open ? 'Hide details' : 'Detailed instructions'}
+      </button>
+      {open ? (
+        <ul className="rule-detail">
+          {block.detail.map((line) => (
+            <li key={line}>{line}</li>
+          ))}
+        </ul>
+      ) : null}
+    </section>
+  )
+}
+
 export function Rules({ onClose }: { onClose: () => void }) {
   return (
     <div className="scrim" onClick={onClose}>
       <article className="sheet rules" role="dialog" aria-modal="true" aria-labelledby="rules-title" onClick={(event) => event.stopPropagation()}>
         <p className="eyebrow">How Grove is played</p>
         <h2 id="rules-title">Rules</h2>
-        <section>
-          <h3>The turn</h3>
-          <p>Everyone is dealt 3 cards. The Ancient is then placed in the remaining deck by table size — about halfway down for 2 players, 60% for 3–4, 80% for 5–6 and 90% for 7–8 (each ±5%). At the start of your turn you draw 2, then you have two actions — including the first seat on turn 1. Draw one more card for an action (even above 7), or play a hero, item, or reward for an action. Instant cards are free. A terrain combo is free and does not spend an action. If your hand is above 7, discard down to 7 when you end your turn.</p>
-          <p>The Ancient is a neutral. When you draw it, play it for free into a team you control or a new team. It counts as any one attribute, can be targeted and moved like a hero, and whoever controls it when the match ends scores +10. Drawing it starts the final round: finish your turn, then each opponent takes one more turn. If it is revealed from the grave or exile instead, it only starts the final round. If the shared deck empties, that also starts the final round — then the highest score wins. Weaver's Time Lapse shuffles the grave into the deck and lets the Weaver player choose how deep The Ancient goes.</p>
-          <p>Target score (on by default, 50 / 40 / 35 / 30 for 2 / 3 / 4 / 5+ players): end your turn at the target and you win at the start of your next turn if you still hold it and nobody else does. Opponents stop you by reaching the target too or by knocking you below it.</p>
-          <p>Discards are your choice unless the card says at random. Immune heroes (Black King Bar, Glyph, Enrage, Wheel of Wonder, Shield Rune, Guardian Angel) ignore every opponent effect: destroy, exile, bounce, tuck, move, steal and silence.</p>
-          <p>You may play several heroes into one team for a single action. Click the active hero, click companions to add them silently, then pick a team — only the active ability fires. If the play is countered, only the active hero is countered.</p>
-        </section>
-        <section>
-          <h3>Terrains</h3>
-          <p>Terrains are always played three at a time as a combo, for free. Two of a kind plus one other scores 3. One River, one Jungle, and one Lane scores 5. Three of a kind scores 8 and you take the top of the matching pile: River takes a rune, Jungle a neutral, Lane a tower. The piles are face down.</p>
-          <p>Terrain heroes count the cards in your combos: Meepo scores +1 for each terrain type you control, Ember Spirit counts terrain types, Slardar counts River cards, Luna finds an item for each Jungle in a combo you play, and Hoodwink needs any Jungle.</p>
-        </section>
-        <section>
-          <h3>Teams</h3>
-          <p>Heroes score in teams of up to five. A player can field at most 12 teams. One neutral may sit in a team. Neutrals have no ability and no flat points, but they do have Melee or Ranged and still help attribute and attack bonuses (Golem / Tormentor / Roshan are Melee; Thunderhide / Ice Shaman / Black Dragon are Ranged).</p>
-          <p>Each hero scores 1. Neutrals score 0 flat but still count for attribute and attack. Labels look like STR x3, ATTR x3, MELEE x3 — the numbers are counts. CORE needs three or more of the same attribute (+3 / +6 / +10) and blocks the attack bonus by default (MELEE/RANGE still shows). MIXED needs three or more different attributes (+2 / +4) and stacks with CORE when both apply. ATK needs three or more Melee or three or more Ranged (+1 / +2 / +3), counted separately — mixed range still scores (e.g. 3 Ranged + 2 Melee → RANGE x3) — and only when there is no CORE. Universal is its own attribute. Brewmaster counts as one of Strength, Agility, or Intelligence — whichever scores highest for that team.</p>
-        </section>
-        <section>
-          <h3>Zones</h3>
-          <p>The deck and the grave are shared. Discard sends a card from hand to the grave. Destroy sends a hero from the board to the grave. Exile removes a card from the game. Used runes, neutrals, and towers are exiled. Exiled cards do not interact.</p>
-        </section>
-        <section>
-          <h3>Answers</h3>
-          <p>The hand limit is 7. Instant cards are free. After an opponent draws, plays, or sets a combo, you may play one Instant in response, and you may also interrupt before a hero ability fires. Nyx Assassin counters an ability and destroys the caster only if it is Intelligence. Spirit Breaker redirects an ability to itself, even one aimed at a whole team. Tormentor destroys a hero that just entered; saves stop a destroy. Troll Warlord’s Battle Trance stops opponents from playing Instant cards.</p>
-        </section>
-        <section>
-          <h3>Traps</h3>
-          <p>Trap heroes are played face down on any team with room for another hero — yours or an enemy’s — but never on a team of five or a closed team, and only one trap per team. While face down, that team scores no attribute bonus. The trap fires once, when the next hero enters that team: it is revealed and resolves before the entering hero’s ability. Afterwards a trap that does not sacrifice itself joins the team if there is room, otherwise it goes to the grave.</p>
-          <p>Snares (Techies, Broodmother, Monkey King, Slark, Riki, Shadow Shaman) hurt whoever controls the team. Wards (Kez, Ogre Magi, Bounty Hunter, Templar Assassin) help them. Batrider moves a trap, Zeus clears every trap, Guardian Greaves clears one player’s traps, and Observer Ward removes a trap or reveals a hand.</p>
-        </section>
-        <section>
-          <h3>A few seats</h3>
-          <ul>
-            <li>Night Stalker steals two cards from the enemy.</li>
-            <li>Lycan draws a card when an ally enters that team.</li>
-            <li>Medusa’s Stone Gaze exiles a target enemy team.</li>
-            <li>Elder Titan strips attributes from enemy heroes. They keep 1 point each, and a shared attack type still scores.</li>
-            <li>Tidehunter returns every other hero to its owner’s hand. His own team stays.</li>
-            <li>Magnus gathers up to 5 enemy heroes into a new team. The rest stay.</li>
-            <li>Razor exiles a target hero and gives you +1 action.</li>
-            <li>Morphling exiles a target on play; the exile ends when Morphling leaves the board, and it may fire the taken ability.</li>
-            <li>Io pulls an allied hero into its team; that hero cannot be destroyed this turn.</li>
-            <li>Tusk moves a hero to another team its controller owns. Earth Spirit does the same to an enemy, then destroys a hero there.</li>
-            <li>Gate merges two teams you own. Overflow returns to hand and does not fire again.</li>
-          </ul>
-        </section>
+        <p className="quiet">Start with the mechanics. Open details only when you need the full wording.</p>
+
+        <h3 className="rules-group">Mechanics</h3>
+        <div className="rule-grid">
+          {MECHANICS.map((block) => (
+            <RuleBlock key={block.id} block={block} />
+          ))}
+        </div>
+
+        <h3 className="rules-group">Also useful</h3>
+        <div className="rule-grid">
+          {MORE.map((block) => (
+            <RuleBlock key={block.id} block={block} />
+          ))}
+        </div>
+
         <button type="button" className="primary" onClick={onClose}>Back to the table</button>
       </article>
     </div>

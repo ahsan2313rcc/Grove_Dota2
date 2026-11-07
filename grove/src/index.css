@@ -1234,6 +1234,58 @@ button.debug-mode-cycle:hover {
 .segment button.on { background: var(--gold); color: var(--ink); }
 .rules section { display: flex; flex-direction: column; gap: 6px; }
 .rules ul { margin: 0; padding-left: 1.1rem; }
+.rules-group { margin: 8px 0 0; font-size: 0.95rem; color: var(--cream-dim); letter-spacing: 0.04em; text-transform: uppercase; }
+.rule-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 10px;
+}
+.rule-block {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: rgba(243, 236, 223, 0.04);
+}
+.rule-block-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.rule-block-head h3 { margin: 0; font-size: 1.05rem; }
+.rule-block p { margin: 0; font-size: 0.88rem; }
+.rule-more {
+  align-self: flex-start;
+  padding: 0.25rem 0.65rem;
+  font-size: 0.78rem;
+}
+.rule-detail {
+  margin: 0;
+  padding-left: 1.1rem;
+  color: var(--cream-dim);
+  font-size: 0.84rem;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.trap-blurb {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  color: var(--cream-dim);
+  font-size: 0.82rem;
+}
+.trap-hint {
+  padding: 0.15rem 0.5rem;
+  font-size: 0.72rem;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  border-color: #7a3b2e;
+  color: #f0c2b4;
+}
 .glossary { width: min(920px, 100%); }
 .glossary-tabs, .glossary-tools, .glossary-marks {
   display: flex; flex-wrap: wrap; gap: 6px; align-items: center;

@@ -41,8 +41,9 @@ describe('card retunes', () => {
     expect(TRAP_IDS.has('bounty_hunter')).toBe(true)
     expect(TRAP_IDS.has('shadow_shaman')).toBe(true)
     expect(TRAP_IDS.has('broodmother')).toBe(true)
-    expect(HERO_BY_ID.techies?.text).toMatch(/Play face down on a team with room/i)
-    expect(HERO_BY_ID.techies?.text).toMatch(/When a hero is added to that team/i)
+    expect(HERO_BY_ID.techies?.timing).toBe('trap')
+    expect(HERO_BY_ID.techies?.text).toMatch(/Sacrifice this team/i)
+    expect(HERO_BY_ID.techies?.text).not.toMatch(/Play face down/i)
   })
 
   it('adds anti-loop reminder on steal / copy / reactivate cards', () => {
