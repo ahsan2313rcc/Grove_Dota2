@@ -72,6 +72,14 @@ export const LAB_OVERRIDES: Record<string, Partial<LabSetup>> = {
   bounty_hunter: { seats: [{}, { hand: ['river', 'lane', 'slardar'] }] },
   rubick: { target: { seat: 0, team: 0 } },
   greaves: { seats: [{}, { traps: [{ team: 0, defId: 'techies' }] }] },
+  lifestealer: {
+    seats: [
+      { teams: [['axe', 'sven']] },
+      { teams: [['tidehunter', 'zeus'], ['sniper', 'drow_ranger']] },
+    ],
+    target: { seat: 0, team: 0 },
+    note: 'Infest Tidehunter into Lifestealer\'s team. Destroy or bounce the host — Lifestealer returns in its place.',
+  },
 }
 
 /** Cards that only answer another card's ability; played alone they have nothing to counter. */

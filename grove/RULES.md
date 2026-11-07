@@ -102,7 +102,7 @@ One copy of **The Ancient** sits in the main deck after the opening deal, placed
 - **+10** goes to whoever **controls** it when the match ends — not to whoever drew it.
 - Drawing it starts the **final round**: finish the current turn, then each opponent takes one more turn.
 - **Revealed from grave or exile** (milled / exiled into those zones): it is not placed; it only starts the final round.
-- Empty-deck finish still applies if the deck empties before The Ancient is revealed.
+- If the deck empties before or instead of The Ancient, that also starts the final round; highest score wins.
 - **Weaver's Time Lapse** shuffles the grave into the deck. If The Ancient is still in the deck, the Weaver player picks its depth band (near the top / upper middle / middle / lower middle / near the bottom, ±5%), so the shuffle cannot move it by accident.
 - **Clarity** reveals from the top until a terrain, takes it, and puts the other revealed cards back on top in any order the player picks. The Ancient can be revealed this way without being drawn.
 

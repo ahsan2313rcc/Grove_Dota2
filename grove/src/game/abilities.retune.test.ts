@@ -104,7 +104,6 @@ describe('retuned abilities', () => {
     game = apply(game, { type: 'play', uid: uid(game, 0, 'lifestealer'), team: 'new' })
     game = passInstants(game)
     game = apply(game, { type: 'choose', ids: [`hero:${vs}`] })
-    game = apply(game, { type: 'choose', ids: ['new:0'] })
     game = apply(game, { type: 'choose', ids: ['yes'] })
     game = passInstants(game)
     // Infest exiles Lifestealer and may fire the stolen ability under stolenCast.

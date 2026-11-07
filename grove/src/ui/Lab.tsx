@@ -95,6 +95,7 @@ export function Lab({ onClose, onPlay }: { onClose: () => void; onPlay: (game: G
               ) : null}
 
               <h3>Board</h3>
+              {setup?.note ? <p className="quiet" data-testid="lab-note">{setup.note}</p> : null}
               <ul className="lab-lines">
                 {result.before.players.map((seat) => (
                   <li key={seat.id}>

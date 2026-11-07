@@ -106,6 +106,7 @@ export function Table({
   const [rules, setRules] = useState(false)
   const [glossary, setGlossary] = useState(false)
   const [logOpen, setLogOpen] = useState(false)
+  const [winOpen, setWinOpen] = useState(false)
   const [handOpen, setHandOpen] = useState<PlayerId | null>(null)
   const [page, setPage] = useState(0)
   const [acked, setAcked] = useState('')
@@ -377,7 +378,20 @@ export function Table({
     .map((uid) => you.hand.find((card) => card.uid === uid) ?? (graveTop?.uid === uid ? graveTop : null))
     .filter((card): card is CardInst => !!card)
   const comboReady = isCombo(chosen)
-  const drawReason = !canAct ? null : game.deck.length === 0 ? 'The deck is empty.' : you.actions < 1 ? 'No actions left.' : null
+  const drawReason = !canAct ? null : game.deck.length === 0 ? 'The deck is empty — final round.' : you.actions < 1 ? 'No actions left.' : null
+  const selectedUid = placing ?? (focus?.kind === 'hand' ? focus.uid : null)
+  const selectedCard = selectedUid
+    ? (graveTop?.uid === selectedUid ? graveTop : null)
+      ?? game.clinkzExile.find((card) => card.uid === selectedUid)
+      ?? you.hand.find((card) => card.uid === selectedUid)
+      ?? null
+    : null
+  const playReason = !selectedCard
+    ? 'Select a card'
+    : !canPlayCards
+      ? 'Cannot play now'
+      : (playBlock(game, viewer, selectedCard)
+        ?? (canInstant && !playsAsInstant(game, viewer, selectedCard) ? 'Only Instant cards now' : null))
   const clinkzPlayable = canPlayCards ? game.clinkzExile.filter((card) => card.kind === 'item') : []
 
   function toggleTerrainCombo(card: CardInst, fromGrave = false) {
@@ -444,7 +458,7 @@ export function Table({
     if (needsTeam(card.defId, card.kind)) {
       setPlacing(uid)
       setExtras((current) => current.filter((extra) => extra !== uid))
-        setFocus(fromGrave || fromClinkz ? { kind: 'card', defId: card.defId } : { kind: 'hand', uid })
+      setFocus(fromGrave || fromClinkz ? { kind: 'card', defId: card.defId } : { kind: 'hand', uid })
       return
     }
     onAction({ type: 'play', uid, team: '', extras: extras.length > 0 && card.kind === 'hero' ? extras : undefined })
@@ -464,6 +478,7 @@ export function Table({
           <button type="button" onClick={() => setRules(true)}>Rules</button>
           <button type="button" data-testid="glossary-open" onClick={() => setGlossary(true)}>Glossary</button>
           <button type="button" data-testid="log-open" onClick={() => setLogOpen(true)}>Log</button>
+          <button type="button" data-testid="win-open" onClick={() => setWinOpen(true)}>Win</button>
           {game.over ? (
             <button type="button" className="primary" onClick={onLobby}>New match</button>
           ) : (
@@ -586,20 +601,47 @@ export function Table({
           />
         ) : (
           <aside className="hud">
-            <div className="turn-chip">
-              <span className="turn-line">
-                <span>T{game.turn}</span>
-                <span className="quiet">{whoseTurn}</span>
-              </span>
-              <span className="action-line">
-                <strong data-testid="actions">{game.players[game.active].actions}</strong>
-                <small>left</small>
-              </span>
+            <div className="hud-top">
+              <div className="turn-chip">
+                <span className="turn-line">
+                  <span>T{game.turn}</span>
+                  <span className="quiet">{whoseTurn}</span>
+                </span>
+                <span className="action-line">
+                  <strong data-testid="actions">{game.players[game.active].actions}</strong>
+                  <small>left</small>
+                </span>
+              </div>
+              <div className="pile-stack" data-testid="pile-stack">
+                <PileButton label="Deck" count={game.deck.length} testId="pile-deck" onClick={() => setPile('deck')} />
+                <PileButton
+                  label="Grave"
+                  count={game.grave.length}
+                  testId="pile-grave"
+                  onClick={() => setPile('grave')}
+                  highlight={!!graveTop}
+                />
+                <PileButton label="Exile" count={game.exile.length} testId="pile-exile" onClick={() => setPile('exile')} />
+                <div className="pile-extra">
+                  <PileButton label="Runes" count={game.runes.length} testId="pile-runes" onClick={() => setPile('runes')} />
+                  <PileButton label="Neutrals" count={game.neutrals.length} testId="pile-neutrals" onClick={() => setPile('neutrals')} />
+                  <PileButton label="Towers" count={game.towers.length} testId="pile-towers" onClick={() => setPile('towers')} />
+                </div>
+              </div>
             </div>
-            <WinConditionBlock game={game} viewer={viewer} names={names} />
             <div className="actions">
-              <button type="button" className="primary" data-testid="draw" disabled={!canAct || !!drawReason} onClick={() => onAction({ type: 'draw' })}>
+              <button type="button" className="primary" data-testid="draw" disabled={!canAct || !!drawReason} onClick={() => onAction({ type: 'draw' })} title={drawReason ?? undefined}>
                 Draw
+              </button>
+              <button
+                type="button"
+                className="primary"
+                data-testid="play-selected"
+                disabled={!selectedCard || !!playReason}
+                title={playReason ?? (selectedCard ? display(selectedCard.defId).name : undefined)}
+                onClick={() => selectedUid && playFocused(selectedUid)}
+              >
+                Play{selectedCard ? ` · ${display(selectedCard.defId).name}` : ''}
               </button>
               <button type="button" data-testid="end" disabled={!canAct && !stuck} onClick={() => onAction({ type: 'end' })}>
                 End turn
@@ -660,20 +702,6 @@ export function Table({
                   {liveCombo.includes(graveTop.uid) ? ' ✓' : ''}
                 </button>
               ) : null}
-            </div>
-            <div className="pile-row">
-              <PileButton label="Deck" count={game.deck.length} testId="pile-deck" onClick={() => setPile('deck')} />
-              <PileButton
-                label="Grave"
-                count={game.grave.length}
-                testId="pile-grave"
-                onClick={() => setPile('grave')}
-                highlight={!!graveTop}
-              />
-              <PileButton label="Exile" count={game.exile.length} testId="pile-exile" onClick={() => setPile('exile')} />
-              <PileButton label="Runes" count={game.runes.length} testId="pile-runes" onClick={() => setPile('runes')} />
-              <PileButton label="Neutrals" count={game.neutrals.length} testId="pile-neutrals" onClick={() => setPile('neutrals')} />
-              <PileButton label="Towers" count={game.towers.length} testId="pile-towers" onClick={() => setPile('towers')} />
             </div>
             {showDetail ? (
               <Detail
@@ -758,6 +786,7 @@ export function Table({
       {rules ? <Rules onClose={() => setRules(false)} /> : null}
       {glossary ? <Glossary onClose={() => setGlossary(false)} /> : null}
       {logOpen ? <LogSheet log={game.log} names={names} onClose={() => setLogOpen(false)} /> : null}
+      {winOpen ? <WinConditionSheet game={game} viewer={viewer} names={names} onClose={() => setWinOpen(false)} /> : null}
       {pile ? (
         <PileDialog
           game={game}
@@ -1075,62 +1104,74 @@ function Detail({
   )
 }
 
-function WinConditionBlock({ game, viewer, names }: { game: Game; viewer: PlayerId; names: string[] }) {
+function WinConditionSheet({
+  game,
+  viewer,
+  names,
+  onClose,
+}: {
+  game: Game
+  viewer: PlayerId
+  names: string[]
+  onClose: () => void
+}) {
   const target = game.winScore ?? null
   const holds = game.holds ?? []
   const scores = game.players.map((player) => scoreState(game, player.id).total)
   const ancientHolder = game.ancient
     ? allLocs(game).find((loc) => loc.hero.defId === 'ancient')?.hero.controller
     : undefined
-  const ancientLine = !game.ancientEnabled
-    ? 'Ancient off'
-    : game.ancient
-      ? `Ancient · ${game.ancient.endsLeft} turn${game.ancient.endsLeft === 1 ? '' : 's'} left${
-          ancientHolder === undefined
-            ? ''
-            : ancientHolder === viewer
-              ? ' · +10 yours'
-              : ` · +10 ${names[ancientHolder] ?? 'seat'}`
-        }`
-      : 'Ancient in deck'
-  const holdLines = target
-    ? holds.map((hold) => {
-        const who = hold.seat === viewer ? 'You' : names[hold.seat] ?? 'A seat'
-        const score = scores[hold.seat] ?? 0
-        const alone = scores.every((value, id) => id === hold.seat || value < target)
-        return alone && score >= target
-          ? `${who} holds ${score}/${target}`
-          : `${who} claimed ${target} (${score})`
-      })
-    : []
-  const near = target
-    ? game.players
-        .map((player, id) => ({ id, score: scores[id] ?? 0, name: id === viewer ? 'You' : player.name }))
-        .filter((entry) => entry.score >= target - 5 && entry.score < target && !holds.some((hold) => hold.seat === entry.id))
-        .sort((a, b) => b.score - a.score)
-        .slice(0, 2)
-    : []
   return (
-    <div className="win-block" data-testid="win-block">
-      <p className="win-block-title">Win condition</p>
-      {target ? (
-        <p className="win-block-line" data-testid="target-score">
-          Target <strong>{target}</strong>
-          {holdLines.length === 0 ? ' · end turn on it, hold alone next turn' : ''}
+    <div className="scrim" onClick={onClose}>
+      <section className="sheet" role="dialog" aria-modal="true" aria-labelledby="win-live-title" onClick={(event) => event.stopPropagation()}>
+        <p className="eyebrow">Match</p>
+        <h2 id="win-live-title">Win condition</h2>
+        <p data-testid="win-final-rule">
+          {game.ancientEnabled
+            ? 'Drawing The Ancient starts the final round: each player gets one more turn, then the highest score wins (+10 to whoever holds The Ancient).'
+            : 'When the shared deck empties, the final round begins: each player gets one more turn, then the highest score wins.'}
         </p>
-      ) : (
-        <p className="win-block-line quiet">No target score</p>
-      )}
-      {holdLines.map((line) => (
-        <p key={line} className="win-block-line hold" data-testid="win-hold">{line}</p>
-      ))}
-      {near.map((entry) => (
-        <p key={entry.id} className="win-block-line quiet">
-          {entry.name} at {entry.score}
-        </p>
-      ))}
-      <p className="win-block-line" data-testid="win-ancient">{ancientLine}</p>
-      <p className="win-block-line quiet">Empty deck also ends the match</p>
+        {target ? (
+          <p data-testid="target-score">
+            Target score <strong>{target}</strong>: end your turn on it and still hold it alone at the start of your next turn to win early.
+          </p>
+        ) : (
+          <p className="quiet">No target score this match.</p>
+        )}
+        <h3>This match</h3>
+        <ul className="win-live" data-testid="win-block">
+          <li data-testid="win-ancient">
+            {game.ancient
+              ? `Final round · ${game.ancient.endsLeft} turn${game.ancient.endsLeft === 1 ? '' : 's'} left${
+                  ancientHolder === undefined
+                    ? ''
+                    : ancientHolder === viewer
+                      ? ' · +10 yours'
+                      : ` · +10 ${names[ancientHolder] ?? 'seat'}`
+                }`
+              : game.ancientEnabled
+                ? 'Ancient still in the deck'
+                : game.deck.length === 0
+                  ? 'Deck empty · final round pending'
+                  : `Deck ${game.deck.length} · empties to start the final round`}
+          </li>
+          {holds.map((hold) => {
+            const who = hold.seat === viewer ? 'You' : names[hold.seat] ?? 'A seat'
+            const score = scores[hold.seat] ?? 0
+            return (
+              <li key={hold.seat} data-testid="win-hold">
+                {who} holds a claim at {score}/{target}
+              </li>
+            )
+          })}
+          {scores.map((score, id) => (
+            <li key={id} className="quiet">
+              {id === viewer ? 'You' : names[id]}: {score}
+            </li>
+          ))}
+        </ul>
+        <button type="button" className="primary" data-testid="win-live-done" onClick={onClose}>Close</button>
+      </section>
     </div>
   )
 }

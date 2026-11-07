@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { apply, createGame } from './engine.ts'
-import { allLocs, makeHero, newTeam, putOnTeam } from './flow.ts'
+import { apply, createGame, settle } from './engine.ts'
+import { allLocs, bounce, makeHero, newTeam, putOnTeam } from './flow.ts'
 import type { CardInst, Combo, Game, PlayerId } from './types.ts'
 
 function ready(seed = 3, winScore: number | null = null): Game {
@@ -237,5 +237,36 @@ describe('Response windows', () => {
     game = apply(game, { type: 'choose', ids: ['pass-turn'] })
     expect(game.pending).toBeNull()
     expect(apply(game, { type: 'draw' }).pending).toBeNull()
+  })
+})
+
+
+describe('Infest', () => {
+  it('pulls Tidehunter into Lifestealer’s team and returns Lifestealer when the host leaves', () => {
+    let game = ready(9)
+    game = toHand(game, 0, ['lifestealer'])
+    ;[game] = team(game, 1, ['tidehunter', 'zeus'])
+    game = { ...game, active: 0, players: game.players.map((seat) => ({ ...seat, actions: seat.id === 0 ? 3 : seat.actions })) }
+    const tide = allLocs(game).find((loc) => loc.hero.defId === 'tidehunter')!
+    game = apply(game, { type: 'play', uid: uidOf(game, 0, 'lifestealer'), team: 'new' })
+    game = drain(game, (state) => {
+      if (state.pending?.resume.kind === 'response') return ['pass']
+      if (state.pending?.choices.some((choice) => choice.id === `hero:${tide.hero.uid}`)) return [`hero:${tide.hero.uid}`]
+      if (state.pending?.choices.some((choice) => choice.id === 'no')) return ['no']
+      return null
+    })
+    expect(game.infests.some((entry) => entry.hostUid === tide.hero.uid)).toBe(true)
+    expect(game.exile.some((card) => card.defId === 'lifestealer')).toBe(true)
+    const host = allLocs(game).find((loc) => loc.hero.uid === tide.hero.uid)!
+    expect(host.hero.controller).toBe(0)
+    expect(onBoard(game, 'lifestealer')).toBe(false)
+    const teamId = host.team.id
+    game = settle(bounce(game, tide.hero.uid, 'Test', true, 0))
+    expect(onBoard(game, 'tidehunter')).toBe(false)
+    expect(onBoard(game, 'lifestealer')).toBe(true)
+    expect(game.infests.length).toBe(0)
+    const back = allLocs(game).find((loc) => loc.hero.defId === 'lifestealer')!
+    expect(back.team.id).toBe(teamId)
+    expect(game.log.some((line) => line.includes("returns in its host's place"))).toBe(true)
   })
 })

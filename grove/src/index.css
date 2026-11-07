@@ -514,6 +514,8 @@ button.debug-mode-cycle:hover {
   width: 14px; height: 14px; border-radius: 50% 50% 50% 0; background: var(--agi); transform: rotate(-40deg);
 }
 .top-actions { color: var(--cream-dim); font-size: 0.88rem; }
+.win-live { margin: 0; padding-left: 1.1rem; display: flex; flex-direction: column; gap: 4px; }
+
 .top-actions button { padding: 0.4rem 0.75rem; }
 
 .seat, .turn-chip, .lobby-card, .team, .sheet, .cover, .hud {
@@ -728,7 +730,45 @@ button.debug-mode-cycle:hover {
   overflow: auto;
   backdrop-filter: none;
 }
+
+.hud-top {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+}
+.hud-top .turn-chip { flex: 1; min-width: 0; }
+.pile-stack {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 0 0 auto;
+}
+.pile-stack .pile-chip {
+  display: flex;
+  justify-content: space-between;
+  width: 7.2rem;
+}
+.pile-extra {
+  display: none;
+  position: absolute;
+  left: 0;
+  top: calc(100% + 4px);
+  z-index: 5;
+  flex-direction: column;
+  gap: 4px;
+  padding: 4px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: rgba(8, 16, 13, 0.96);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+}
+.pile-stack:hover .pile-extra,
+.pile-stack:focus-within .pile-extra {
+  display: flex;
+}
 .hud .actions { flex-wrap: wrap; }
+
 .hud .actions button { padding: 0.4rem 0.7rem; font-size: 0.85rem; }
 .win-block {
   display: flex;

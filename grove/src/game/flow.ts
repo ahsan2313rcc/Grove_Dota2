@@ -905,16 +905,45 @@ export function extract(state: Game, uid: string): { state: Game; hero: BoardHer
   return { state: editHero(state, uid, () => null), hero: loc.hero }
 }
 
+/** When an Infest host leaves the board, seat Lifestealer on that team in its place. */
+export function returnInfest(state: Game, hostUid: string, teamId: string): Game {
+  const hits = state.infests.filter((entry) => entry.hostUid === hostUid)
+  if (hits.length === 0) return state
+  state = {
+    ...state,
+    infests: state.infests.filter((entry) => entry.hostUid !== hostUid),
+    exile: state.exile.filter((card) => !hits.some((entry) => entry.ls.uid === card.uid)),
+  }
+  for (const infest of hits) {
+    const made = makeHero(infest.ls, infest.owner, infest.owner, state)
+    // strip() may have dropped the host's empty team — rebuild that seat so LS returns in place.
+    if (!teamById(state, teamId)) state = addTeam(state, infest.owner, blankTeam(teamId))
+    const seat = teamById(state, teamId)
+    if (seat && seat.player.id === infest.owner && !enterReason(state, seat.team, 1, false)) {
+      state = putOnTeam(state, infest.owner, teamId, made)
+      state = arrived(state, made.uid).state
+      state = log(state, "Infest: Lifestealer returns in its host's place.")
+    } else {
+      const [seated, seatId] = seatTeam(state, infest.owner)
+      state = putOnTeam(seated, infest.owner, seatId, made)
+      state = arrived(state, made.uid).state
+      state = log(state, 'Infest: Lifestealer returns to a new team.')
+    }
+  }
+  return state
+}
+
 export function removeHero(state: Game, uid: string): { state: Game; hero: BoardHero | null } {
   const loc = findHero(state, uid)
   if (!loc) return { state, hero: null }
+  const teamId = loc.team.id
   state = releaseHeld(state, loc.hero)
   // Medusa leaves: restore gazed teams.
   if (loc.hero.defId === 'medusa') {
     const holds = state.medusaHold.filter((entry) => entry.medusaUid === uid)
     state = { ...state, medusaHold: state.medusaHold.filter((entry) => entry.medusaUid !== uid) }
     for (const hold of holds) {
-      let [next, teamId] = seatTeam(state, hold.owner)
+      let [next, gazeTeam] = seatTeam(state, hold.owner)
       state = next
       for (const card of hold.cards) {
         state = {
@@ -922,7 +951,7 @@ export function removeHero(state: Game, uid: string): { state: Game; hero: Board
           exile: state.exile.filter((entry) => entry.uid !== card.uid),
         }
         const made = makeHero(card, hold.owner, hold.owner, state)
-        state = putOnTeam(state, hold.owner, teamId, made)
+        state = putOnTeam(state, hold.owner, gazeTeam, made)
         state = arrived(state, made.uid).state
       }
       state = log(state, 'Stone Gaze ends — the team returns.')
@@ -930,6 +959,7 @@ export function removeHero(state: Game, uid: string): { state: Game; hero: Board
   }
   const fresh = findHero(state, uid)
   state = editHero(state, uid, () => null)
+  state = returnInfest(state, uid, teamId)
   return { state, hero: fresh?.hero ?? loc.hero }
 }
 
@@ -1240,27 +1270,8 @@ function onDestroyed(state: Game, hero: BoardHero, teamId: string, by: PlayerId 
     state = stampBonds(state, bond.teamId, hero.uid)
   }
   // Tormentor revenge is handled in performDestroy via sourceUid (passed through onDestroyed).
+  // Infest return runs inside removeHero whenever the host leaves the board.
   void by
-  // Lifestealer Infest return.
-  for (const infest of state.infests.filter((entry) => entry.hostUid === hero.uid)) {
-    state = {
-      ...state,
-      infests: state.infests.filter((entry) => entry.hostUid !== hero.uid),
-      exile: state.exile.filter((card) => card.uid !== infest.ls.uid),
-    }
-    const made = makeHero(infest.ls, infest.owner, infest.owner, state)
-    const home = teamById(state, infest.homeTeamId)
-    if (home && !enterReason(state, home.team, 1, false)) {
-      state = putOnTeam(state, infest.owner, infest.homeTeamId, made)
-      state = arrived(state, made.uid).state
-      state = log(state, 'Infest: Lifestealer returns.')
-    } else {
-      const [seated, teamId] = seatTeam(state, infest.owner)
-      state = putOnTeam(seated, infest.owner, teamId, made)
-      state = arrived(state, made.uid).state
-      state = log(state, 'Infest: Lifestealer returns to a new team.')
-    }
-  }
   if (hero.defId === 'bristleback' && !aurasSuppressed(state, hero.controller)) {
     const enemies = allLocs(state).filter((loc) => loc.hero.controller !== hero.controller)
     if (enemies.length > 0) {

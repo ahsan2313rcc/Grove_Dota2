@@ -94,7 +94,7 @@ export const HEROES: HeroDef[] = [
     'STR',
     'Melee',
     'Infest',
-    'Exile Lifestealer and take control of target enemy hero. You may activate its ability immediately. Return Lifestealer to this team when that hero is destroyed.' + NO_CHAIN,
+    'Exile Lifestealer and take control of target enemy hero into this team. You may activate its ability immediately. Lifestealer stays exiled while that hero is on the board; when it leaves, Lifestealer returns in its place.' + NO_CHAIN,
     'cast',
   ),
   hero('lycan', 'Lycan', 'STR', 'Melee', 'Shapeshift', 'Whenever an ally enters this team, draw 1.', 'aura'),

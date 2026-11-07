@@ -431,8 +431,8 @@ export function settle(state: Game): Game {
       state = offerResponse(state)
       if (state.pending) continue
     }
-    // Hand limit is enforced only when ending a turn — draws may go above 7 mid-turn.
-    if (state.live && state.deck.length === 0) return finish(state, 'The deck is empty.')
+    // Empty deck starts the same final round as The Ancient (highest score wins).
+    if (state.live && state.deck.length === 0) return beginFinalRound(state, 'The deck is empty.')
     return state
   }
   return log(state, 'The chain of effects stops.')
@@ -480,9 +480,21 @@ function drawAction(state: Game): Game {
   if (state.players[actor].actions < 1) return state
   if (drawsLocked(state, actor)) return log(state, "Berserker's Call stops draws.")
   // Hand limit is enforced at end of turn (discard down to 7), not on action-draws.
-  if (state.deck.length === 0) return finish(state, 'The deck is empty.')
+  if (state.deck.length === 0) return beginFinalRound(state, 'The deck is empty.')
   state = setPlayer(state, actor, (player) => ({ ...player, actions: player.actions - 1 }))
   return beginDraw(state, actor, 1, 'action')
+}
+
+/** Ancient reveal or an empty deck: one more turn each, then highest score wins. */
+function beginFinalRound(state: Game, why: string): Game {
+  if (state.ancient || state.over) {
+    if (state.deck.length === 0 && !state.ancient) return finish(state, 'The deck is empty.')
+    return state
+  }
+  return log(
+    { ...state, ancient: { bonusSeat: null, endsLeft: state.players.length } },
+    `${why} Final round — each player gets one more turn. Highest score wins.`,
+  )
 }
 
 function endTurn(state: Game): Game {
@@ -503,7 +515,10 @@ function endTurn(state: Game): Game {
   if (state.ancient) {
     const endsLeft = state.ancient.endsLeft - 1
     state = { ...state, ancient: { ...state.ancient, endsLeft } }
-    if (endsLeft <= 0) return finish(state, 'The Ancient ends the match.')
+    if (endsLeft <= 0) {
+      const hasAncient = allLocs(state).some((loc) => loc.hero.defId === 'ancient')
+      return finish(state, hasAncient ? 'The Ancient ends the match.' : 'The final round ends the match.')
+    }
   }
   if (extra === actor) return startTurn(log(state, 'Refresher Orb grants another turn.'), actor)
   return startTurn(state, nextSeat(state, actor))

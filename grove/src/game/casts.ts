@@ -2,6 +2,8 @@ import { ANCIENT_ID, HERO_BY_ID, ITEM_BY_ID, display, firesAbility } from './cat
 import {
   abilitiesLocked,
   addHand,
+  addTeam,
+  blankTeam,
   afterBoardToHand,
   allLocs,
   arrived,
@@ -47,6 +49,7 @@ import {
   releaseHeld,
   removeHand,
   removeHero,
+  returnInfest,
   setPlayer,
   shuffle,
   silenced,
@@ -680,8 +683,7 @@ function questions(state: Game, resume: CastResume): Ask {
       }
     case 'lifestealer':
       if (at === 0) return pose(actor, 'Choose an enemy hero.', enemyHeroes(state, actor, kind))
-      if (at === 1) return pose(actor, 'Choose a team you own.', ownTeams(state, actor, true))
-      if (at === 2) {
+      if (at === 1) {
         return pose(actor, 'Fire that ability now?', [
           { id: 'yes', label: 'Fire it' },
           { id: 'no', label: 'Leave it' },
@@ -2401,10 +2403,11 @@ function eul(state: Game, uid: string | undefined, by: PlayerId): Game {
   if (immuneFrom(state, uid, by)) return log(state, immuneNote(state, uid))
   const pulled = extract(state, uid)
   if (!pulled.hero) return state
+  let next = returnInfest(pulled.state, uid, loc.team.id)
   return log(
     {
-      ...pulled.state,
-      phased: [...pulled.state.phased, { hero: pulled.hero, teamId: loc.team.id, owner: pulled.hero.owner, fromTurn: state.turn }],
+      ...next,
+      phased: [...next.phased, { hero: pulled.hero, teamId: loc.team.id, owner: pulled.hero.owner, fromTurn: state.turn }],
     },
     `${pname(state, loc.hero.controller)}'s ${display(pulled.hero.defId).name} is set aside until the end of the turn.`,
   )
@@ -2683,26 +2686,33 @@ function grantFreePlay(state: Game, actor: PlayerId): Game {
   )
 }
 
-/** Lifestealer: exile self, take control of host, return when host dies. */
+/** Lifestealer: exile self, pull host into this team; return in the host's place when it leaves. */
 function infestHost(state: Game, resume: CastResume, hostUid: string | undefined): Game {
   if (!hostUid) return state
   const home = here(state, resume)
   const ls = findHero(state, resume.sourceUid)
   if (!ls || !home) return state
+  const homeTeamId = home.team.id
   const lsCard: CardInst = { uid: ls.hero.uid, defId: ls.hero.defId, kind: 'hero' }
   const removed = removeHero(state, resume.sourceUid)
-  let next = toExile(removed.state, lsCard)
+  let next = toExile(removed.state, lsCard, null)
+  // strip() drops empty teams when Lifestealer leaves — keep that seat so the host can join it.
+  if (!teamById(next, homeTeamId)) next = addTeam(next, resume.actor, blankTeam(homeTeamId))
   next = {
     ...next,
     infests: [
       ...next.infests,
-      { ls: lsCard, hostUid, homeTeamId: home.team.id, owner: resume.actor },
+      { ls: lsCard, hostUid, homeTeamId, owner: resume.actor },
     ],
   }
-  const dest = teamIds(resume.picked).at(-1) ?? `new:${resume.actor}`
-  next = moveOnto(next, hostUid, resume.actor, dest.startsWith('team:') ? dest.slice(5) : dest)
+  next = moveOnto(next, hostUid, resume.actor, homeTeamId, { takeControl: true, by: resume.actor })
   const landed = findHero(next, hostUid)
-  next = log(next, 'Infest.')
+  next = log(
+    next,
+    landed
+      ? `Infest: ${display(landed.hero.defId).name} joins ${pname(next, resume.actor)}; Lifestealer waits in exile.`
+      : 'Infest.',
+  )
   if (!resume.picked.includes('yes') || !landed) return next
   if (next.stolenCast) return log(next, 'Stolen abilities cannot chain.')
   if (!firesAbility(landed.hero.defId)) return next
