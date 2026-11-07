@@ -1325,6 +1325,48 @@ button.debug-mode-cycle:hover {
   flex-direction: column;
   gap: 4px;
 }
+.scoring-subtabs { margin: 8px 0 4px; }
+.scoring-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 4px 0 8px;
+}
+.scoring-panel > p { margin: 0; font-size: 0.9rem; }
+.scoring-panel code {
+  font-size: 0.82em;
+  padding: 0.05em 0.35em;
+  border-radius: 4px;
+  background: rgba(243, 236, 223, 0.08);
+}
+.score-table-wrap { display: flex; flex-direction: column; gap: 4px; }
+.score-table-caption {
+  margin: 0;
+  font-size: 0.78rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--cream-dim);
+}
+.score-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.84rem;
+}
+.score-table th,
+.score-table td {
+  padding: 6px 8px;
+  text-align: left;
+  border-bottom: 1px solid var(--line);
+  vertical-align: top;
+}
+.score-table th {
+  color: var(--cream-dim);
+  font-weight: 600;
+  font-size: 0.76rem;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+.score-table td:last-child { white-space: nowrap; }
 .trap-blurb {
   display: flex;
   flex-wrap: wrap;
