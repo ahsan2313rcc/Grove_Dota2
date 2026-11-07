@@ -95,6 +95,8 @@ describe('card retunes', () => {
     expect(HERO_BY_ID.earthshaker?.text).toMatch(/4 or more/i)
     expect(HERO_BY_ID.undying?.text).toMatch(/discard 2 cards/i)
     expect(ITEM_BY_ID.shivas?.instant).toBe(true)
+    expect(ITEM_BY_ID.tp_scroll?.instant).toBe(true)
+    expect(ITEM_BY_ID.tp_scroll?.text).toMatch(/Instant\.$/)
     expect(ITEM_BY_ID.greaves?.text).toMatch(/Remove all Trap cards/i)
     expect(ITEM_BY_ID.assault?.text).toMatch(/\+2 actions/i)
   })

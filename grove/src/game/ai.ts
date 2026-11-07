@@ -656,6 +656,8 @@ function bestInterrupt(
     const uid = id.startsWith('instant:') ? id.slice(8) : id
     const card = state.players[actor]?.hand.find((entry) => entry.uid === uid)
     if (!card) continue
+    // Teleportation Scroll repositions your hero. It does not answer the spell, so leave it in hand.
+    if (card.defId === 'tp_scroll') continue
     let value = INTERRUPT_VALUE[card.defId] ?? (display(card.defId).instant ? 3 : 0)
     value += castValue * 0.35
     if (strat === 'spite') value += 1.8

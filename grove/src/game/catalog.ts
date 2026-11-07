@@ -354,7 +354,7 @@ export const HEROES: HeroDef[] = [
 
 export const ITEMS: ItemDef[] = [
   { id: 'clarity', name: 'Clarity', copies: 3, instant: false, text: 'Reveal cards from the top of the deck until you reveal a terrain. Put it in your hand and the rest back on top in any order.' },
-  { id: 'tp_scroll', name: 'Teleportation Scroll', copies: 3, instant: false, text: 'Move target hero you own to another team you control.' },
+  { id: 'tp_scroll', name: 'Teleportation Scroll', copies: 3, instant: true, text: 'Move target hero you own to another team you control. Instant.' },
   { id: 'ward', name: 'Observer Ward', copies: 3, instant: false, text: "Remove target trap, or reveal target opponent's hand." },
   { id: 'gloves', name: 'Gloves of Haste', copies: 3, instant: false, text: "Steal a random card from an opponent's hand." },
   {

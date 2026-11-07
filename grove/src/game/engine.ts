@@ -310,6 +310,12 @@ function instantHasTarget(state: Game, seat: PlayerId, card: CardInst): boolean 
   if (ENEMY_HERO_TARGET.has(card.defId)) return heroes.some((loc) => loc.hero.controller !== seat)
   if (ANY_HERO_TARGET.has(card.defId)) return heroes.length > 0
   if (ALLY_HERO_TARGET.has(card.defId)) return heroes.some((loc) => loc.hero.controller === seat)
+  if (card.defId === 'tp_scroll') {
+    const mine = heroes.filter((loc) => loc.hero.controller === seat)
+    const teams = state.players[seat]!.teams
+    const canNew = teams.length < TEAM_CAP
+    return mine.some((loc) => canNew || teams.some((team) => team.id !== loc.team.id))
+  }
   if (card.defId === 'arcane') return heroes.some((loc) => loc.hero.owner === seat && firesAbility(loc.hero.defId))
   if (card.defId === 'blink') return state.players[seat]!.hand.some((entry) => entry.kind === 'hero' && entry.uid !== card.uid)
   return true
