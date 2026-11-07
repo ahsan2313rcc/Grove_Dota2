@@ -742,6 +742,8 @@ export function enterReason(state: Game, team: Team, weight: number, token: bool
 }
 
 export function putOnTeam(state: Game, playerId: PlayerId, teamId: string, hero: BoardHero): Game {
+  // A freshly seated team is empty, and strip() drops empty teams on the next edit — recreate it.
+  if (!teamById(state, teamId)) state = addTeam(state, playerId, blankTeam(teamId))
   return updateTeam(state, teamId, (team) => ({
     ...team,
     heroes: [...team.heroes, { ...hero, controller: playerId }],
