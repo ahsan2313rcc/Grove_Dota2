@@ -62,9 +62,7 @@ function hero(
   return { id, name, attr, range, spell, text, timing }
 }
 
-/** Shared trap rules — shown via the Trap hint in the UI, not pasted onto every card. */
-export const TRAP_BLURB =
-  'Play face-down on any team. That team loses its attribute bonus. Trigger: another hero entering this team.'
+/** Shared trap rules — shown via the Trap rules hover hint in the UI. */
 export const TRAP_RULES =
   'Play face-down on any team with room for another hero (yours or an enemy\'s) — one trap per team, never on a full or closed team. While face down, that team scores no attribute bonus. When another hero enters, reveal and resolve this before that hero\'s ability (the controller is whoever controls the team). Afterwards a trap that does not sacrifice itself joins the team if there is room; otherwise it goes to the grave. Snares hurt the controller; wards help them.'
 

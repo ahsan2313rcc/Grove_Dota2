@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react'
-import { display, RECAST_IDS, RECAST_RULE, TRAP_BLURB, TRAP_RULES } from '../game/catalog.ts'
+import { display, RECAST_IDS, RECAST_RULE, TRAP_RULES } from '../game/catalog.ts'
 import { comboPlans, morphCasts, needsTeam, playableFromGrave, teamsFor, undyingRevive } from '../game/engine.ts'
 import { allLocs, findHero, isTrapHero, scoreState, scoreTeam } from '../game/flow.ts'
 import { teamShapes } from '../game/scoring.ts'
@@ -1001,7 +1001,6 @@ function Detail({
         {info?.spell ? <p className="spell">{info.spell}</p> : null}
         {trap ? (
           <p className="trap-blurb">
-            <span>{TRAP_BLURB}</span>
             <button type="button" className="trap-hint" title={TRAP_RULES} data-testid="trap-hint">
               Trap rules
             </button>
@@ -1071,7 +1070,6 @@ function Detail({
       {info.spell ? <p className="spell">{info.spell}</p> : null}
       {timing === 'trap' ? (
         <p className="trap-blurb">
-          <span>{TRAP_BLURB}</span>
           <button type="button" className="trap-hint" title={TRAP_RULES} data-testid="trap-hint">
             Trap rules
           </button>
