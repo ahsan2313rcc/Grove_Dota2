@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { apply, createGame, teamsFor } from './engine.ts'
-import { allLocs, makeHero, newTeam, putOnTeam, scoreState } from './flow.ts'
+import { allLocs, attrsOf, makeHero, newTeam, putOnTeam, scoreState } from './flow.ts'
 import type { CardInst, Game, PlayerId } from './types.ts'
 
 function ready(seed = 2): Game {
@@ -432,4 +432,48 @@ describe('traps', () => {
 
 function teamsForTrap(game: Game, uid: string) {
   return teamsFor(game, uid)
+}
+
+describe('The Ancient', () => {
+  function drawAncient(game: Game): Game {
+    const ancient = game.deck.find((card) => card.defId === 'ancient')!
+    return apply({ ...game, deck: [ancient, ...game.deck.filter((card) => card.uid !== ancient.uid)] }, { type: 'draw' })
+  }
+
+  it('flexes to complete a core and can be destroyed or stolen', () => {
+    let game = ready()
+    let home = ''
+    ;[game, home] = team(game, 0, ['axe', 'sven'])
+    const before = scoreState(game, 0).total
+    game = drawAncient(game)
+    game = apply(game, { type: 'choose', ids: [`team:${home}`] })
+    const after = scoreState(game, 0)
+    // +10 marker, plus the STR core it completes (3 STR bodies).
+    expect(after.total - before).toBeGreaterThanOrEqual(10 + 3)
+    const ancient = allLocs(game).find((loc) => loc.hero.defId === 'ancient')!
+    expect(attrsOfAncient(game, ancient.hero.uid)).toEqual(['STR'])
+    game = toHand(game, 1, [])
+    game = apply(game, { type: 'end' })
+    game = apply(game, { type: 'ready' })
+    game = toHand(game, 1, ['spectre'])
+    game = drain(apply(game, { type: 'play', uid: uidOf(game, 1, 'spectre'), team: 'new' }), pick(`hero:${ancient.hero.uid}`))
+    expect(allLocs(game).some((loc) => loc.hero.defId === 'ancient')).toBe(false)
+    expect(scoreState(game, 0).total).toBeLessThan(10)
+    expect(game.exile.some((card) => card.defId === 'ancient')).toBe(true)
+  })
+
+  it('triggers a trap on the team it joins', () => {
+    let game = ready()
+    let home = ''
+    ;[game, home] = team(game, 0, ['axe'])
+    game = trapOn(game, home, 'monkey_king')
+    game = drawAncient(game)
+    game = apply(game, { type: 'choose', ids: [`team:${home}`] })
+    expect(game.players[0].skip).toBe(true)
+  })
+})
+
+function attrsOfAncient(game: Game, uid: string) {
+  const loc = allLocs(game).find((entry) => entry.hero.uid === uid)!
+  return attrsOf(game, loc.hero)
 }

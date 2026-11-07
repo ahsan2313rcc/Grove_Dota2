@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { chooseAiAction } from './ai.ts'
 import { apply, createGame, morphCasts, teamsFor } from './engine.ts'
-import { attrsOf, blankTeam, scoreTeam, toExile, toGrave } from './flow.ts'
+import { attrsOf, blankTeam, scoreState, scoreTeam, toExile, toGrave } from './flow.ts'
 import { DEFAULT_SCORE_RULES, resetScoreRules, scoreBodies, setScoreRules, teamShape } from './scoring.ts'
 import type { CardInst, Game, PlayerId } from './types.ts'
 
@@ -295,16 +295,20 @@ describe('turn', () => {
     expect(game.active).toBe(1)
   })
 
-  it('revealing The Ancient by draw awards +10 and ends after one turn each', () => {
+  it('drawing The Ancient seats it on the board for +10 and starts the final round', () => {
     let game = ready()
     const ancient = game.deck.find((card) => card.defId === 'ancient')
     expect(ancient).toBeTruthy()
     game = { ...game, deck: [ancient!, ...game.deck.filter((card) => card.uid !== ancient!.uid)] }
     const before = game.players[0].hand.length
     game = apply(game, { type: 'draw' })
-    expect(game.ancient).toEqual({ bonusSeat: 0, endsLeft: 2 })
+    expect(game.ancient).toEqual({ bonusSeat: null, endsLeft: 2 })
+    expect(game.pending?.resume.kind).toBe('ancient-place')
+    game = apply(game, { type: 'choose', ids: ['new'] })
     expect(game.players[0].hand.length).toBe(before)
-    expect(game.players[0].hand.some((card) => card.defId === 'ancient')).toBe(false)
+    const seated = game.players[0].teams.flatMap((team) => team.heroes).find((hero) => hero.defId === 'ancient')
+    expect(seated?.token).toBe(true)
+    expect(scoreState(game, 0).total).toBeGreaterThanOrEqual(10)
     expect(game.over).toBeNull()
     game = apply(game, { type: 'end' })
     expect(game.ancient?.endsLeft).toBe(1)

@@ -142,6 +142,7 @@ export type Resume =
   | { kind: 'torment'; heroUid: string; cast: CastResume | null }
   | { kind: 'slark-trap'; owner: PlayerId; card: CardInst }
   | { kind: 'bounty-trap'; controller: PlayerId; target: PlayerId | null }
+  | { kind: 'ancient-place'; actor: PlayerId; card: CardInst }
   | { kind: 'limit'; player: PlayerId; then: 'end' | 'none' }
   | { kind: 'sand'; players: PlayerId[]; index: number }
   | { kind: 'kunkka-split'; cards: string[]; picker: PlayerId }
@@ -291,7 +292,8 @@ export interface Game {
   /** Lifestealer Infest: return LS when host is destroyed. */
   infests: { ls: CardInst; hostUid: string; homeTeamId: string; owner: PlayerId }[]
   /**
-   * Ancient revealed. `bonusSeat` gets +10 only when revealed by draw (not grave/exile).
+   * Ancient revealed: the final round is running. The +10 goes to whoever controls the Ancient on the board at the end.
+   * `bonusSeat` is legacy and always null.
    * Each seat then gets one end-turn; when `endsLeft` hits 0 the match finishes.
    */
   ancient: { bonusSeat: PlayerId | null; endsLeft: number } | null

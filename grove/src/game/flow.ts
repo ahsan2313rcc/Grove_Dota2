@@ -206,7 +206,7 @@ export function attrsOf(state: Game, hero: BoardHero): Attr[] {
   if (!hero.bkb && elderOrder(state, hero.controller)) return []
   if (hero.attrMode === 'none') return []
   if (hero.attrMode === 'set') return hero.attrSet
-  if (hero.defId === 'brewmaster') return [brewAttr(state, hero)]
+  if (hero.defId === 'brewmaster' || hero.defId === ANCIENT_ID) return [brewAttr(state, hero)]
   const reward = REWARD_BY_ID[hero.defId]
   if (reward?.attr) return [reward.attr]
   const base = HERO_BY_ID[hero.defId]?.attr
@@ -227,9 +227,14 @@ function elderOrder(state: Game, controller: PlayerId): boolean {
 }
 
 const BREW_ATTRS: Attr[] = ['STR', 'AGI', 'INT']
+const ANCIENT_ATTRS: Attr[] = ['STR', 'AGI', 'INT', 'UNI']
+
+function flexAttrs(hero: BoardHero): Attr[] {
+  return hero.defId === ANCIENT_ID ? ANCIENT_ATTRS : BREW_ATTRS
+}
 
 function isBrewFlex(state: Game, hero: BoardHero): boolean {
-  if (hero.defId !== 'brewmaster') return false
+  if (hero.defId !== 'brewmaster' && hero.defId !== ANCIENT_ID) return false
   if (hero.attrMode === 'none' || hero.attrMode === 'set') return false
   if (hero.bkb) return true
   const loc = findHero(state, hero.uid)
@@ -247,7 +252,7 @@ function fixedAttrsOf(state: Game, hero: BoardHero): Attr[] {
   }
   if (hero.attrMode === 'none') return []
   if (hero.attrMode === 'set') return hero.attrSet
-  if (hero.defId === 'brewmaster') return []
+  if (hero.defId === 'brewmaster' || hero.defId === ANCIENT_ID) return []
   const reward = REWARD_BY_ID[hero.defId]
   if (reward?.attr) return [reward.attr]
   const base = HERO_BY_ID[hero.defId]?.attr
@@ -314,13 +319,14 @@ export function scoreTeam(
     brew: {},
   }
 
-  const total = BREW_ATTRS.length ** flex.length
+  const total = flex.reduce((product, hero) => product * flexAttrs(hero).length, 1)
   for (let code = 0; code < total; code += 1) {
     let cursor = code
     const brew: Record<string, Attr> = {}
     for (const hero of flex) {
-      brew[hero.uid] = BREW_ATTRS[cursor % BREW_ATTRS.length]!
-      cursor = Math.floor(cursor / BREW_ATTRS.length)
+      const options = flexAttrs(hero)
+      brew[hero.uid] = options[cursor % options.length]!
+      cursor = Math.floor(cursor / options.length)
     }
     const bodies = team.heroes.map((hero) => {
       if (brew[hero.uid]) return bodyFor(hero, [brew[hero.uid]!])
@@ -337,7 +343,7 @@ export function scoreState(state: Game, id: PlayerId): { teams: number; terrains
   const teams = player.teams.reduce((sum, team) => sum + scoreTeam(state, team).points, 0)
   const terrains = player.combos.reduce((sum, combo) => sum + combo.points, 0)
   const meepoBonus = controls(state, id, 'meepo') ? terrainKinds(state, id).size : 0
-  const ancientBonus = state.ancient?.bonusSeat === id ? ANCIENT_BONUS : 0
+  const ancientBonus = controls(state, id, ANCIENT_ID) ? ANCIENT_BONUS : 0
   return { teams, terrains, total: teams + terrains + meepoBonus + ancientBonus }
 }
 
@@ -424,7 +430,7 @@ export function makeHero(card: CardInst, owner: PlayerId, controller: PlayerId, 
     attrMode: 'base',
     attrSet: [],
     gained: null,
-    token: card.kind === 'neutral',
+    token: card.kind === 'neutral' || card.kind === 'ancient',
     roshan: card.defId === 'roshan',
     rupture: false,
     omni: false,
@@ -557,7 +563,7 @@ function iceBlastAny(state: Game): boolean {
 }
 
 export function toExile(state: Game, card: CardInst): Game {
-  if (card.defId === ANCIENT_ID || card.kind === 'ancient') {
+  if ((card.defId === ANCIENT_ID || card.kind === 'ancient') && !state.ancient) {
     return revealAncient(state, 'exile', null, card)
   }
   return log(
@@ -568,6 +574,7 @@ export function toExile(state: Game, card: CardInst): Game {
 
 export function toGrave(state: Game, card: CardInst, origin: GraveMark['origin']): Game {
   if (card.defId === ANCIENT_ID || card.kind === 'ancient') {
+    if (state.ancient) return toExile(state, card)
     return revealAncient(state, 'grave', null, card)
   }
   if (card.kind === 'rune' || card.kind === 'neutral' || card.kind === 'tower') return toExile(state, card)
@@ -633,7 +640,7 @@ export function takeDraw(state: Game, id: PlayerId, count: number): Game {
   return next
 }
 
-/** Strip The Ancient from every zone and start the final round. */
+/** Strip The Ancient from every zone and start the final round. A drawer places it on the board for free. */
 export function revealAncient(
   state: Game,
   source: 'draw' | 'grave' | 'exile',
@@ -650,23 +657,45 @@ export function revealAncient(
   }
   if (state.ancient) return state
   let next = stripAncientZones(state, card?.uid)
-  const bonusSeat = source === 'draw' ? actor : null
-  next = {
-    ...next,
-    ancient: { bonusSeat, endsLeft: next.players.length },
+  next = { ...next, ancient: { bonusSeat: null, endsLeft: next.players.length } }
+  if (source !== 'draw' || actor === null || !card) {
+    return log(next, `The Ancient is revealed from the ${source}! It is only a marker. Final round — each player gets one more turn.`)
   }
-  if (bonusSeat !== null) {
-    next = log(
-      next,
-      `${pname(next, bonusSeat)} reveals The Ancient! +${ANCIENT_BONUS}. Final round — each player gets one more turn.`,
-    )
-  } else {
-    next = log(
-      next,
-      `The Ancient is revealed from the ${source}! No bonus. Final round — each player gets one more turn.`,
-    )
+  next = log(next, `${pname(next, actor)} draws The Ancient! Final round — this turn, then one more turn for each opponent.`)
+  return askAncientPlace({ ...next, limbo: [...next.limbo, card] }, actor, card)
+}
+
+function askAncientPlace(state: Game, actor: PlayerId, card: CardInst): Game {
+  const options: Choice[] = state.players[actor].teams
+    .filter((team) => team.heroes.length > 0 && !enterReason(state, team, 1, true))
+    .map((team) => ({ id: `team:${team.id}`, label: `${scoreTeam(state, team).why} · ${scoreTeam(state, team).points}` }))
+  if (state.players[actor].teams.length < TEAM_CAP) options.push({ id: 'new', label: 'New team' })
+  if (options.length === 0) {
+    return log({ ...state, limbo: state.limbo.filter((entry) => entry.uid !== card.uid), exile: [...state.exile, card] }, 'The Ancient finds no room and is set aside.')
   }
-  return next
+  return ask(state, {
+    actor,
+    prompt: `Place The Ancient (+${ANCIENT_BONUS} to whoever controls it at the end) on a team you control.`,
+    mode: 'pick',
+    min: 1,
+    max: 1,
+    choices: options,
+    resume: { kind: 'ancient-place', actor, card },
+  })
+}
+
+export function seatAncient(state: Game, actor: PlayerId, card: CardInst, choice: string): Game {
+  let next: Game = { ...state, limbo: state.limbo.filter((entry) => entry.uid !== card.uid) }
+  let teamId = choice.startsWith('team:') ? choice.slice(5) : ''
+  const dest = teamId ? teamById(next, teamId) : null
+  if (!dest || dest.player.id !== actor || enterReason(next, dest.team, 1, true)) {
+    const made = newTeam(next, actor)
+    if (!made) return log({ ...next, exile: [...next.exile, card] }, 'The Ancient finds no room and is set aside.')
+    ;[next, teamId] = made
+  }
+  next = putOnTeam(next, actor, teamId, makeHero(card, actor, actor, next))
+  next = arrived(next, card.uid).state
+  return log(next, `${pname(next, actor)} sets The Ancient on the board.`)
 }
 
 function stripAncientZones(state: Game, uid?: string): Game {

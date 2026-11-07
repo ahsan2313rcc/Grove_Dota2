@@ -38,6 +38,7 @@ import {
   plantTrap,
   seatTeam,
   performDestroy,
+  seatAncient,
   pname,
   putOnTeam,
   queueDraw,
@@ -1035,6 +1036,7 @@ function satisfy(state: Game, ids: string[]): Game {
     // Legacy path removed — Tormentor is a board token now.
     return resume.cast ? cast(next, resume.cast) : next
   }
+  if (resume.kind === 'ancient-place') return seatAncient(next, resume.actor, resume.card, ids[0] ?? 'new')
   if (resume.kind === 'save') {
     const choice = ids[0]
     if (!choice || choice === 'pass') {

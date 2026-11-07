@@ -1,5 +1,5 @@
 import { display } from '../game/catalog.ts'
-import { attrsOf, graveLocked, instantsLocked, itemsLocked, rangeOf } from '../game/flow.ts'
+import { allLocs, attrsOf, graveLocked, instantsLocked, itemsLocked, rangeOf } from '../game/flow.ts'
 import type { Attr, BoardHero, CardInst, Game, PlayerId, Range, Team } from '../game/types.ts'
 
 export function opponentOf(game: Game, id: PlayerId): PlayerId {
@@ -74,12 +74,13 @@ export function statusLines(game: Game, viewer: PlayerId): string[] {
   }
   if (graveLocked(game, viewer)) lines.push('Muerta: you cannot take cards from the grave.')
   if (game.ancient) {
+    const holder = allLocs(game).find((loc) => loc.hero.defId === 'ancient')?.hero.controller
     const bonus =
-      game.ancient.bonusSeat === viewer
-        ? ' (+10 yours)'
-        : game.ancient.bonusSeat !== null
-          ? ` (+10 ${game.players[game.ancient.bonusSeat]?.name ?? 'seat'})`
-          : ' (no bonus)'
+      holder === undefined
+        ? ' (not on the board)'
+        : holder === viewer
+          ? ' (+10 yours)'
+          : ` (+10 ${game.players[holder]?.name ?? 'seat'})`
     lines.push(`Ancient revealed${bonus}. Final round: ${game.ancient.endsLeft} turn${game.ancient.endsLeft === 1 ? '' : 's'} left.`)
   }
   if (game.active !== viewer && !game.over && !instantsLocked(game, viewer)) {

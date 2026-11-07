@@ -43,7 +43,7 @@ export const ANCIENT_BONUS = 10
 export const ANCIENT = {
   id: ANCIENT_ID,
   name: 'The Ancient',
-  text: 'When revealed by drawing: that player scores +10. Each player then takes one final turn, then the match ends. If revealed from the grave or exile: no bonus; same final round.',
+  text: 'Neutral. When you draw The Ancient, play it for free into a team you control or a new team; it counts as any one attribute. Whoever controls it at the end scores +10. Drawing it starts the final round: finish this turn, then each opponent takes one more turn. Revealed from the grave or exile, it only starts the final round.',
   kind: 'ancient' as const,
 }
 
