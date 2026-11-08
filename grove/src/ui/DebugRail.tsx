@@ -291,7 +291,7 @@ export function DebugRail({
           {summary.finished}/{summary.matches} games done · avg length T{fmt(summary.avgTurns)} · final spread {fmt(summary.avgFinalSpread)} pts · winner avg {fmt(summary.avgWinnerScore)} pts
         </p>
         <p className="quiet debug-legend">
-          Rel = score Δ vs the mean opponent while the play resolves · Self = own score Δ · Impact = how much more Rel the seat gained over the next +1/+3/+5/+10 turns than an average play at the same stage (so auras, traps, engines and discard count when they pay off) · Rel +5 = raw Rel change five turns on. Hover Impact for every horizon. Win% = play-weighted seat wins.
+          Rel = score Δ vs the mean opponent while the play resolves · Self = own score Δ · Impact = how much more Rel the seat gained over the next +1/+3/+5/+10 turns than an average play at the same stage (so auras, traps, engines and discard count when they pay off) · Rel +5 = raw Rel change five turns on. Hover Impact for every horizon. Win% = wins / times played.
         </p>
       </div>
 
@@ -411,7 +411,6 @@ export function DebugRail({
           total={summary.heroPlaysTotal}
           silenced={summary.heroPlaysSilenced}
           open={summary.heroPlaysOpen}
-          seats={summary.seats}
         />
         <div className="debug-block">
           <h3>Items / runes / neutrals / towers</h3>
@@ -469,8 +468,8 @@ export function DebugRail({
             {
               key: 'win',
               label: 'Win%',
-              get: (row) => (row.presence > 0 ? pctCell(row.winRate, row.wins, row.presence, summary.seats) : '—'),
-              sortValue: (row) => winRateShown(row.winRate, summary.seats),
+              get: (row) => (row.presence > 0 ? pctCell(row.winRate, row.wins, row.presence) : '—'),
+              sortValue: (row) => row.winRate,
               className: 'debug-num',
             },
           ]}
@@ -667,24 +666,16 @@ function HeroModeTable({
   total,
   silenced,
   open,
-  seats,
 }: {
   total: CardBalanceRow[]
   silenced: CardBalanceRow[]
   open: CardBalanceRow[]
-  seats: number
 }) {
   const [mode, setMode] = useState<HeroSwingMode>('total')
   // Cycle drives Rel/Impact and the Win% partition (total vs ability vs silenced).
   const rows = mode === 'total' ? total : mode === 'silenced' ? silenced : open
   const label =
     mode === 'total' ? 'Total (body+ability)' : mode === 'silenced' ? 'Silenced' : 'Ability fired'
-  const winLegend =
-    mode === 'total'
-      ? 'n / Win% = all plays'
-      : mode === 'silenced'
-        ? 'n / Win% = silenced plays only'
-        : 'n / Win% = ability-fired plays only'
   return (
     <div className="debug-block">
       <h3>
@@ -698,16 +689,12 @@ function HeroModeTable({
           {label}
         </button>
       </h3>
-      <p className="quiet debug-legend">
-        Cycle total → silenced → ability fired for that slice (Rel / Impact / Win%). {winLegend}. Win% scaled so fair ≈ 50%. Hover % for raw.
-      </p>
       <CardSortTable
         key={mode}
         rows={rows}
         empty="No hero plays yet for this mode."
         heroWins
         heroWinMode={mode}
-        seats={seats}
         pageSize={PAGE_SIZE}
       />
     </div>
@@ -787,7 +774,7 @@ function TurnGraph({
 }
 
 /** One n + Win% pair — ability / silenced splits live behind the Heroes cycle button. */
-function heroWinColumns(mode: HeroSwingMode, seats: number): Column<CardBalanceRow>[] {
+function heroWinColumns(mode: HeroSwingMode): Column<CardBalanceRow>[] {
   const sampleCount = (row: CardBalanceRow) => {
     if (mode !== 'total') return row.plays
     const samples = row.abilityPlays + row.silencedPlays
@@ -804,8 +791,8 @@ function heroWinColumns(mode: HeroSwingMode, seats: number): Column<CardBalanceR
     {
       key: 'win',
       label: 'Win%',
-      get: (row) => pctCell(row.playWinRate, row.playWins, sampleCount(row), seats),
-      sortValue: (row) => winRateShown(row.playWinRate, seats),
+      get: (row) => pctCell(row.playWinRate, row.playWins, sampleCount(row)),
+      sortValue: (row) => row.playWinRate,
       className: 'debug-num',
     },
   ]
@@ -817,7 +804,6 @@ function CardSortTable({
   defaultSort = { key: 'rel', dir: 'desc' as const },
   heroWins = false,
   heroWinMode = 'total' as HeroSwingMode,
-  seats = 0,
   pageSize = PAGE_SIZE,
 }: {
   rows: CardBalanceRow[]
@@ -827,26 +813,21 @@ function CardSortTable({
   heroWins?: boolean
   /** Cycle mode: total / silenced / ability-fired partition. */
   heroWinMode?: HeroSwingMode
-  /** Lobby size for seat-scaled hero Win% (fair ≈ 50%). */
-  seats?: number
   pageSize?: number
 }) {
   const winCols: Column<CardBalanceRow>[] = heroWins
-    ? heroWinColumns(heroWinMode, seats)
+    ? heroWinColumns(heroWinMode)
     : [
         {
           key: 'win',
           label: 'Win%',
           get: (row) =>
             row.plays > 0
-              ? pctCell(row.playWinRate, row.playWins, row.plays, seats)
+              ? pctCell(row.playWinRate, row.playWins, row.plays)
               : row.presence > 0
-                ? pctCell(row.winRate, row.wins, row.presence, seats)
+                ? pctCell(row.winRate, row.wins, row.presence)
                 : '—',
-          sortValue: (row) => {
-            const rate = row.plays > 0 ? row.playWinRate : row.winRate
-            return winRateShown(rate, seats)
-          },
+          sortValue: (row) => (row.plays > 0 ? row.playWinRate : row.winRate),
           className: 'debug-num',
         },
       ]
@@ -909,24 +890,12 @@ function CardSortTable({
   )
 }
 
-/**
- * Seat-scaled Win% with fair share ≈ 50% (raw × seats / 2).
- * 2-seat lobby → raw %; 4-seat → raw × 2, so 25% raw reads as 50%.
- */
-function winRateShown(rate: number, seats: number): number {
-  return seats > 0 ? (rate * seats) / 2 : rate
-}
-
-/**
- * Hero Win% display. When `seats` is set, scale so fair ≈ 50%. Tooltip keeps raw wins/n.
- */
-function pctCell(rate: number, wins: number, samples: number, seats = 0): ReactNode {
+/** Win% = wins / times played (no seat scaling). Hover shows wins/n. */
+function pctCell(rate: number, wins: number, samples: number): ReactNode {
   if (samples <= 0) return '—'
-  const shown = winRateShown(rate, seats)
-  const fair = seats > 0 ? ` · fair raw ${(100 / seats).toFixed(0)}%` : ''
   return (
-    <span className={samples < 3 ? 'debug-low-n' : undefined} title={`${wins}/${samples} raw ${Math.round(rate * 100)}%${fair}${samples < 3 ? ' · too few samples' : ''}`}>
-      {Math.round(shown * 100)}%
+    <span className={samples < 3 ? 'debug-low-n' : undefined} title={`${wins}/${samples}${samples < 3 ? ' · too few samples' : ''}`}>
+      {Math.round(rate * 100)}%
     </span>
   )
 }
