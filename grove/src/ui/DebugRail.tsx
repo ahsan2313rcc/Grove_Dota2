@@ -396,17 +396,54 @@ export function DebugRail({
           Among wins with a mid checkpoint (latest milestone round before the final table-round), vs the best other seat:
           Held = ahead by more than ±{LEAD_CONTEST_BAND} · Contesting = within ±{LEAD_CONTEST_BAND} · Behind = down by more than ±{LEAD_CONTEST_BAND}.
         </p>
-        <LeadOutcomeTable title="By strat" rows={summary.leadByStrat} labelOf={(row) => stratLabel(row.key as AiStrat)} />
-        <LeadOutcomeTable title="By seat" rows={summary.leadBySeat} labelOf={(row) => row.label} />
+        <div className="debug-rel-grid">
+          <div>
+            <h4 className="debug-subhead">By strat</h4>
+            <LeadOutcomeTable
+              head="Strat"
+              rows={summary.leadByStrat}
+              labelOf={(row) => stratLabel(row.key as AiStrat)}
+            />
+          </div>
+          <div>
+            <h4 className="debug-subhead">By seat</h4>
+            <LeadOutcomeTable
+              head="Seat"
+              rows={summary.leadBySeat}
+              labelOf={(row) => row.label}
+            />
+          </div>
+        </div>
       </div>
 
       <div className="debug-block" data-testid="debug-ancient-draws">
         <h3>Ancient draws</h3>
         <p className="quiet debug-legend">
           True draws of The Ancient (grave/exile reveals excluded). Win% = drawer wins / decided matches.
-          Reveals (any source): {summary.ancientReveals}.
+          Reveals (any source): {summary.ancientReveals}
+          {(() => {
+            const total = summary.ancientDraws.find((row) => row.kind === 'total')
+            return total && total.draws > 0
+              ? ` · drawer wins ${total.wins}/${total.decided}`
+              : ''
+          })()}.
         </p>
-        <AncientDrawTable rows={summary.ancientDraws} />
+        <div className="debug-rel-grid">
+          <div>
+            <h4 className="debug-subhead">By strat</h4>
+            <AncientDrawTable
+              head="Strat"
+              rows={summary.ancientDraws.filter((row) => row.kind === 'strat')}
+            />
+          </div>
+          <div>
+            <h4 className="debug-subhead">By seat</h4>
+            <AncientDrawTable
+              head="Seat"
+              rows={summary.ancientDraws.filter((row) => row.kind === 'seat')}
+            />
+          </div>
+        </div>
       </div>
 
       <div className="debug-block">
@@ -1166,52 +1203,49 @@ function uniqueMilestoneStrats(summary: BalanceSummary): AiStrat[] {
 }
 
 function LeadOutcomeTable({
-  title,
+  head,
   rows,
   labelOf,
 }: {
-  title: string
+  head: string
   rows: LeadOutcomeRow[]
   labelOf: (row: LeadOutcomeRow) => string
 }) {
   if (rows.length === 0) {
-    return <p className="quiet">{title}: no wins yet.</p>
+    return <p className="quiet">No wins yet.</p>
   }
   return (
-    <>
-      <p className="quiet">{title}</p>
-      <table className="debug-table debug-table-compact">
-        <thead>
-          <tr>
-            <th>{title === 'By seat' ? 'Seat' : 'Strat'}</th>
-            <th className="debug-num" title="Total wins">W</th>
-            <th className="debug-num" title={`Ahead by more than ${LEAD_CONTEST_BAND} at mid checkpoint`}>Held</th>
-            <th className="debug-num" title={`Within ±${LEAD_CONTEST_BAND} of the best other seat`}>Close</th>
-            <th className="debug-num" title={`Down by more than ${LEAD_CONTEST_BAND} at mid checkpoint`}>Behind</th>
-            <th className="debug-num" title="Held / samples with a mid checkpoint">Held%</th>
+    <table className="debug-table debug-table-compact">
+      <thead>
+        <tr>
+          <th>{head}</th>
+          <th className="debug-num" title="Total wins">W</th>
+          <th className="debug-num" title={`Ahead by more than ${LEAD_CONTEST_BAND} at mid checkpoint`}>Held</th>
+          <th className="debug-num" title={`Within ±${LEAD_CONTEST_BAND} of the best other seat`}>Close</th>
+          <th className="debug-num" title={`Down by more than ${LEAD_CONTEST_BAND} at mid checkpoint`}>Behind</th>
+          <th className="debug-num" title="Held / samples with a mid checkpoint">Held%</th>
+        </tr>
+      </thead>
+      <tbody>
+        {rows.map((row) => (
+          <tr key={row.key}>
+            <td><strong>{labelOf(row)}</strong></td>
+            <td className="debug-num">{row.wins}</td>
+            <td className="debug-num">{row.heldLead}</td>
+            <td className="debug-num">{row.contesting}</td>
+            <td className="debug-num">{row.fromBehind}</td>
+            <td className="debug-num">
+              {row.samples > 0 ? `${Math.round((row.heldLead / row.samples) * 100)}%` : '—'}
+              {row.samples > 0 ? <small>/{row.samples}</small> : null}
+            </td>
           </tr>
-        </thead>
-        <tbody>
-          {rows.map((row) => (
-            <tr key={row.key}>
-              <td><strong>{labelOf(row)}</strong></td>
-              <td className="debug-num">{row.wins}</td>
-              <td className="debug-num">{row.heldLead}</td>
-              <td className="debug-num">{row.contesting}</td>
-              <td className="debug-num">{row.fromBehind}</td>
-              <td className="debug-num">
-                {row.samples > 0 ? `${Math.round((row.heldLead / row.samples) * 100)}%` : '—'}
-                {row.samples > 0 ? <small>/{row.samples}</small> : null}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </>
+        ))}
+      </tbody>
+    </table>
   )
 }
 
-function AncientDrawTable({ rows }: { rows: AncientDrawRow[] }) {
+function AncientDrawTable({ head, rows }: { head: string; rows: AncientDrawRow[] }) {
   if (rows.every((row) => row.draws === 0)) {
     return <p className="quiet">No Ancient draws yet.</p>
   }
@@ -1219,14 +1253,14 @@ function AncientDrawTable({ rows }: { rows: AncientDrawRow[] }) {
     <table className="debug-table debug-table-compact">
       <thead>
         <tr>
-          <th>Who</th>
+          <th>{head}</th>
           <th className="debug-num" title="Times this seat/strat drew The Ancient">Draws</th>
           <th className="debug-num" title="Drawer wins / decided matches">W</th>
           <th className="debug-num">Win%</th>
         </tr>
       </thead>
       <tbody>
-        {rows.filter((row) => row.draws > 0 || row.kind === 'total').map((row) => (
+        {rows.filter((row) => row.draws > 0).map((row) => (
           <tr key={`${row.kind}:${row.key}`}>
             <td>
               <strong>
