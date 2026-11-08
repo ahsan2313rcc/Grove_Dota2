@@ -341,33 +341,42 @@ export function DebugRail({
                 <thead>
                   <tr>
                     <th>Seat</th>
-                    <th className="debug-num" title="Games counted for this seat (max across milestones)">N</th>
                     {summary.roundMilestones.filter((row) => row.samples > 0).map((row) => (
                       <th key={`rs${row.round}`} className="debug-num" title={`Round ${row.round} avg score / hand`}>R{row.round}</th>
                     ))}
                   </tr>
                 </thead>
                 <tbody>
-                  {Array.from({ length: Math.max(1, summary.seats) }, (_, seat) => {
+                  {(() => {
                     const live = summary.roundMilestones.filter((row) => row.samples > 0)
-                    const n = Math.max(0, ...live.map((row) => row.samplesBySeat[seat] ?? 0))
                     return (
-                      <tr key={seat}>
-                        <td><strong>Seat {seat + 1}</strong></td>
-                        <td className="debug-num">{n || '—'}</td>
-                        {live.map((row) => {
-                          const seatN = row.samplesBySeat[seat] ?? 0
-                          return (
-                            <td key={`${seat}-${row.round}`} className="debug-num">
-                              {seatN > 0
-                                ? <>{fmt(row.avgScoreBySeat[seat] ?? 0)}<small>/{fmt(row.avgHandBySeat[seat] ?? 0)}</small></>
-                                : '—'}
+                      <>
+                        <tr>
+                          <td><strong>N</strong></td>
+                          {live.map((row) => (
+                            <td key={`n-seat-${row.round}`} className="debug-num" title={`Games that reached round ${row.round}`}>
+                              {row.samples}
                             </td>
-                          )
-                        })}
-                      </tr>
+                          ))}
+                        </tr>
+                        {Array.from({ length: Math.max(1, summary.seats) }, (_, seat) => (
+                          <tr key={seat}>
+                            <td><strong>Seat {seat + 1}</strong></td>
+                            {live.map((row) => {
+                              const seatN = row.samplesBySeat[seat] ?? 0
+                              return (
+                                <td key={`${seat}-${row.round}`} className="debug-num">
+                                  {seatN > 0
+                                    ? <>{fmt(row.avgScoreBySeat[seat] ?? 0)}<small>/{fmt(row.avgHandBySeat[seat] ?? 0)}</small></>
+                                    : '—'}
+                                </td>
+                              )
+                            })}
+                          </tr>
+                        ))}
+                      </>
                     )
-                  })}
+                  })()}
                 </tbody>
               </table>
             </div>
@@ -377,31 +386,40 @@ export function DebugRail({
                 <thead>
                   <tr>
                     <th>Strat</th>
-                    <th className="debug-num" title="Games counted for this strat (max across milestones)">N</th>
                     {summary.roundMilestones.filter((row) => row.samples > 0).map((row) => (
                       <th key={`rh${row.round}`} className="debug-num" title={`Round ${row.round} avg score / hand`}>R{row.round}</th>
                     ))}
                   </tr>
                 </thead>
                 <tbody>
-                  {uniqueMilestoneStrats(summary).map((strat) => {
+                  {(() => {
                     const live = summary.roundMilestones.filter((row) => row.samples > 0)
-                    const n = Math.max(0, ...live.map((row) => row.byStrat.find((entry) => entry.strat === strat)?.samples ?? 0))
                     return (
-                      <tr key={strat}>
-                        <td><strong>{stratLabel(strat)}</strong></td>
-                        <td className="debug-num">{n || '—'}</td>
-                        {live.map((row) => {
-                          const cell = row.byStrat.find((entry) => entry.strat === strat)
-                          return (
-                            <td key={`${strat}-${row.round}`} className="debug-num">
-                              {cell ? <>{fmt(cell.avgScore)}<small>/{fmt(cell.avgHand)}</small></> : '—'}
+                      <>
+                        <tr>
+                          <td><strong>N</strong></td>
+                          {live.map((row) => (
+                            <td key={`n-strat-${row.round}`} className="debug-num" title={`Games that reached round ${row.round}`}>
+                              {row.samples}
                             </td>
-                          )
-                        })}
-                      </tr>
+                          ))}
+                        </tr>
+                        {uniqueMilestoneStrats(summary).map((strat) => (
+                          <tr key={strat}>
+                            <td><strong>{stratLabel(strat)}</strong></td>
+                            {live.map((row) => {
+                              const cell = row.byStrat.find((entry) => entry.strat === strat)
+                              return (
+                                <td key={`${strat}-${row.round}`} className="debug-num">
+                                  {cell ? <>{fmt(cell.avgScore)}<small>/{fmt(cell.avgHand)}</small></> : '—'}
+                                </td>
+                              )
+                            })}
+                          </tr>
+                        ))}
+                      </>
                     )
-                  })}
+                  })()}
                 </tbody>
               </table>
             </div>
