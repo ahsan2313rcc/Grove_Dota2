@@ -12,7 +12,6 @@ import {
 import {
   AI_POWER_MAX,
   AI_POWER_MIN,
-  aiSearchBudget,
   aiThoughtPowerLabel,
   bootAiThoughtPower,
   getAiThoughtPower,
@@ -73,7 +72,7 @@ import { Rules } from './ui/Rules.tsx'
 import { type DebugSpeed, type DebugView } from './ui/DebugRail.tsx'
 import { OnlinePlay } from './ui/OnlinePlay.tsx'
 import { ScoreRulesPanel } from './ui/ScoreRulesPanel.tsx'
-import { WinConditionPanel, winSummary } from './ui/WinConditionPanel.tsx'
+import { WinConditionPanel } from './ui/WinConditionPanel.tsx'
 import { Table } from './ui/Table.tsx'
 
 export type SeatCount = 2 | 3 | 4 | 5 | 6 | 7 | 8
@@ -1148,78 +1147,49 @@ function Lobby({
           <summary>
             <span>Match options</span>
             <span className="quiet">
-              AI {thoughtPower}/10 · {winSummary(lobbyRules, count)}{debugMode ? ' · debug' : ''}
+              AI {thoughtPower}/10{debugMode ? ' · debug' : ''}
             </span>
           </summary>
           <div className="debug-lobby">
-          <label>
-            Seed
-            <input
-              data-testid="seed"
-              placeholder="Random"
-              value={seedText}
-              onChange={(event) => setSeedText(event.target.value)}
-            />
-          </label>
-          <p className="quiet">
-            Heuristic seats (Balanced / Tempo / Architect / Spite) use Challenge search. Pick <strong>Neural</strong> on a seat to play the trained net.
-          </p>
-          <label className="thought-power">
-            <span>
-              AI thought power · {thoughtPower}/10 · {aiThoughtPowerLabel(thoughtPower)}
-            </span>
-            <input
-              data-testid="lobby-thought-power"
-              type="range"
-              min={AI_POWER_MIN}
-              max={AI_POWER_MAX}
-              step={1}
-              value={thoughtPower}
-              onChange={(event) => setThoughtPower(setAiThoughtPower(Number(event.target.value)))}
-            />
-            <span className="quiet">
-              {(() => {
-                const b = aiSearchBudget(thoughtPower)
-                return `depth ${b.depth} · beam ${b.beam} · hand ${b.handPly}`
-              })()}
-            </span>
-          </label>
-          <button type="button" data-testid="lobby-win" onClick={() => setWinOpen(true)}>
-            Win condition…
-          </button>
-          <p className="quiet" data-testid="lobby-win-summary">
-            {count} players: {winSummary(lobbyRules, count)}.
-          </p>
-          <label className="check-row">
-            <input
-              data-testid="lobby-debug"
-              type="checkbox"
-              checked={debugMode}
-              onChange={(event) => setDebugMode(event.target.checked)}
-            />
-            Debug balance
-          </label>
-          <p className="quiet">
-            {debugMode
-              ? 'All seats run as AI. Sims run in the background at full speed; open Watch to slow the board.'
-              : 'Tick to run AI balance sims with stats instead of a normal match.'}
-          </p>
-          {debugPreview ? (
-            <>
-              <label>
-                Sequential games
+            <label className="thought-power">
+              <span>
+                AI thought power {thoughtPower}/10 ({aiThoughtPowerLabel(thoughtPower)})
+              </span>
+              <input
+                data-testid="lobby-thought-power"
+                type="range"
+                min={AI_POWER_MIN}
+                max={AI_POWER_MAX}
+                step={1}
+                value={thoughtPower}
+                onChange={(event) => setThoughtPower(setAiThoughtPower(Number(event.target.value)))}
+              />
+            </label>
+            <div className="lobby-opt-row">
+              <label className="check-row">
                 <input
-                  data-testid="lobby-parallel"
-                  type="number"
-                  min={1}
-                  max={MAX_QUEUE}
-                  value={queue}
-                  onChange={(event) => setQueue(Math.max(1, Math.min(MAX_QUEUE, Number(event.target.value) || 1)))}
+                  data-testid="lobby-debug"
+                  type="checkbox"
+                  checked={debugMode}
+                  onChange={(event) => setDebugMode(event.target.checked)}
                 />
+                Debug balance
               </label>
-              <p className="quiet">
-                Sims one game at a time at full speed in Stats. Open Watch to slow the board. Queue up to {MAX_QUEUE}.
-              </p>
+              {debugPreview ? (
+                <label className="lobby-opt-inline">
+                  Seq games
+                  <input
+                    data-testid="lobby-parallel"
+                    type="number"
+                    min={1}
+                    max={MAX_QUEUE}
+                    value={queue}
+                    onChange={(event) => setQueue(Math.max(1, Math.min(MAX_QUEUE, Number(event.target.value) || 1)))}
+                  />
+                </label>
+              ) : null}
+            </div>
+            {debugPreview ? (
               <label className="check-row">
                 <input
                   data-testid="lobby-train-neural"
@@ -1229,20 +1199,26 @@ function Lobby({
                 />
                 Train Neural
               </label>
-              <p className="quiet">
-                Outcome learning (not imitation): Neural plays with exploration and trains on play / +3 / +5 / full-game score differentials so it can beat heuristics. Weights stay in this browser — Save / Clear in the debug rail.
-              </p>
-              <button type="button" data-testid="lobby-scoring" onClick={() => setScoreOpen(true)}>
-                Scoring…
+            ) : null}
+            <div className="lobby-opt-row">
+              {debugPreview ? (
+                <button type="button" data-testid="lobby-scoring" onClick={() => setScoreOpen(true)}>
+                  Scoring…
+                </button>
+              ) : null}
+              <button type="button" data-testid="lobby-win" onClick={() => setWinOpen(true)}>
+                Win condition…
               </button>
-              <p className="quiet">
-                Core combo {lobbyRules.coreCombo} · mix combo {lobbyRules.mixCombo} · pair combo {lobbyRules.pairCombo}
-                {lobbyRules.attackOnCore ? ' · atk on core' : ''}
-                {lobbyRules.attackOnMix ? ' · atk on mix' : ''}
-                {lobbyRules.ancientEndgame ? ' · Ancient on' : ' · Ancient off'}
-              </p>
-            </>
-          ) : null}
+            </div>
+            <label>
+              Seed
+              <input
+                data-testid="seed"
+                placeholder="Random"
+                value={seedText}
+                onChange={(event) => setSeedText(event.target.value)}
+              />
+            </label>
           </div>
         </details>
         <div className="lobby-links">
@@ -1284,7 +1260,6 @@ function Lobby({
           >
             <p className="eyebrow">Debug balance</p>
             <h2 id="score-title">Scoring</h2>
-            <p className="quiet">These rules apply when you start the debug match. Attack bonus can be enabled separately for core and mix teams.</p>
             <ScoreRulesPanel value={lobbyRules} onChange={setLobbyRules} />
             <button type="button" className="primary block" data-testid="score-done" onClick={() => setScoreOpen(false)}>
               Done

@@ -1653,7 +1653,26 @@ button.debug-mode-cycle:hover {
 .lobby-options[open] summary::after { transform: rotate(180deg); }
 .lobby-options summary .quiet { margin-left: auto; text-transform: none; letter-spacing: 0; font-size: 0.8rem; }
 .lobby-options .debug-lobby { border: 0; border-top: 1px solid var(--line); border-radius: 0; }
-.lobby-options .debug-lobby .quiet { font-size: 0.82rem; line-height: 1.4; }
+.lobby-opt-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.lobby-opt-row > button {
+  flex: 1 1 8rem;
+}
+.lobby-opt-inline {
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: center;
+  gap: 8px !important;
+  margin-left: auto;
+  font-size: 0.82rem;
+}
+.lobby-opt-inline input[type='number'] {
+  width: 5.5rem;
+}
 .lobby-links { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
 .lobby-links button { font-size: 0.88rem; padding: 0.5rem 0.6rem; }
 @media (max-width: 640px) {
