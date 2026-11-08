@@ -357,6 +357,21 @@ export interface StratBalanceRow {
   wins: number
   finishes: number
   avgScore: number
+  /** Mean final margin: own score − best other seat (negative when behind). */
+  avgMargin: number
+  avgStanding: number
+  avgSelfSwing: number
+  avgRelSwing: number
+  plays: number
+}
+
+/** Same rollup as StratBalanceRow, keyed by seat index. */
+export interface SeatBalanceRow {
+  seat: number
+  wins: number
+  finishes: number
+  avgScore: number
+  avgMargin: number
   avgStanding: number
   avgSelfSwing: number
   avgRelSwing: number
@@ -457,6 +472,7 @@ export interface BalanceSummary {
   /** Ability activations rolled up by primary effect family. */
   byAbilityType: AbilityTypeRow[]
   byStrat: StratBalanceRow[]
+  bySeat: SeatBalanceRow[]
   shapeCompare: ShapeCompareRow[]
   eventStats: EventStatRow[]
   byAttr: AttrStatRow[]
@@ -1090,11 +1106,24 @@ export function summarizeReports(reports: MatchReport[], filter: StratFilter = A
   const abilityTypeMap = new Map<AbilityEffectType, { plays: number; actor: number; relative: number; impact: number; presence: number; wins: number }>()
   const ptsByTurn = new Map<number, number[]>()
   const cardsByTurn = new Map<number, number[]>()
-  const stratMap = new Map<AiStrat, { seats: number; wins: number; finishes: number; score: number; standing: number; actor: number; relative: number; plays: number }>()
+  type SeatAgg = { wins: number; finishes: number; score: number; margin: number; standing: number; actor: number; relative: number; plays: number }
+  const stratMap = new Map<AiStrat, SeatAgg & { seats: number }>()
+  const seatMap = new Map<number, SeatAgg>()
   const eventTotals = EMPTY_EVENTS()
   const shapeTotals = EMPTY_SHAPES()
   const filteringPlays = filter.strats.length > 0
   const impactFor = impactBaseline(scoped, filter)
+
+  const emptyAgg = (): SeatAgg => ({ wins: 0, finishes: 0, score: 0, margin: 0, standing: 0, actor: 0, relative: 0, plays: 0 })
+  const marginOf = (scores: number[], seat: number) => {
+    const mine = scores[seat] ?? 0
+    let bestOther = -Infinity
+    for (let i = 0; i < scores.length; i += 1) {
+      if (i === seat) continue
+      bestOther = Math.max(bestOther, scores[i] ?? 0)
+    }
+    return Number.isFinite(bestOther) ? mine - bestOther : 0
+  }
   /** Milestone round → seat/strat accumulators. */
   const milestoneAcc = new Map<number, {
     samples: number
@@ -1117,20 +1146,31 @@ export function summarizeReports(reports: MatchReport[], filter: StratFilter = A
       if (!allowsStrat(filter, strat)) continue
       addEvents(eventTotals, report.seatEvents[seat] ?? EMPTY_EVENTS())
       addShapes(shapeTotals, report.seatShapes[seat] ?? EMPTY_SHAPES())
-      const row = stratMap.get(strat) ?? { seats: 0, wins: 0, finishes: 0, score: 0, standing: 0, actor: 0, relative: 0, plays: 0 }
+      const row = stratMap.get(strat) ?? { ...emptyAgg(), seats: 0 }
       row.seats += 1
       stratMap.set(strat, row)
+      if (!seatMap.has(seat)) seatMap.set(seat, emptyAgg())
     }
     if (report.over) {
       for (let index = 0; index < report.seatStrats.length; index += 1) {
         const strat = report.seatStrats[index]!
         if (!allowsStrat(filter, strat)) continue
-        const row = stratMap.get(strat) ?? { seats: 0, wins: 0, finishes: 0, score: 0, standing: 0, actor: 0, relative: 0, plays: 0 }
+        const margin = marginOf(report.finalScores, index)
+        const row = stratMap.get(strat) ?? { ...emptyAgg(), seats: 0 }
         row.finishes += 1
         row.score += report.finalScores[index] ?? 0
+        row.margin += margin
         row.standing += standingOf(report.finalScores, index)
         if (report.winner === index) row.wins += 1
         stratMap.set(strat, row)
+
+        const seatRow = seatMap.get(index) ?? emptyAgg()
+        seatRow.finishes += 1
+        seatRow.score += report.finalScores[index] ?? 0
+        seatRow.margin += margin
+        seatRow.standing += standingOf(report.finalScores, index)
+        if (report.winner === index) seatRow.wins += 1
+        seatMap.set(index, seatRow)
       }
     }
 
@@ -1303,11 +1343,17 @@ export function summarizeReports(reports: MatchReport[], filter: StratFilter = A
         seatAbilityTypes[swing.actor]?.add(type)
       }
 
-      const stratRow = stratMap.get(swing.actorStrat) ?? { seats: 0, wins: 0, finishes: 0, score: 0, standing: 0, actor: 0, relative: 0, plays: 0 }
+      const stratRow = stratMap.get(swing.actorStrat) ?? { ...emptyAgg(), seats: 0 }
       stratRow.plays += 1
       stratRow.actor += swing.actorSwing
       stratRow.relative += swing.relativeSwing
       stratMap.set(swing.actorStrat, stratRow)
+
+      const seatRow = seatMap.get(swing.actor) ?? emptyAgg()
+      seatRow.plays += 1
+      seatRow.actor += swing.actorSwing
+      seatRow.relative += swing.relativeSwing
+      seatMap.set(swing.actor, seatRow)
     }
 
     if (report.over) {
@@ -1454,12 +1500,26 @@ export function summarizeReports(reports: MatchReport[], filter: StratFilter = A
         wins: row.wins,
         finishes: row.finishes,
         avgScore: row.finishes ? row.score / row.finishes : 0,
+        avgMargin: row.finishes ? row.margin / row.finishes : 0,
         avgStanding: row.finishes ? row.standing / row.finishes : 0,
         avgSelfSwing: row.plays ? row.actor / row.plays : 0,
         avgRelSwing: row.plays ? row.relative / row.plays : 0,
         plays: row.plays,
       }))
       .sort((a, b) => b.wins - a.wins || a.avgStanding - b.avgStanding || b.avgScore - a.avgScore),
+    bySeat: [...seatMap.entries()]
+      .map(([seat, row]) => ({
+        seat,
+        wins: row.wins,
+        finishes: row.finishes,
+        avgScore: row.finishes ? row.score / row.finishes : 0,
+        avgMargin: row.finishes ? row.margin / row.finishes : 0,
+        avgStanding: row.finishes ? row.standing / row.finishes : 0,
+        avgSelfSwing: row.plays ? row.actor / row.plays : 0,
+        avgRelSwing: row.plays ? row.relative / row.plays : 0,
+        plays: row.plays,
+      }))
+      .sort((a, b) => a.seat - b.seat),
     shapeCompare: buildShapeCompareRows(shapeTotals, matchCount),
     eventStats: [
       eventRow('drawDeck', 'Draw from deck', eventTotals.drawDeck, matchCount),

@@ -299,30 +299,79 @@ export function DebugRail({
         </p>
       </div>
 
-      <div className="debug-block">
-        <h3>By strat</h3>
-        <p className="quiet debug-legend">Place = average finish (1 is first). Self/Rel = mean swing for that strat’s plays.</p>
-        {summary.byStrat.length === 0 ? (
-          <p className="quiet">No strat samples yet.</p>
-        ) : (
-          <table className="debug-table debug-table-compact">
-            <thead>
-              <tr><th>Strat</th><th className="debug-num" title="Wins / finished seats">W</th><th className="debug-num" title="Average final score">Avg</th><th className="debug-num">Place</th><th className="debug-num">Self</th><th className="debug-num">Rel</th></tr>
-            </thead>
-            <tbody>
-              {summary.byStrat.map((row) => (
-                <tr key={row.strat}>
-                  <td><strong>{stratLabel(row.strat)}</strong><small>{row.plays} plays</small></td>
-                  <td className="debug-num">{row.wins}/{row.finishes}</td>
-                  <td className="debug-num">{fmt(row.avgScore)}</td>
-                  <td className="debug-num">{fmt(row.avgStanding)}</td>
-                  <td className="debug-num">{signed(row.avgSelfSwing)}</td>
-                  <td className="debug-num">{signed(row.avgRelSwing)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
+      <div className="debug-block" data-testid="debug-by-seat-strat">
+        <h3>Results</h3>
+        <p className="quiet debug-legend">
+          Place = average finish (1 is first). Margin = own final score − best other seat. Self/Rel = mean swing for that seat/strat’s plays.
+        </p>
+        <div className="debug-rel-grid">
+          <div>
+            <h4 className="debug-subhead">By seat</h4>
+            {summary.bySeat.length === 0 ? (
+              <p className="quiet">No seat samples yet.</p>
+            ) : (
+              <table className="debug-table debug-table-compact">
+                <thead>
+                  <tr>
+                    <th>Seat</th>
+                    <th className="debug-num" title="Wins / finished seats">W</th>
+                    <th className="debug-num" title="Average final score">Avg</th>
+                    <th className="debug-num" title="Own score − best other seat">Margin</th>
+                    <th className="debug-num">Place</th>
+                    <th className="debug-num">Self</th>
+                    <th className="debug-num">Rel</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {summary.bySeat.map((row) => (
+                    <tr key={row.seat}>
+                      <td><strong>Seat {row.seat + 1}</strong><small>{row.plays} plays</small></td>
+                      <td className="debug-num">{row.wins}/{row.finishes}</td>
+                      <td className="debug-num">{fmt(row.avgScore)}</td>
+                      <td className="debug-num">{signed(row.avgMargin)}</td>
+                      <td className="debug-num">{fmt(row.avgStanding)}</td>
+                      <td className="debug-num">{signed(row.avgSelfSwing)}</td>
+                      <td className="debug-num">{signed(row.avgRelSwing)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+          <div>
+            <h4 className="debug-subhead">By strat</h4>
+            {summary.byStrat.length === 0 ? (
+              <p className="quiet">No strat samples yet.</p>
+            ) : (
+              <table className="debug-table debug-table-compact">
+                <thead>
+                  <tr>
+                    <th>Strat</th>
+                    <th className="debug-num" title="Wins / finished seats">W</th>
+                    <th className="debug-num" title="Average final score">Avg</th>
+                    <th className="debug-num" title="Own score − best other seat">Margin</th>
+                    <th className="debug-num">Place</th>
+                    <th className="debug-num">Self</th>
+                    <th className="debug-num">Rel</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {summary.byStrat.map((row) => (
+                    <tr key={row.strat}>
+                      <td><strong>{stratLabel(row.strat)}</strong><small>{row.plays} plays</small></td>
+                      <td className="debug-num">{row.wins}/{row.finishes}</td>
+                      <td className="debug-num">{fmt(row.avgScore)}</td>
+                      <td className="debug-num">{signed(row.avgMargin)}</td>
+                      <td className="debug-num">{fmt(row.avgStanding)}</td>
+                      <td className="debug-num">{signed(row.avgSelfSwing)}</td>
+                      <td className="debug-num">{signed(row.avgRelSwing)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+        </div>
       </div>
 
       <div className="debug-block" data-testid="debug-round-pace">

@@ -162,6 +162,7 @@ export function Table({
     kindSwing: [],
     byAbilityType: [],
     byStrat: [],
+    bySeat: [],
     shapeCompare: [],
     eventStats: [],
     byAttr: [],
