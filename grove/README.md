@@ -6,6 +6,18 @@ This app lives in `grove/` and is separate from the lane game at the repository 
 
 ## Play
 
+### Open as a file (vs AI / hotseat / debug train)
+
+```bash
+cd grove
+npm install
+npm run build:file
+```
+
+Then double-click `grove/Grove.html` (or open it in a browser). No server needed. Online ranked is not available in this file build. Card art still loads from the network when available.
+
+### Dev server
+
 ```bash
 cd grove
 npm install
