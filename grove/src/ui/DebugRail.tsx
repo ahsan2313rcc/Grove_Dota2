@@ -3,9 +3,11 @@ import { AI_STRATS, stratLabel } from '../game/ai.ts'
 import {
   buildTurnGraph,
   IMPACT_HORIZONS,
+  ROUND_MILESTONES,
   summarizeShapesAtTurn,
   type BalanceSummary,
   type CardBalanceRow,
+  type LeadOutcomeRow,
   type MatchReport,
   type ShapeCompareRow,
   type StratFilter,
@@ -319,6 +321,81 @@ export function DebugRail({
             </tbody>
           </table>
         )}
+      </div>
+
+      <div className="debug-block" data-testid="debug-round-pace">
+        <h3>Round pace</h3>
+        <p className="quiet debug-legend">
+          Avg score and cards in hand after full table-rounds {ROUND_MILESTONES.join(' / ')}.
+          Every round is traced; milestones are the ones shown.
+        </p>
+        {summary.roundMilestones.every((row) => row.samples === 0) ? (
+          <p className="quiet">No round snapshots yet — run a Stats batch.</p>
+        ) : (
+          <>
+            <table className="debug-table debug-table-compact">
+              <thead>
+                <tr>
+                  <th>Round</th>
+                  <th className="debug-num">N</th>
+                  {Array.from({ length: Math.max(1, summary.seats) }, (_, seat) => (
+                    <th key={`s${seat}`} className="debug-num" title={`Seat ${seat + 1} avg score / hand`}>S{seat + 1}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {summary.roundMilestones.filter((row) => row.samples > 0).map((row) => (
+                  <tr key={row.round}>
+                    <td><strong>R{row.round}</strong></td>
+                    <td className="debug-num">{row.samples}</td>
+                    {Array.from({ length: Math.max(1, summary.seats) }, (_, seat) => (
+                      <td key={`${row.round}-${seat}`} className="debug-num">
+                        {fmt(row.avgScoreBySeat[seat] ?? 0)}
+                        <small>/{fmt(row.avgHandBySeat[seat] ?? 0)}</small>
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <p className="quiet debug-legend">By strat at each milestone (score / hand).</p>
+            <table className="debug-table debug-table-compact">
+              <thead>
+                <tr>
+                  <th>Strat</th>
+                  {summary.roundMilestones.filter((row) => row.samples > 0).map((row) => (
+                    <th key={`rh${row.round}`} className="debug-num">R{row.round}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {uniqueMilestoneStrats(summary).map((strat) => (
+                  <tr key={strat}>
+                    <td><strong>{stratLabel(strat)}</strong></td>
+                    {summary.roundMilestones.filter((row) => row.samples > 0).map((row) => {
+                      const cell = row.byStrat.find((entry) => entry.strat === strat)
+                      return (
+                        <td key={`${strat}-${row.round}`} className="debug-num">
+                          {cell ? <>{fmt(cell.avgScore)}<small>/{fmt(cell.avgHand)}</small></> : '—'}
+                        </td>
+                      )
+                    })}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </>
+        )}
+      </div>
+
+      <div className="debug-block" data-testid="debug-lead-outcomes">
+        <h3>Lead outcomes</h3>
+        <p className="quiet debug-legend">
+          Among wins with a mid checkpoint (latest milestone round before the final table-round):
+          Held = sole score leader there · Behind = not sole leader (ties count as behind).
+        </p>
+        <LeadOutcomeTable title="By strat" rows={summary.leadByStrat} labelOf={(row) => stratLabel(row.key as AiStrat)} />
+        <LeadOutcomeTable title="By seat" rows={summary.leadBySeat} labelOf={(row) => row.label} />
       </div>
 
       <div className="debug-block">
@@ -1067,6 +1144,58 @@ function toggleStrat(filter: StratFilter, strat: AiStrat): StratFilter {
   const on = filter.strats.includes(strat)
   const strats = on ? filter.strats.filter((entry) => entry !== strat) : [...filter.strats, strat]
   return { ...filter, strats }
+}
+
+function uniqueMilestoneStrats(summary: BalanceSummary): AiStrat[] {
+  const seen = new Set<AiStrat>()
+  for (const row of summary.roundMilestones) {
+    for (const entry of row.byStrat) seen.add(entry.strat)
+  }
+  return AI_STRATS.map((entry) => entry.id).filter((strat) => seen.has(strat))
+}
+
+function LeadOutcomeTable({
+  title,
+  rows,
+  labelOf,
+}: {
+  title: string
+  rows: LeadOutcomeRow[]
+  labelOf: (row: LeadOutcomeRow) => string
+}) {
+  if (rows.length === 0) {
+    return <p className="quiet">{title}: no wins yet.</p>
+  }
+  return (
+    <>
+      <p className="quiet">{title}</p>
+      <table className="debug-table debug-table-compact">
+        <thead>
+          <tr>
+            <th>{title === 'By seat' ? 'Seat' : 'Strat'}</th>
+            <th className="debug-num" title="Total wins">W</th>
+            <th className="debug-num" title="Wins while sole leader at mid checkpoint">Held</th>
+            <th className="debug-num" title="Wins while not sole leader at mid checkpoint">Behind</th>
+            <th className="debug-num" title="Held / samples with a mid checkpoint">Held%</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row) => (
+            <tr key={row.key}>
+              <td><strong>{labelOf(row)}</strong></td>
+              <td className="debug-num">{row.wins}</td>
+              <td className="debug-num">{row.heldLead}</td>
+              <td className="debug-num">{row.fromBehind}</td>
+              <td className="debug-num">
+                {row.samples > 0 ? `${Math.round((row.heldLead / row.samples) * 100)}%` : '—'}
+                {row.samples > 0 ? <small>/{row.samples}</small> : null}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </>
+  )
 }
 
 function Sparkline({

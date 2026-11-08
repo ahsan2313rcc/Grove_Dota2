@@ -4,7 +4,10 @@ import {
   ALL_STRAT_FILTER,
   BalanceTracker,
   buildTurnGraph,
+  midLeadSnapshot,
+  ROUND_MILESTONES,
   runMatchFast,
+  soleLeader,
   summarizeReports,
   summarizeShapesAtTurn,
   type MatchReport,
@@ -14,6 +17,62 @@ import { blankTeam, makeCard, makeHero, setPlayer } from './flow.ts'
 import type { CardInst, Game, PlayerId } from './types.ts'
 
 describe('balance', () => {
+  it('records table-round score/hand snapshots even in lite Stats batches', () => {
+    const report = runMatchFast(58, 2)
+    expect(report.roundHistory?.length).toBeGreaterThan(0)
+    const first = report.roundHistory![0]!
+    expect(first.round).toBe(1)
+    expect(first.scores).toHaveLength(2)
+    expect(first.hands).toHaveLength(2)
+    expect(first.hands.every((n) => n >= 0)).toBe(true)
+    // Rounds are consecutive; milestones are a subset.
+    const rounds = report.roundHistory!.map((snap) => snap.round)
+    expect(rounds[0]).toBe(1)
+    expect(rounds.every((round, index) => index === 0 || round === rounds[index - 1]! + 1)).toBe(true)
+
+    const summary = summarizeReports([report])
+    expect(summary.roundMilestones).toHaveLength(ROUND_MILESTONES.length)
+    expect(summary.roundMilestones.some((row) => row.samples > 0)).toBe(true)
+    if (report.over && report.winner != null) {
+      expect(summary.leadByStrat.some((row) => row.wins > 0)).toBe(true)
+      expect(summary.leadBySeat.some((row) => row.wins > 0)).toBe(true)
+    }
+  })
+
+  it('classifies sole leaders and mid checkpoints for lead outcomes', () => {
+    expect(soleLeader([10, 8, 8])).toBe(0)
+    expect(soleLeader([10, 10, 8])).toBeNull()
+    const base = runMatchFast(59, 2)
+    const report: MatchReport = {
+      ...base,
+      roundHistory: [
+        { round: 1, turn: 2, scores: [4, 8], hands: [5, 4] },
+        { round: 3, turn: 6, scores: [12, 9], hands: [4, 5] },
+        { round: 5, turn: 10, scores: [20, 18], hands: [3, 4] },
+      ],
+      winner: 0,
+      winnerStrat: base.seatStrats[0] ?? null,
+      over: true,
+    }
+    const mid = midLeadSnapshot(report)
+    expect(mid?.round).toBe(3)
+    expect(soleLeader(mid!.scores)).toBe(0)
+    const summary = summarizeReports([report])
+    expect(summary.leadBySeat.find((row) => row.key === 'seat:0')?.heldLead).toBe(1)
+    expect(summary.leadBySeat.find((row) => row.key === 'seat:0')?.fromBehind).toBe(0)
+    const behindReport: MatchReport = {
+      ...report,
+      roundHistory: [
+        { round: 1, turn: 2, scores: [4, 8], hands: [5, 4] },
+        { round: 3, turn: 6, scores: [9, 14], hands: [4, 5] },
+        { round: 5, turn: 10, scores: [22, 18], hands: [3, 4] },
+      ],
+    }
+    const behind = summarizeReports([behindReport])
+    expect(behind.leadBySeat.find((row) => row.key === 'seat:0')?.fromBehind).toBe(1)
+    expect(behind.leadBySeat.find((row) => row.key === 'seat:0')?.heldLead).toBe(0)
+  })
+
   it('records card swings, events, and shapes for a finished AI match', () => {
     const report = runMatchFast(58, 2)
     expect(report.over).toBe(true)

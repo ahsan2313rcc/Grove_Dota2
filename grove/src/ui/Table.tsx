@@ -167,6 +167,9 @@ export function Table({
     byAttr: [],
     maxTurn: 1,
     graphHeroes: [],
+    roundMilestones: [],
+    leadByStrat: [],
+    leadBySeat: [],
   }
 
   const networked = onlineSeat !== null && onlineSeat !== undefined

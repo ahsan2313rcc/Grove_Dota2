@@ -200,6 +200,21 @@ export interface ShapeSnapshot {
   seatShapes: ShapeCounts[]
 }
 
+/**
+ * Full table-round snapshot (everyone has acted once).
+ * Round R ends when `game.turn === seats * R`.
+ * Always recorded (even in lite Stats batches) — cheap numbers only.
+ */
+export interface RoundSnapshot {
+  round: number
+  turn: number
+  scores: number[]
+  hands: number[]
+}
+
+/** Milestone table-rounds shown in Stats. */
+export const ROUND_MILESTONES = [1, 3, 5, 10, 15, 20] as const
+
 export interface MatchReport {
   seed: number
   seats: number
@@ -216,6 +231,8 @@ export interface MatchReport {
   rounds: RoundEvent[]
   /** Per-turn shape/score snapshots (end of each seat's turn). */
   shapeHistory: ShapeSnapshot[]
+  /** End-of-table-round score + hand sizes (lite-safe). */
+  roundHistory?: RoundSnapshot[]
   events: EventCounts
   seatEvents: EventCounts[]
   shapes: ShapeCounts
@@ -223,6 +240,32 @@ export interface MatchReport {
   over: boolean
   /** `game.over.reason` when finished (Ancient / score hold / final round / …). */
   overReason: string | null
+}
+
+/** Avg score / hand at a milestone table-round. */
+export interface RoundMilestoneRow {
+  round: number
+  samples: number
+  /** Mean score by seat index (padded to summary.seats). */
+  avgScoreBySeat: number[]
+  avgHandBySeat: number[]
+  byStrat: { strat: AiStrat; samples: number; avgScore: number; avgHand: number }[]
+}
+
+/**
+ * Come-from-behind vs held-lead wins.
+ * Mid checkpoint = latest milestone round strictly before the final table-round.
+ * Held lead = sole score leader at that checkpoint; from behind = not sole leader (incl. ties).
+ */
+export interface LeadOutcomeRow {
+  key: string
+  kind: 'strat' | 'seat'
+  label: string
+  wins: number
+  heldLead: number
+  fromBehind: number
+  /** Wins with a usable mid checkpoint. */
+  samples: number
 }
 
 export type TurnGraphMetric = 'rel' | 'self' | 'seatScore' | 'cards' | 'pointsDelta'
@@ -395,6 +438,12 @@ export interface BalanceSummary {
   maxTurn: number
   /** Available hero defIds that appear in swings (for graph picker). */
   graphHeroes: { defId: string; name: string }[]
+  /** Avg score + hand size at table-rounds 1/3/5/10/15/20. */
+  roundMilestones: RoundMilestoneRow[]
+  /** Come-from-behind vs held-lead wins by strat. */
+  leadByStrat: LeadOutcomeRow[]
+  /** Come-from-behind vs held-lead wins by seat index. */
+  leadBySeat: LeadOutcomeRow[]
 }
 
 const EMPTY_EVENTS = (): EventCounts => ({
@@ -508,6 +557,8 @@ export class BalanceTracker {
   private abilitySplit: AbilitySplit | null = null
   private playSeq = 0
   private shapeHistory: ShapeSnapshot[] = []
+  /** End-of-table-round score/hand snapshots (always on — Stats lite included). */
+  private roundHistory: RoundSnapshot[] = []
   /** Scores at the start of each game turn, for play horizons. */
   private turnTotals = new Map<number, number[]>()
 
@@ -526,6 +577,7 @@ export class BalanceTracker {
     this.seatEvents = game.players.map(() => EMPTY_EVENTS())
     this.seatPlaySets = game.players.map(() => new Set())
     this.shapeHistory = []
+    this.roundHistory = []
   }
 
   observe(before: Game, action: Action, after: Game) {
@@ -781,6 +833,7 @@ export class BalanceTracker {
       seatPlays: game.players.map((_, index) => [...(this.seatPlaySets[index] ?? [])]),
       rounds,
       shapeHistory: this.shapeHistory.slice(),
+      roundHistory: this.roundHistory.slice(),
       events: { ...this.events },
       seatEvents: game.players.map((_, index) => ({ ...(this.seatEvents[index] ?? EMPTY_EVENTS()) })),
       shapes: shapeCounts(game),
@@ -810,6 +863,20 @@ export class BalanceTracker {
         scores: endScores.slice(),
         seatShapes: game.players.map((player) => shapeCountsFor(game, player.id)),
       })
+    }
+    // Full table-round boundary: turn N*seats finishes round N.
+    const seats = game.players.length
+    if (seats > 0 && this.turnNo > 0 && this.turnNo % seats === 0) {
+      const round = this.turnNo / seats
+      const prior = this.roundHistory[this.roundHistory.length - 1]
+      if (!prior || prior.round !== round) {
+        this.roundHistory.push({
+          round,
+          turn: this.turnNo,
+          scores: endScores.slice(),
+          hands: game.players.map((player) => player.hand.length),
+        })
+      }
     }
     this.turnCards = 0
     this.turnStartScores = endScores
@@ -986,6 +1053,16 @@ export function summarizeReports(reports: MatchReport[], filter: StratFilter = A
   const shapeTotals = EMPTY_SHAPES()
   const filteringPlays = filter.strats.length > 0
   const impactFor = impactBaseline(scoped, filter)
+  /** Milestone round → seat/strat accumulators. */
+  const milestoneAcc = new Map<number, {
+    samples: number
+    scoreBySeat: number[]
+    handBySeat: number[]
+    seatSamples: number[]
+    byStrat: Map<AiStrat, { samples: number; score: number; hand: number }>
+  }>()
+  const leadStratAcc = new Map<AiStrat, { wins: number; heldLead: number; fromBehind: number; samples: number }>()
+  const leadSeatAcc = new Map<number, { wins: number; heldLead: number; fromBehind: number; samples: number }>()
 
   for (const report of scoped) {
     const seatAbilityTypes: Set<AbilityEffectType>[] = report.seatStrats.map(() => new Set())
@@ -1008,6 +1085,71 @@ export function summarizeReports(reports: MatchReport[], filter: StratFilter = A
         row.standing += standingOf(report.finalScores, index)
         if (report.winner === index) row.wins += 1
         stratMap.set(strat, row)
+      }
+    }
+
+    // Table-round score/hand milestones + come-from-behind / held-lead outcomes.
+    for (const snap of report.roundHistory ?? []) {
+      if (!(ROUND_MILESTONES as readonly number[]).includes(snap.round)) continue
+      const seatCount = Math.max(report.seats, snap.scores.length, snap.hands.length)
+      let bucket = milestoneAcc.get(snap.round)
+      if (!bucket) {
+        bucket = {
+          samples: 0,
+          scoreBySeat: Array.from({ length: seatCount }, () => 0),
+          handBySeat: Array.from({ length: seatCount }, () => 0),
+          seatSamples: Array.from({ length: seatCount }, () => 0),
+          byStrat: new Map(),
+        }
+        milestoneAcc.set(snap.round, bucket)
+      }
+      while (bucket.scoreBySeat.length < seatCount) {
+        bucket.scoreBySeat.push(0)
+        bucket.handBySeat.push(0)
+        bucket.seatSamples.push(0)
+      }
+      bucket.samples += 1
+      for (let seat = 0; seat < seatCount; seat += 1) {
+        const strat = report.seatStrats[seat]
+        if (strat == null || !allowsStrat(filter, strat)) continue
+        const score = snap.scores[seat] ?? 0
+        const hand = snap.hands[seat] ?? 0
+        bucket.scoreBySeat[seat] = (bucket.scoreBySeat[seat] ?? 0) + score
+        bucket.handBySeat[seat] = (bucket.handBySeat[seat] ?? 0) + hand
+        bucket.seatSamples[seat] = (bucket.seatSamples[seat] ?? 0) + 1
+        const stratRow = bucket.byStrat.get(strat) ?? { samples: 0, score: 0, hand: 0 }
+        stratRow.samples += 1
+        stratRow.score += score
+        stratRow.hand += hand
+        bucket.byStrat.set(strat, stratRow)
+      }
+    }
+
+    if (report.over && report.winner != null) {
+      const winner = report.winner
+      const winnerStrat = report.seatStrats[winner]
+      if (winnerStrat != null && allowsStrat(filter, winnerStrat)) {
+        const mid = midLeadSnapshot(report)
+        const sole = mid ? soleLeader(mid.scores) : null
+        const held = mid != null && sole === winner
+        const fromBehind = mid != null && sole !== winner
+        const stratLead = leadStratAcc.get(winnerStrat) ?? { wins: 0, heldLead: 0, fromBehind: 0, samples: 0 }
+        stratLead.wins += 1
+        if (mid) {
+          stratLead.samples += 1
+          if (held) stratLead.heldLead += 1
+          if (fromBehind) stratLead.fromBehind += 1
+        }
+        leadStratAcc.set(winnerStrat, stratLead)
+
+        const seatLead = leadSeatAcc.get(winner) ?? { wins: 0, heldLead: 0, fromBehind: 0, samples: 0 }
+        seatLead.wins += 1
+        if (mid) {
+          seatLead.samples += 1
+          if (held) seatLead.heldLead += 1
+          if (fromBehind) seatLead.fromBehind += 1
+        }
+        leadSeatAcc.set(winner, seatLead)
       }
     }
 
@@ -1173,6 +1315,7 @@ export function summarizeReports(reports: MatchReport[], filter: StratFilter = A
   const winnerScores = finished.map((report) => Math.max(...report.finalScores))
   const turnSeries = seriesFromTurnBuckets(ptsByTurn, cardsByTurn, filteringPlays)
   const matchCount = Math.max(1, scoped.length)
+  const seats = scoped[0]?.seats ?? reports[0]?.seats ?? 0
   const maxTurn = Math.max(
     1,
     ...scoped.map((report) => report.turns),
@@ -1188,7 +1331,7 @@ export function summarizeReports(reports: MatchReport[], filter: StratFilter = A
   return {
     matches: scoped.length,
     finished: finished.length,
-    seats: scoped[0]?.seats ?? reports[0]?.seats ?? 0,
+    seats,
     filter,
     avgTurns: average(finished.map((report) => report.turns)),
     avgFinalSpread: average(spreads),
@@ -1280,7 +1423,91 @@ export function summarizeReports(reports: MatchReport[], filter: StratFilter = A
     graphHeroes: [...heroNameMap.entries()]
       .map(([defId, name]) => ({ defId, name }))
       .sort((a, b) => a.name.localeCompare(b.name)),
+    roundMilestones: ROUND_MILESTONES.map((round) => {
+      const bucket = milestoneAcc.get(round)
+      const seatN = Math.max(seats, bucket?.scoreBySeat.length ?? 0)
+      const avgScoreBySeat = Array.from({ length: seatN }, (_, seat) => {
+        const n = bucket?.seatSamples[seat] ?? 0
+        return n ? (bucket!.scoreBySeat[seat] ?? 0) / n : 0
+      })
+      const avgHandBySeat = Array.from({ length: seatN }, (_, seat) => {
+        const n = bucket?.seatSamples[seat] ?? 0
+        return n ? (bucket!.handBySeat[seat] ?? 0) / n : 0
+      })
+      return {
+        round,
+        samples: bucket?.samples ?? 0,
+        avgScoreBySeat,
+        avgHandBySeat,
+        byStrat: [...(bucket?.byStrat.entries() ?? [])]
+          .map(([strat, row]) => ({
+            strat,
+            samples: row.samples,
+            avgScore: row.samples ? row.score / row.samples : 0,
+            avgHand: row.samples ? row.hand / row.samples : 0,
+          }))
+          .sort((a, b) => b.avgScore - a.avgScore || a.strat.localeCompare(b.strat)),
+      }
+    }),
+    leadByStrat: [...leadStratAcc.entries()]
+      .map(([strat, row]) => ({
+        key: strat,
+        kind: 'strat' as const,
+        label: strat,
+        wins: row.wins,
+        heldLead: row.heldLead,
+        fromBehind: row.fromBehind,
+        samples: row.samples,
+      }))
+      .sort((a, b) => b.wins - a.wins || b.heldLead - a.heldLead),
+    leadBySeat: [...leadSeatAcc.entries()]
+      .map(([seat, row]) => ({
+        key: `seat:${seat}`,
+        kind: 'seat' as const,
+        label: `Seat ${seat + 1}`,
+        wins: row.wins,
+        heldLead: row.heldLead,
+        fromBehind: row.fromBehind,
+        samples: row.samples,
+      }))
+      .sort((a, b) => Number(a.key.slice(5)) - Number(b.key.slice(5))),
   }
+}
+
+/** Sole max-score seat, or null on a tie / empty. */
+export function soleLeader(scores: number[]): number | null {
+  if (scores.length === 0) return null
+  let best = -Infinity
+  let who: number | null = null
+  let tied = false
+  for (let i = 0; i < scores.length; i += 1) {
+    const score = scores[i] ?? 0
+    if (score > best) {
+      best = score
+      who = i
+      tied = false
+    } else if (score === best) {
+      tied = true
+    }
+  }
+  return tied ? null : who
+}
+
+/**
+ * Mid-game checkpoint for lead analysis: latest milestone round strictly before
+ * the final completed table-round (so the endgame itself is not the checkpoint).
+ */
+export function midLeadSnapshot(report: MatchReport): RoundSnapshot | null {
+  const history = report.roundHistory ?? []
+  if (history.length === 0) return null
+  const finalRound = Math.max(...history.map((snap) => snap.round))
+  const candidates = history
+    .filter((snap) => (ROUND_MILESTONES as readonly number[]).includes(snap.round) && snap.round < finalRound)
+    .sort((a, b) => b.round - a.round)
+  if (candidates[0]) return candidates[0]!
+  // Short games: use the earliest snapshot that is not the final round.
+  const earlier = [...history].filter((snap) => snap.round < finalRound).sort((a, b) => b.round - a.round)
+  return earlier[0] ?? null
 }
 
 /** Shape compare rows for a scrubber turn (`null` = final board). */
