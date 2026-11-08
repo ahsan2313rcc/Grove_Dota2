@@ -888,10 +888,14 @@ export function enterReason(
   if (team.heroes.some((hero) => hero.defId === 'omniknight') && !aurasSuppressed(state, team.heroes[0]?.controller ?? -1)) {
     return 'Guardian Angel seals this team.'
   }
-  // Puck: enemy heroes cannot enter existing teams. Brand-new teams (incl. squad deploy) still form.
+  // Puck: cannot enter a team that already had heroes from an earlier turn.
+  // Same-turn fills (solo new team or the rest of a squad) still form — Dream Coil does not
+  // stop the active body after silent companions have already seated.
   if (team.heroes.length > 0 && !opts?.formingNew) {
     const owner = team.heroes[0]!.controller
+    const priorOccupants = team.heroes.some((hero) => hero.enteredTurn < state.turn)
     if (
+      priorOccupants &&
       allLocs(state).some((loc) => loc.hero.defId === 'puck' && loc.hero.controller !== owner && !aurasSuppressed(state, loc.hero.controller))
     ) {
       return 'Dream Coil stops heroes from entering teams.'

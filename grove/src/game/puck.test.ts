@@ -8,11 +8,27 @@ describe('Puck Dream Coil', () => {
     let game = apply(createGame({ seed: 11, mode: 'hotseat', names: ['A', 'B'] }), { type: 'ready' })
     game = seatDefs(game, 1, [['puck']])
     game = seatDefs(game, 0, [['sven']])
+    // Age Sven as a prior-turn occupant so Dream Coil treats the team as already formed.
+    game = {
+      ...game,
+      players: game.players.map((seat, index) =>
+        index !== 0
+          ? seat
+          : {
+              ...seat,
+              teams: seat.teams.map((team) => ({
+                ...team,
+                heroes: team.heroes.map((hero) => ({ ...hero, enteredTurn: game.turn - 1 })),
+              })),
+            },
+      ),
+    }
     game = only(game, 0, ['axe'])
     const team = game.players[0].teams[0]!.id
-    game = apply(game, { type: 'play', uid: uid(game, 0, 'axe'), team })
+    const axe = uid(game, 0, 'axe')
+    game = apply(game, { type: 'play', uid: axe, team })
     expect(game.log.some((line) => /Dream Coil stops heroes from entering/i.test(line))).toBe(true)
-    expect(findHero(game, uid(game, 0, 'axe'))).toBeNull()
+    expect(findHero(game, axe)).toBeNull()
     expect(game.players[0].teams[0]!.heroes.map((hero) => hero.defId)).toEqual(['sven'])
   })
 
@@ -37,6 +53,37 @@ describe('Puck Dream Coil', () => {
     expect(game.log.some((line) => /Dream Coil stops heroes from entering/i.test(line))).toBe(false)
     const team = game.players[0].teams.find((entry) => entry.heroes.some((hero) => hero.defId === 'axe'))
     expect(team?.heroes.map((hero) => hero.defId).sort()).toEqual(['axe', 'mars', 'sven'])
+    expect(game.players[0].hand.some((card) => card.defId === 'axe')).toBe(false)
+  })
+
+  it('seats the active squad hero even when companions land first under Puck', () => {
+    let game = apply(createGame({ seed: 14, mode: 'hotseat', names: ['A', 'B'] }), { type: 'ready' })
+    game = seatDefs(game, 1, [['puck']])
+    game = seatDefs(game, 0, [['crystal_maiden']])
+    game = {
+      ...game,
+      players: game.players.map((seat, index) =>
+        index !== 0
+          ? seat
+          : {
+              ...seat,
+              teams: seat.teams.map((team) => ({
+                ...team,
+                heroes: team.heroes.map((hero) => ({ ...hero, enteredTurn: game.turn - 1 })),
+              })),
+            },
+      ),
+    }
+    game = only(game, 0, ['juggernaut', 'phantom_assassin', 'ursa'])
+    const active = uid(game, 0, 'juggernaut')
+    const a = uid(game, 0, 'phantom_assassin')
+    const b = uid(game, 0, 'ursa')
+    game = apply(game, { type: 'play', uid: active, team: 'new', extras: [a, b] })
+    game = passInstants(game)
+    expect(game.log.some((line) => /Dream Coil stops heroes from entering/i.test(line))).toBe(false)
+    expect(findDef(game, 0, 'juggernaut')).toBeTruthy()
+    expect(findDef(game, 0, 'phantom_assassin')).toBeTruthy()
+    expect(findDef(game, 0, 'ursa')).toBeTruthy()
   })
 })
 

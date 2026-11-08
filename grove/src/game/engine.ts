@@ -691,6 +691,7 @@ function play(state: Game, uid: string, team: string, extras: string[] = []): Ga
   // Peek hand owner first — Instant cards may be played off-turn by non-active seats.
   let held = findHand(state, uid)
   let actor = held?.player.id ?? state.active
+  let destTeam = team
   // Rejections after pulling a card out of the grave / Clinkz exile must not leave it in hand.
   const origin = state
 
@@ -798,15 +799,21 @@ function play(state: Game, uid: string, team: string, extras: string[] = []): Ga
   }
 
   if (needsTeam(held.card.defId, held.card.kind) || companions.length > 0) {
-    const resolved = resolveTeam(state, actor, team)
+    const resolved = resolveTeam(state, actor, destTeam)
     if (!resolved) return origin
     const dest = teamById(resolved[0], resolved[1])
     if (!dest) return origin
     let weight = held.card.kind === 'hero' || held.card.kind === 'neutral' ? 1 : 0
     for (const _extra of companions) weight += 1
     const token = held.card.kind === 'neutral'
-    const reason = enterReason(resolved[0], dest.team, weight, token)
+    const formingNew = destTeam === 'new' || destTeam.startsWith('new:') || dest.team.heroes.length === 0
+    const reason = enterReason(resolved[0], dest.team, weight, token, { formingNew })
     if (reason) return log(origin, reason)
+    // Keep the minted empty team so landSquad / Illusion resume share one id (not a second "new").
+    if (formingNew && (destTeam === 'new' || destTeam.startsWith('new:'))) {
+      state = resolved[0]
+      destTeam = resolved[1]
+    }
   }
   if (!instant) state = setPlayer(state, actor, (player) => ({ ...player, actions: player.actions - 1 }))
   if (freeItem && !freeGrant && !clinkzFree) {
@@ -817,9 +824,9 @@ function play(state: Game, uid: string, team: string, extras: string[] = []): Ga
   }
   // Illusion counters on-turn hero/item plays; skip when reacting off-turn.
   if (!offTurn && (held.card.kind === 'hero' || held.card.kind === 'item')) {
-    return offerIllusion(state, actor, uid, team, companions, fromGrave)
+    return offerIllusion(state, actor, uid, destTeam, companions, fromGrave)
   }
-  return resolvePlay(state, actor, uid, team, companions, fromGrave)
+  return resolvePlay(state, actor, uid, destTeam, companions, fromGrave)
 }
 
 function offerIllusion(
@@ -881,14 +888,18 @@ function landSquad(
   const resolved = resolveTeam(state, actor, team)
   if (!resolved) return state
   let [next, teamId] = resolved
-  // Empty at resolve time ⇒ forming a new team (Puck must allow the whole squad, not just the first body).
-  const formingNew = (teamById(next, teamId)?.team.heroes.length ?? 0) === 0
+  // Empty at resolve time ⇒ forming a new team (Puck must allow the whole squad).
+  // Seat the active hero first so its body is never gated behind companions already on the team.
+  const formingNew =
+    team === 'new'
+    || team.startsWith('new:')
+    || (teamById(next, teamId)?.team.heroes.length ?? 0) === 0
+  if (active) next = playHeroOnto(next, actor, active, teamId, fireActive, formingNew)
   for (const uid of extras) {
     const held = findHand(next, uid)
     if (!held || held.player.id !== actor || held.card.kind !== 'hero') continue
     next = playHeroOnto(next, actor, held.card, teamId, false, formingNew)
   }
-  if (active) next = playHeroOnto(next, actor, active, teamId, fireActive, formingNew)
   return next
 }
 
