@@ -17,6 +17,7 @@ describe('balance', () => {
   it('records card swings, events, and shapes for a finished AI match', () => {
     const report = runMatchFast(58, 2)
     expect(report.over).toBe(true)
+    expect(report.overReason).toBeTruthy()
     expect(report.swings.length).toBeGreaterThan(0)
     expect(report.rounds.length).toBeGreaterThan(0)
     expect(report.finalScores).toHaveLength(2)

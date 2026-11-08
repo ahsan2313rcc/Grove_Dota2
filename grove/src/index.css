@@ -442,15 +442,33 @@ button.debug-mode-cycle:hover {
 @media (max-width: 720px) {
   .debug-rel-grid { grid-template-columns: 1fr; }
 }
-.debug-results {
-  list-style: none;
-  margin: 0;
-  padding: 0;
+.debug-seed-page {
+  margin: 4px 0 8px;
+}
+.debug-seed-table td,
+.debug-seed-table th {
+  vertical-align: top;
+}
+.debug-seed-seats,
+.debug-seed-scores-cell {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  font-size: 0.78rem;
+  gap: 2px;
+  align-items: flex-start;
+}
+.debug-seed-scores-cell {
+  align-items: flex-end;
+}
+.debug-seed-seats span.on,
+.debug-seed-scores-cell span.on {
+  color: var(--gold);
+  font-weight: 600;
+}
+.debug-seed-win {
+  max-width: 16rem;
   color: var(--cream-dim);
+  font-size: 0.78rem;
+  line-height: 1.25;
 }
 .shell.debug.stats-only .stage.stats-stage {
   display: block;

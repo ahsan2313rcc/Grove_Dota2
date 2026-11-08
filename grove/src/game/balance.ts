@@ -221,6 +221,8 @@ export interface MatchReport {
   shapes: ShapeCounts
   seatShapes: ShapeCounts[]
   over: boolean
+  /** `game.over.reason` when finished (Ancient / score hold / final round / …). */
+  overReason: string | null
 }
 
 export type TurnGraphMetric = 'rel' | 'self' | 'seatScore' | 'cards' | 'pointsDelta'
@@ -784,6 +786,7 @@ export class BalanceTracker {
       shapes: shapeCounts(game),
       seatShapes: game.players.map((player) => shapeCountsFor(game, player.id)),
       over: !!game.over,
+      overReason: game.over?.reason ?? null,
     }
   }
 

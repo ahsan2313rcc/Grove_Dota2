@@ -463,8 +463,6 @@ export function DebugRail({
         </div>
       </div>
 
-      <ImpactTable rows={summary.contested} />
-
       <div className="debug-rel-grid">
         <HeroModeTable
           total={summary.heroPlaysTotal}
@@ -554,19 +552,9 @@ export function DebugRail({
         </>
       ) : null}
 
-      {reports.length > 0 ? (
-        <div className="debug-block">
-          <h3>Match results</h3>
-          <ul className="debug-results">
-            {reports.slice(-12).map((report) => (
-              <li key={report.seed}>
-                seed {report.seed}: {report.over ? report.finalScores.join('–') : 'open'} · T{report.turns}
-                <small> · {report.mixture ? 'mix' : stratLabel(report.seatStrats[0] ?? 'balanced')}</small>
-              </li>
-            ))}
-          </ul>
-        </div>
-      ) : null}
+      <ImpactTable rows={summary.contested} />
+
+      <SeedScoresTable reports={reports} />
     </aside>
   )
 }
@@ -744,6 +732,110 @@ function ImpactTable({ rows }: { rows: CardBalanceRow[] }) {
         defaultSort={{ key: 'impact', dir: 'desc' }}
         pageSize={PAGE_SIZE}
       />
+    </div>
+  )
+}
+
+const SEED_PAGE = 20
+
+function SeedScoresTable({ reports }: { reports: MatchReport[] }) {
+  const [page, setPage] = useState(0)
+  if (reports.length === 0) {
+    return (
+      <div className="debug-block" data-testid="debug-seed-scores">
+        <h3>Seed scores</h3>
+        <p className="quiet">No finished seeds yet.</p>
+      </div>
+    )
+  }
+  // Newest first so the latest batch stays on page 1.
+  const ordered = [...reports].reverse()
+  const pages = Math.max(1, Math.ceil(ordered.length / SEED_PAGE))
+  const safePage = Math.min(page, pages - 1)
+  const start = safePage * SEED_PAGE
+  const shown = ordered.slice(start, start + SEED_PAGE)
+  const rangeLabel = `${start + 1}–${Math.min(start + SEED_PAGE, ordered.length)} of ${ordered.length}`
+
+  function pager(where: 'top' | 'bottom') {
+    return (
+      <div className="debug-page debug-seed-page" data-testid={`debug-seed-page-${where}`}>
+        <button
+          type="button"
+          disabled={safePage <= 0}
+          data-testid={`debug-seed-prev-${where}`}
+          onClick={() => setPage((value) => Math.max(0, value - 1))}
+        >
+          Prev {SEED_PAGE}
+        </button>
+        <span className="quiet">{rangeLabel}</span>
+        <button
+          type="button"
+          disabled={safePage >= pages - 1}
+          data-testid={`debug-seed-next-${where}`}
+          onClick={() => setPage((value) => Math.min(pages - 1, value + 1))}
+        >
+          Next {SEED_PAGE}
+        </button>
+      </div>
+    )
+  }
+
+  return (
+    <div className="debug-block" data-testid="debug-seed-scores">
+      <h3>Seed scores</h3>
+      <p className="quiet debug-legend">
+        Newest first. Seat = index + strat. Score / turn at finish. Win = how the match closed.
+      </p>
+      {ordered.length > SEED_PAGE ? pager('top') : null}
+      <div className="debug-table-wrap">
+        <table className="debug-table debug-table-compact debug-seed-table">
+          <thead>
+            <tr>
+              <th>Seed</th>
+              <th>Seats</th>
+              <th className="debug-num">Score</th>
+              <th className="debug-num">Turn</th>
+              <th>Win</th>
+            </tr>
+          </thead>
+          <tbody>
+            {shown.map((report) => (
+              <tr key={report.seed}>
+                <td>
+                  <strong>d{report.seed}</strong>
+                  {report.mixture ? <small> mix</small> : null}
+                </td>
+                <td className="debug-seed-seats">
+                  {report.seatStrats.map((strat, seat) => (
+                    <span key={`${report.seed}-${seat}`} className={report.winner === seat ? 'on' : undefined}>
+                      {seat} {stratLabel(strat)}
+                    </span>
+                  ))}
+                </td>
+                <td className="debug-num debug-seed-scores-cell">
+                  {report.over
+                    ? report.finalScores.map((score, seat) => (
+                      <span key={`${report.seed}-sc-${seat}`} className={report.winner === seat ? 'on' : undefined}>
+                        {score}
+                      </span>
+                    ))
+                    : 'open'}
+                </td>
+                <td className="debug-num">T{report.turns}</td>
+                <td className="debug-seed-win" title={report.overReason ?? undefined}>
+                  {report.over
+                    ? (report.overReason
+                      ?? (report.winner != null
+                        ? `Seat ${report.winner} (${stratLabel(report.winnerStrat ?? report.seatStrats[report.winner] ?? 'balanced')})`
+                        : 'Tie'))
+                    : '—'}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {ordered.length > SEED_PAGE ? pager('bottom') : null}
     </div>
   )
 }
