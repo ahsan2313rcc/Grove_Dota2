@@ -260,6 +260,8 @@ export interface RoundMilestoneRow {
   /** Mean score by seat index (padded to summary.seats). */
   avgScoreBySeat: number[]
   avgHandBySeat: number[]
+  /** Per-seat sample counts used for the averages. */
+  samplesBySeat: number[]
   byStrat: { strat: AiStrat; samples: number; avgScore: number; avgHand: number }[]
 }
 
@@ -1506,6 +1508,7 @@ export function summarizeReports(reports: MatchReport[], filter: StratFilter = A
         samples: bucket?.samples ?? 0,
         avgScoreBySeat,
         avgHandBySeat,
+        samplesBySeat: Array.from({ length: seatN }, (_, seat) => bucket?.seatSamples[seat] ?? 0),
         byStrat: [...(bucket?.byStrat.entries() ?? [])]
           .map(([strat, row]) => ({
             strat,

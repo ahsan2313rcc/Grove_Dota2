@@ -34,6 +34,9 @@ describe('balance', () => {
     const summary = summarizeReports([report])
     expect(summary.roundMilestones).toHaveLength(ROUND_MILESTONES.length)
     expect(summary.roundMilestones.some((row) => row.samples > 0)).toBe(true)
+    const paced = summary.roundMilestones.find((row) => row.samples > 0)!
+    expect(paced.samplesBySeat).toHaveLength(2)
+    expect(paced.samplesBySeat.every((n) => n > 0)).toBe(true)
     if (report.over && report.winner != null) {
       expect(summary.leadByStrat.some((row) => row.wins > 0)).toBe(true)
       expect(summary.leadBySeat.some((row) => row.wins > 0)).toBe(true)
