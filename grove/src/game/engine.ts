@@ -502,7 +502,7 @@ function beginFinalRound(state: Game, why: string): Game {
     return state
   }
   return log(
-    { ...state, ancient: { bonusSeat: null, endsLeft: state.players.length } },
+    { ...state, ancient: { bonusSeat: null, endsLeft: state.players.length, drawer: null } },
     `${why} Final round — each player gets one more turn. Highest score wins.`,
   )
 }

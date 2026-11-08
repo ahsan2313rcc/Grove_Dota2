@@ -3,8 +3,10 @@ import { AI_STRATS, stratLabel } from '../game/ai.ts'
 import {
   buildTurnGraph,
   IMPACT_HORIZONS,
+  LEAD_CONTEST_BAND,
   ROUND_MILESTONES,
   summarizeShapesAtTurn,
+  type AncientDrawRow,
   type BalanceSummary,
   type CardBalanceRow,
   type LeadOutcomeRow,
@@ -391,11 +393,20 @@ export function DebugRail({
       <div className="debug-block" data-testid="debug-lead-outcomes">
         <h3>Lead outcomes</h3>
         <p className="quiet debug-legend">
-          Among wins with a mid checkpoint (latest milestone round before the final table-round):
-          Held = sole score leader there · Behind = not sole leader (ties count as behind).
+          Among wins with a mid checkpoint (latest milestone round before the final table-round), vs the best other seat:
+          Held = ahead by more than ±{LEAD_CONTEST_BAND} · Contesting = within ±{LEAD_CONTEST_BAND} · Behind = down by more than ±{LEAD_CONTEST_BAND}.
         </p>
         <LeadOutcomeTable title="By strat" rows={summary.leadByStrat} labelOf={(row) => stratLabel(row.key as AiStrat)} />
         <LeadOutcomeTable title="By seat" rows={summary.leadBySeat} labelOf={(row) => row.label} />
+      </div>
+
+      <div className="debug-block" data-testid="debug-ancient-draws">
+        <h3>Ancient draws</h3>
+        <p className="quiet debug-legend">
+          True draws of The Ancient (grave/exile reveals excluded). Win% = drawer wins / decided matches.
+          Reveals (any source): {summary.ancientReveals}.
+        </p>
+        <AncientDrawTable rows={summary.ancientDraws} />
       </div>
 
       <div className="debug-block">
@@ -1174,8 +1185,9 @@ function LeadOutcomeTable({
           <tr>
             <th>{title === 'By seat' ? 'Seat' : 'Strat'}</th>
             <th className="debug-num" title="Total wins">W</th>
-            <th className="debug-num" title="Wins while sole leader at mid checkpoint">Held</th>
-            <th className="debug-num" title="Wins while not sole leader at mid checkpoint">Behind</th>
+            <th className="debug-num" title={`Ahead by more than ${LEAD_CONTEST_BAND} at mid checkpoint`}>Held</th>
+            <th className="debug-num" title={`Within ±${LEAD_CONTEST_BAND} of the best other seat`}>Close</th>
+            <th className="debug-num" title={`Down by more than ${LEAD_CONTEST_BAND} at mid checkpoint`}>Behind</th>
             <th className="debug-num" title="Held / samples with a mid checkpoint">Held%</th>
           </tr>
         </thead>
@@ -1185,6 +1197,7 @@ function LeadOutcomeTable({
               <td><strong>{labelOf(row)}</strong></td>
               <td className="debug-num">{row.wins}</td>
               <td className="debug-num">{row.heldLead}</td>
+              <td className="debug-num">{row.contesting}</td>
               <td className="debug-num">{row.fromBehind}</td>
               <td className="debug-num">
                 {row.samples > 0 ? `${Math.round((row.heldLead / row.samples) * 100)}%` : '—'}
@@ -1195,6 +1208,40 @@ function LeadOutcomeTable({
         </tbody>
       </table>
     </>
+  )
+}
+
+function AncientDrawTable({ rows }: { rows: AncientDrawRow[] }) {
+  if (rows.every((row) => row.draws === 0)) {
+    return <p className="quiet">No Ancient draws yet.</p>
+  }
+  return (
+    <table className="debug-table debug-table-compact">
+      <thead>
+        <tr>
+          <th>Who</th>
+          <th className="debug-num" title="Times this seat/strat drew The Ancient">Draws</th>
+          <th className="debug-num" title="Drawer wins / decided matches">W</th>
+          <th className="debug-num">Win%</th>
+        </tr>
+      </thead>
+      <tbody>
+        {rows.filter((row) => row.draws > 0 || row.kind === 'total').map((row) => (
+          <tr key={`${row.kind}:${row.key}`}>
+            <td>
+              <strong>
+                {row.kind === 'strat' ? stratLabel(row.key as AiStrat) : row.label}
+              </strong>
+            </td>
+            <td className="debug-num">{row.draws}</td>
+            <td className="debug-num">{row.wins}/{row.decided}</td>
+            <td className="debug-num">
+              {row.decided > 0 ? `${Math.round((row.wins / row.decided) * 100)}%` : '—'}
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
   )
 }
 

@@ -316,9 +316,10 @@ export interface Game {
   /**
    * Ancient revealed: the final round is running. The Ancient controller bonus goes to whoever controls it on the board at the end.
    * `bonusSeat` is legacy and always null.
+   * `drawer` is the seat that drew The Ancient (null if revealed from grave/exile or deck-empty final round).
    * Each seat then gets one end-turn; when `endsLeft` hits 0 the match finishes.
    */
-  ancient: { bonusSeat: PlayerId | null; endsLeft: number } | null
+  ancient: { bonusSeat: PlayerId | null; endsLeft: number; drawer?: PlayerId | null } | null
   /** When false, The Ancient is not in the deck and cannot end the match. */
   ancientEnabled: boolean
   /** Discards owed; the discarding player picks the cards unless the effect says random. */

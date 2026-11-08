@@ -215,6 +215,11 @@ export interface RoundSnapshot {
 /** Milestone table-rounds shown in Stats. */
 export const ROUND_MILESTONES = [1, 3, 5, 10, 15, 20] as const
 
+/** Mid-checkpoint margin within this many pts counts as contesting (not held / behind). */
+export const LEAD_CONTEST_BAND = 5
+
+export type LeadKind = 'held' | 'contesting' | 'behind'
+
 export interface MatchReport {
   seed: number
   seats: number
@@ -233,6 +238,12 @@ export interface MatchReport {
   shapeHistory: ShapeSnapshot[]
   /** End-of-table-round score + hand sizes (lite-safe). */
   roundHistory?: RoundSnapshot[]
+  /** Seat that drew The Ancient (null if never drawn / grave-exile reveal / deck-empty end). */
+  ancientDrawer?: number | null
+  /** Strat of the Ancient drawer when set. */
+  ancientDrawerStrat?: AiStrat | null
+  /** True when the final round started because The Ancient was revealed (any source). */
+  ancientRevealed?: boolean
   events: EventCounts
   seatEvents: EventCounts[]
   shapes: ShapeCounts
@@ -253,9 +264,10 @@ export interface RoundMilestoneRow {
 }
 
 /**
- * Come-from-behind vs held-lead wins.
+ * Come-from-behind / contesting / held-lead wins.
  * Mid checkpoint = latest milestone round strictly before the final table-round.
- * Held lead = sole score leader at that checkpoint; from behind = not sole leader (incl. ties).
+ * Compared to the best other seat at that checkpoint:
+ * Held = ahead by more than LEAD_CONTEST_BAND · Contesting = within ±BAND · Behind = down by more than BAND.
  */
 export interface LeadOutcomeRow {
   key: string
@@ -263,9 +275,21 @@ export interface LeadOutcomeRow {
   label: string
   wins: number
   heldLead: number
+  contesting: number
   fromBehind: number
   /** Wins with a usable mid checkpoint. */
   samples: number
+}
+
+/** Ancient-draw outcomes (true draws only — not grave/exile reveals). */
+export interface AncientDrawRow {
+  key: string
+  kind: 'strat' | 'seat' | 'total'
+  label: string
+  draws: number
+  wins: number
+  /** draws where the match finished with a sole winner. */
+  decided: number
 }
 
 export type TurnGraphMetric = 'rel' | 'self' | 'seatScore' | 'cards' | 'pointsDelta'
@@ -440,10 +464,14 @@ export interface BalanceSummary {
   graphHeroes: { defId: string; name: string }[]
   /** Avg score + hand size at table-rounds 1/3/5/10/15/20. */
   roundMilestones: RoundMilestoneRow[]
-  /** Come-from-behind vs held-lead wins by strat. */
+  /** Come-from-behind / contesting / held-lead wins by strat. */
   leadByStrat: LeadOutcomeRow[]
-  /** Come-from-behind vs held-lead wins by seat index. */
+  /** Come-from-behind / contesting / held-lead wins by seat index. */
   leadBySeat: LeadOutcomeRow[]
+  /** Who drew The Ancient and whether they won. */
+  ancientDraws: AncientDrawRow[]
+  /** Ancient revealed somehow (draw / grave / exile / deck-empty), for context. */
+  ancientReveals: number
 }
 
 const EMPTY_EVENTS = (): EventCounts => ({
@@ -559,6 +587,9 @@ export class BalanceTracker {
   private shapeHistory: ShapeSnapshot[] = []
   /** End-of-table-round score/hand snapshots (always on — Stats lite included). */
   private roundHistory: RoundSnapshot[] = []
+  /** Seat that drew The Ancient (null = never / non-draw reveal). */
+  private ancientDrawer: number | null = null
+  private ancientRevealed = false
   /** Scores at the start of each game turn, for play horizons. */
   private turnTotals = new Map<number, number[]>()
 
@@ -578,11 +609,17 @@ export class BalanceTracker {
     this.seatPlaySets = game.players.map(() => new Set())
     this.shapeHistory = []
     this.roundHistory = []
+    this.ancientDrawer = game.ancient?.drawer ?? null
+    this.ancientRevealed = !!game.ancient
   }
 
   observe(before: Game, action: Action, after: Game) {
     if (!this.started) this.start(before)
     this.actions += 1
+    if (!before.ancient && after.ancient) {
+      this.ancientRevealed = true
+      if (after.ancient.drawer != null) this.ancientDrawer = after.ancient.drawer
+    }
     // Credit Instant / Illusion / save spends to the pending seat, not the turn owner.
     const eventActor =
       action.type === 'choose' && before.pending
@@ -834,6 +871,9 @@ export class BalanceTracker {
       rounds,
       shapeHistory: this.shapeHistory.slice(),
       roundHistory: this.roundHistory.slice(),
+      ancientDrawer: this.ancientDrawer,
+      ancientDrawerStrat: this.ancientDrawer != null ? (seatStrats[this.ancientDrawer] ?? null) : null,
+      ancientRevealed: this.ancientRevealed || !!game.ancient,
       events: { ...this.events },
       seatEvents: game.players.map((_, index) => ({ ...(this.seatEvents[index] ?? EMPTY_EVENTS()) })),
       shapes: shapeCounts(game),
@@ -1061,8 +1101,12 @@ export function summarizeReports(reports: MatchReport[], filter: StratFilter = A
     seatSamples: number[]
     byStrat: Map<AiStrat, { samples: number; score: number; hand: number }>
   }>()
-  const leadStratAcc = new Map<AiStrat, { wins: number; heldLead: number; fromBehind: number; samples: number }>()
-  const leadSeatAcc = new Map<number, { wins: number; heldLead: number; fromBehind: number; samples: number }>()
+  const leadStratAcc = new Map<AiStrat, { wins: number; heldLead: number; contesting: number; fromBehind: number; samples: number }>()
+  const leadSeatAcc = new Map<number, { wins: number; heldLead: number; contesting: number; fromBehind: number; samples: number }>()
+  const ancientStratAcc = new Map<AiStrat, { draws: number; wins: number; decided: number }>()
+  const ancientSeatAcc = new Map<number, { draws: number; wins: number; decided: number }>()
+  let ancientDrawTotal = { draws: 0, wins: 0, decided: 0 }
+  let ancientReveals = 0
 
   for (const report of scoped) {
     const seatAbilityTypes: Set<AbilityEffectType>[] = report.seatStrats.map(() => new Set())
@@ -1125,29 +1169,52 @@ export function summarizeReports(reports: MatchReport[], filter: StratFilter = A
       }
     }
 
+    if (report.ancientRevealed) ancientReveals += 1
+    if (report.ancientDrawer != null) {
+      const drawer = report.ancientDrawer
+      const drawerStrat = report.ancientDrawerStrat ?? report.seatStrats[drawer]
+      if (drawerStrat != null && allowsStrat(filter, drawerStrat)) {
+        const decided = report.over && report.winner != null
+        const won = decided && report.winner === drawer
+        ancientDrawTotal.draws += 1
+        if (decided) ancientDrawTotal.decided += 1
+        if (won) ancientDrawTotal.wins += 1
+        const stratRow = ancientStratAcc.get(drawerStrat) ?? { draws: 0, wins: 0, decided: 0 }
+        stratRow.draws += 1
+        if (decided) stratRow.decided += 1
+        if (won) stratRow.wins += 1
+        ancientStratAcc.set(drawerStrat, stratRow)
+        const seatRow = ancientSeatAcc.get(drawer) ?? { draws: 0, wins: 0, decided: 0 }
+        seatRow.draws += 1
+        if (decided) seatRow.decided += 1
+        if (won) seatRow.wins += 1
+        ancientSeatAcc.set(drawer, seatRow)
+      }
+    }
+
     if (report.over && report.winner != null) {
       const winner = report.winner
       const winnerStrat = report.seatStrats[winner]
       if (winnerStrat != null && allowsStrat(filter, winnerStrat)) {
         const mid = midLeadSnapshot(report)
-        const sole = mid ? soleLeader(mid.scores) : null
-        const held = mid != null && sole === winner
-        const fromBehind = mid != null && sole !== winner
-        const stratLead = leadStratAcc.get(winnerStrat) ?? { wins: 0, heldLead: 0, fromBehind: 0, samples: 0 }
+        const kind = mid ? leadOutcomeKind(mid.scores, winner) : null
+        const stratLead = leadStratAcc.get(winnerStrat) ?? { wins: 0, heldLead: 0, contesting: 0, fromBehind: 0, samples: 0 }
         stratLead.wins += 1
-        if (mid) {
+        if (kind) {
           stratLead.samples += 1
-          if (held) stratLead.heldLead += 1
-          if (fromBehind) stratLead.fromBehind += 1
+          if (kind === 'held') stratLead.heldLead += 1
+          else if (kind === 'contesting') stratLead.contesting += 1
+          else stratLead.fromBehind += 1
         }
         leadStratAcc.set(winnerStrat, stratLead)
 
-        const seatLead = leadSeatAcc.get(winner) ?? { wins: 0, heldLead: 0, fromBehind: 0, samples: 0 }
+        const seatLead = leadSeatAcc.get(winner) ?? { wins: 0, heldLead: 0, contesting: 0, fromBehind: 0, samples: 0 }
         seatLead.wins += 1
-        if (mid) {
+        if (kind) {
           seatLead.samples += 1
-          if (held) seatLead.heldLead += 1
-          if (fromBehind) seatLead.fromBehind += 1
+          if (kind === 'held') seatLead.heldLead += 1
+          else if (kind === 'contesting') seatLead.contesting += 1
+          else seatLead.fromBehind += 1
         }
         leadSeatAcc.set(winner, seatLead)
       }
@@ -1456,6 +1523,7 @@ export function summarizeReports(reports: MatchReport[], filter: StratFilter = A
         label: strat,
         wins: row.wins,
         heldLead: row.heldLead,
+        contesting: row.contesting,
         fromBehind: row.fromBehind,
         samples: row.samples,
       }))
@@ -1467,10 +1535,42 @@ export function summarizeReports(reports: MatchReport[], filter: StratFilter = A
         label: `Seat ${seat + 1}`,
         wins: row.wins,
         heldLead: row.heldLead,
+        contesting: row.contesting,
         fromBehind: row.fromBehind,
         samples: row.samples,
       }))
       .sort((a, b) => Number(a.key.slice(5)) - Number(b.key.slice(5))),
+    ancientDraws: [
+      {
+        key: 'total',
+        kind: 'total' as const,
+        label: 'All draws',
+        draws: ancientDrawTotal.draws,
+        wins: ancientDrawTotal.wins,
+        decided: ancientDrawTotal.decided,
+      },
+      ...[...ancientStratAcc.entries()]
+        .map(([strat, row]) => ({
+          key: strat,
+          kind: 'strat' as const,
+          label: strat,
+          draws: row.draws,
+          wins: row.wins,
+          decided: row.decided,
+        }))
+        .sort((a, b) => b.draws - a.draws || b.wins - a.wins),
+      ...[...ancientSeatAcc.entries()]
+        .map(([seat, row]) => ({
+          key: `seat:${seat}`,
+          kind: 'seat' as const,
+          label: `Seat ${seat + 1}`,
+          draws: row.draws,
+          wins: row.wins,
+          decided: row.decided,
+        }))
+        .sort((a, b) => Number(a.key.slice(5)) - Number(b.key.slice(5))),
+    ].filter((row) => row.kind === 'total' || row.draws > 0),
+    ancientReveals,
   }
 }
 
@@ -1491,6 +1591,23 @@ export function soleLeader(scores: number[]): number | null {
     }
   }
   return tied ? null : who
+}
+
+/**
+ * Winner vs best other seat at the mid checkpoint.
+ * Margin within ±LEAD_CONTEST_BAND → contesting.
+ */
+export function leadOutcomeKind(scores: number[], winner: number): LeadKind {
+  const mine = scores[winner] ?? 0
+  let bestOther = -Infinity
+  for (let i = 0; i < scores.length; i += 1) {
+    if (i === winner) continue
+    bestOther = Math.max(bestOther, scores[i] ?? 0)
+  }
+  if (!Number.isFinite(bestOther)) bestOther = mine
+  const margin = mine - bestOther
+  if (Math.abs(margin) <= LEAD_CONTEST_BAND) return 'contesting'
+  return margin > 0 ? 'held' : 'behind'
 }
 
 /**

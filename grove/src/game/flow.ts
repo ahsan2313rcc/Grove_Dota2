@@ -761,7 +761,14 @@ export function revealAncient(
   }
   if (state.ancient) return state
   let next = stripAncientZones(state, card?.uid)
-  next = { ...next, ancient: { bonusSeat: null, endsLeft: next.players.length } }
+  next = {
+    ...next,
+    ancient: {
+      bonusSeat: null,
+      endsLeft: next.players.length,
+      drawer: source === 'draw' && actor != null ? actor : null,
+    },
+  }
   if (source !== 'draw' || actor === null || !card) {
     return log(next, `The Ancient is revealed from the ${source}! It is only a marker. Final round — each player gets one more turn.`)
   }

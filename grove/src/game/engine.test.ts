@@ -299,7 +299,7 @@ describe('turn', () => {
     game = { ...game, deck: [ancient!, ...game.deck.filter((card) => card.uid !== ancient!.uid)] }
     const before = game.players[0].hand.length
     game = apply(game, { type: 'draw' })
-    expect(game.ancient).toEqual({ bonusSeat: null, endsLeft: 2 })
+    expect(game.ancient).toEqual({ bonusSeat: null, endsLeft: 2, drawer: 0 })
     expect(game.pending?.resume.kind).toBe('ancient-place')
     game = apply(game, { type: 'choose', ids: ['new'] })
     expect(game.players[0].hand.length).toBe(before)
@@ -322,13 +322,13 @@ describe('turn', () => {
     const ancient = game.deck.find((card) => card.defId === 'ancient')!
     game = { ...game, deck: game.deck.filter((card) => card.uid !== ancient.uid) }
     game = toGrave(game, ancient, { type: 'deck' })
-    expect(game.ancient).toEqual({ bonusSeat: null, endsLeft: 2 })
+    expect(game.ancient).toEqual({ bonusSeat: null, endsLeft: 2, drawer: null })
     expect(game.grave.some((card) => card.defId === 'ancient')).toBe(false)
     game = ready()
     const again = game.deck.find((card) => card.defId === 'ancient')!
     game = { ...game, deck: game.deck.filter((card) => card.uid !== again.uid), ancient: null }
     game = toExile(game, again)
-    expect(game.ancient).toEqual({ bonusSeat: null, endsLeft: 2 })
+    expect(game.ancient).toEqual({ bonusSeat: null, endsLeft: 2, drawer: null })
   })
 
   it('spends an action to draw and nothing to set a combo', () => {

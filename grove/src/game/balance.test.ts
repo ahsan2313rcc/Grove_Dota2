@@ -4,6 +4,7 @@ import {
   ALL_STRAT_FILTER,
   BalanceTracker,
   buildTurnGraph,
+  leadOutcomeKind,
   midLeadSnapshot,
   ROUND_MILESTONES,
   runMatchFast,
@@ -39,38 +40,67 @@ describe('balance', () => {
     }
   })
 
-  it('classifies sole leaders and mid checkpoints for lead outcomes', () => {
+  it('classifies held / contesting / behind with a ±5 band', () => {
     expect(soleLeader([10, 8, 8])).toBe(0)
     expect(soleLeader([10, 10, 8])).toBeNull()
+    expect(leadOutcomeKind([20, 10], 0)).toBe('held')
+    expect(leadOutcomeKind([12, 9], 0)).toBe('contesting')
+    expect(leadOutcomeKind([9, 12], 0)).toBe('contesting')
+    expect(leadOutcomeKind([8, 14], 0)).toBe('behind')
     const base = runMatchFast(59, 2)
-    const report: MatchReport = {
+    const heldReport: MatchReport = {
       ...base,
       roundHistory: [
         { round: 1, turn: 2, scores: [4, 8], hands: [5, 4] },
-        { round: 3, turn: 6, scores: [12, 9], hands: [4, 5] },
-        { round: 5, turn: 10, scores: [20, 18], hands: [3, 4] },
+        { round: 3, turn: 6, scores: [20, 10], hands: [4, 5] },
+        { round: 5, turn: 10, scores: [30, 18], hands: [3, 4] },
       ],
       winner: 0,
       winnerStrat: base.seatStrats[0] ?? null,
       over: true,
     }
-    const mid = midLeadSnapshot(report)
-    expect(mid?.round).toBe(3)
-    expect(soleLeader(mid!.scores)).toBe(0)
-    const summary = summarizeReports([report])
-    expect(summary.leadBySeat.find((row) => row.key === 'seat:0')?.heldLead).toBe(1)
-    expect(summary.leadBySeat.find((row) => row.key === 'seat:0')?.fromBehind).toBe(0)
-    const behindReport: MatchReport = {
-      ...report,
+    expect(midLeadSnapshot(heldReport)?.round).toBe(3)
+    const held = summarizeReports([heldReport])
+    expect(held.leadBySeat.find((row) => row.key === 'seat:0')?.heldLead).toBe(1)
+    expect(held.leadBySeat.find((row) => row.key === 'seat:0')?.contesting).toBe(0)
+
+    const closeReport: MatchReport = {
+      ...heldReport,
       roundHistory: [
         { round: 1, turn: 2, scores: [4, 8], hands: [5, 4] },
-        { round: 3, turn: 6, scores: [9, 14], hands: [4, 5] },
+        { round: 3, turn: 6, scores: [12, 9], hands: [4, 5] },
+        { round: 5, turn: 10, scores: [22, 18], hands: [3, 4] },
+      ],
+    }
+    const close = summarizeReports([closeReport])
+    expect(close.leadBySeat.find((row) => row.key === 'seat:0')?.contesting).toBe(1)
+
+    const behindReport: MatchReport = {
+      ...heldReport,
+      roundHistory: [
+        { round: 1, turn: 2, scores: [4, 8], hands: [5, 4] },
+        { round: 3, turn: 6, scores: [8, 14], hands: [4, 5] },
         { round: 5, turn: 10, scores: [22, 18], hands: [3, 4] },
       ],
     }
     const behind = summarizeReports([behindReport])
     expect(behind.leadBySeat.find((row) => row.key === 'seat:0')?.fromBehind).toBe(1)
-    expect(behind.leadBySeat.find((row) => row.key === 'seat:0')?.heldLead).toBe(0)
+  })
+
+  it('tracks who drew The Ancient and whether they won', () => {
+    const reports = [70, 71, 72, 73].map((seed) => runMatchFast(seed, 2))
+    const withDraw = reports.find((report) => report.ancientDrawer != null)
+    expect(withDraw || reports.some((report) => report.ancientRevealed)).toBeTruthy()
+    const summary = summarizeReports(reports)
+    expect(summary.ancientDraws.some((row) => row.kind === 'total')).toBe(true)
+    if (withDraw) {
+      expect(withDraw.ancientDrawerStrat).toBe(withDraw.seatStrats[withDraw.ancientDrawer!]!)
+      const total = summary.ancientDraws.find((row) => row.kind === 'total')!
+      expect(total.draws).toBeGreaterThan(0)
+      expect(total.decided).toBeGreaterThan(0)
+      expect(total.wins).toBeGreaterThanOrEqual(0)
+      expect(total.wins).toBeLessThanOrEqual(total.decided)
+    }
   })
 
   it('records card swings, events, and shapes for a finished AI match', () => {

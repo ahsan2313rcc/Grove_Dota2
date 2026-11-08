@@ -170,6 +170,8 @@ export function Table({
     roundMilestones: [],
     leadByStrat: [],
     leadBySeat: [],
+    ancientDraws: [],
+    ancientReveals: 0,
   }
 
   const networked = onlineSeat !== null && onlineSeat !== undefined
