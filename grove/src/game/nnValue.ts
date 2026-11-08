@@ -469,12 +469,27 @@ export function chooseAiActionNeural(
   for (let depth = 0; depth < budget.depth; depth += 1) {
     const nextBeam: BeamNode[] = []
     for (const node of beam) {
-      if (node.state.over || node.state.active !== actor || node.state.veil || node.state.pending) {
+      if (node.state.over || node.state.active !== actor || node.state.veil) {
         continue
       }
-      for (const action of neuralCandidates(node.state, actor, budget)) {
-        const after = apply({ ...node.state, autoAll: true }, action)
-        if (!moved(node.state, after) && action.type !== 'end') continue
+      // Settle pending with the Challenge/Neural picker before expanding (Challenge does this too).
+      let cursor = node.state
+      let guard = 0
+      while (cursor.pending && cursor.pending.actor === actor && guard < 6) {
+        guard += 1
+        const ids = chooseAiPendingNeural(cursor)
+        const settled = apply({ ...cursor, autoAll: true }, { type: 'choose', ids })
+        if (settled === cursor) break
+        cursor = settled
+      }
+      if (cursor.over || cursor.active !== actor || cursor.veil || cursor.pending) {
+        const leaf = valueOf(cursor, actor, net)
+        if (node.first) noteFirst(node.first, leaf)
+        continue
+      }
+      for (const action of neuralCandidates(cursor, actor, budget)) {
+        const after = apply({ ...cursor, autoAll: true }, action)
+        if (!moved(cursor, after) && action.type !== 'end') continue
         const score = valueOf(after, actor, net)
         const first = node.first ?? action
         noteFirst(first, score)

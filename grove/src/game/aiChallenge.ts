@@ -296,7 +296,8 @@ export function evaluateChallenge(state: Game, actor: PlayerId, strat: AiStrat):
 
   const scores = state.players.map((player) => scoreState(state, player.id).total)
   const mine = scores[actor] ?? 0
-  const foeSeat = preferredFoe(state, actor)
+  // Spite hunts the hottest board; others climb the seat above in standings.
+  const foeSeat = huntFoe(state, actor, strat)
   const foe = scores[foeSeat] ?? 0
   const lead = mine - foe
   const place = standingOf(scores, actor)
@@ -414,9 +415,9 @@ function playBiasChallenge(
   const afterNearly = after.players[actor].teams.filter((team) => team.heroes.length === 2).length
   const denial = INTERRUPT_VALUE[card.defId] ?? 0
   const threat = threatScoreChallenge(before, actor)
-  const behind = beforePts + 3 < scoreState(before, preferredFoe(before, actor)).total
+  const foeSeat = huntFoe(before, actor, strat)
+  const behind = beforePts + 3 < scoreState(before, foeSeat).total
   const trap = isTrapHero(card.defId)
-  const foeSeat = preferredFoe(before, actor)
   const foeLoss = scoreState(before, foeSeat).total - scoreState(after, foeSeat).total
   const pressure = pressureDelta(before, after, actor)
   const timing = HERO_BY_ID[card.defId]?.timing
@@ -425,7 +426,12 @@ function playBiasChallenge(
 
   if (trap) {
     const aim = trapAim(after, actor, card.defId, teamId)
-    bonus += aim > 0 ? (strat === 'spite' ? 2.8 : 2.0) : -1.6
+    // Spite: prefer planting on the hunted seat's teams.
+    const onHunt =
+      teamId !== 'new' && teamId !== '' && teamById(after, teamId)?.player.id === foeSeat
+    bonus += aim > 0
+      ? (strat === 'spite' ? 2.8 + (onHunt ? 0.7 : 0) : 2.0)
+      : -1.6
   }
 
   if (card.kind === 'hero' && !trap) {
@@ -513,7 +519,7 @@ function drawBiasChallenge(state: Game, actor: PlayerId, strat: AiStrat): number
 
 function rankHand(state: Game, actor: PlayerId, hand: CardInst[], strat: AiStrat): CardInst[] {
   const threat = threatScoreChallenge(state, actor)
-  const behind = scoreState(state, actor).total + 3 < scoreState(state, preferredFoe(state, actor)).total
+  const behind = scoreState(state, actor).total + 3 < scoreState(state, huntFoe(state, actor, strat)).total
   const actions = state.players[actor].actions
   const nearly = state.players[actor].teams.some((team) => team.heroes.length === 2)
   const seen = new Set<string>()
@@ -559,21 +565,60 @@ function rankMates(state: Game, actor: PlayerId, activeUid: string, teamId: stri
   const active = state.players[actor]?.hand.find((card) => card.uid === activeUid)
   const activeAttr = active ? HERO_BY_ID[active.defId]?.attr : undefined
   const team = teamId !== 'new' && teamId !== '' ? teamById(state, teamId)?.team : null
+  const basePts = team ? scoreTeam(state, team).points : 0
   return heroUids
     .filter((uid) => uid !== activeUid)
     .map((uid) => {
       const card = state.players[actor]?.hand.find((entry) => entry.uid === uid)
       if (!card) return { uid, fit: -1 }
       const attr = HERO_BY_ID[card.defId]?.attr
+      const range = HERO_BY_ID[card.defId]?.range
       let fit = 0
       if (attr && activeAttr && attr === activeAttr) fit += 3
       if (team && attr) fit += team.heroes.filter((hero) => HERO_BY_ID[hero.defId]?.attr === attr).length * 2
       if (team && team.heroes.length >= 2 && team.heroes.length < 5) fit += 1.5
+      // Prefer packing that grows the live team score (CORE / MIX / ATK), not attr equality alone.
+      if (team && team.heroes[0]) {
+        const projected = {
+          ...team,
+          heroes: [
+            ...team.heroes,
+            { ...team.heroes[0], uid: `proj-${uid}`, defId: card.defId },
+          ],
+        }
+        fit += Math.max(0, scoreTeam(state, projected).points - basePts) * 0.35
+        if (range === 'Ranged' && team.heroes.some((hero) => HERO_BY_ID[hero.defId]?.range === 'Melee')) fit += 0.4
+        if (range === 'Melee' && team.heroes.some((hero) => HERO_BY_ID[hero.defId]?.range === 'Ranged')) fit += 0.4
+      }
       if (isTrapHero(card.defId)) fit -= 4
       return { uid, fit }
     })
     .sort((a, b) => b.fit - a.fit)
     .map((entry) => entry.uid)
+}
+
+/** Spite: hottest board. Others: seat immediately above in standings. */
+function huntFoe(state: Game, actor: PlayerId, strat: AiStrat): PlayerId {
+  if (strat !== 'spite') return preferredFoe(state, actor)
+  let best = preferredFoe(state, actor)
+  let bestHeat = -Infinity
+  for (const player of state.players) {
+    if (player.id === actor) continue
+    let heat = scoreState(state, player.id).total
+    for (const team of player.teams) {
+      if (team.heroes.length >= 3) heat += 4 + scoreTeam(state, team).points * 0.2
+      for (const hero of team.heroes) {
+        if (HIGH_THREAT_HEROES.has(hero.defId)) heat += 5
+        if (HERO_BY_ID[hero.defId]?.timing === 'cast') heat += 2
+        if (ENGINE_AURAS.has(hero.defId)) heat += 2.5
+      }
+    }
+    if (heat > bestHeat) {
+      bestHeat = heat
+      best = player.id
+    }
+  }
+  return best
 }
 
 function pickDiscards(state: Game, actor: PlayerId): string[] {

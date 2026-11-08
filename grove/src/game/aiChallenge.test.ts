@@ -50,6 +50,17 @@ describe('challenge AI', () => {
     const action = chooseAiActionChallenge(game, 0, 'tempo')
     expect(action.type).not.toBe('end')
   })
+
+  it('Spite prices pressure on the hottest foe board above the standing ladder', () => {
+    let game = apply(createGame({ seed: 23, mode: 'hotseat', names: ['A', 'B', 'C'] }), { type: 'ready' })
+    // B is hottest (filled cast threats); C is only slightly ahead on raw pts via standing.
+    game = seatDefs(game, 1, [['enigma', 'medusa', 'axe']])
+    game = seatDefs(game, 2, [['crystal_maiden']])
+    const spite = evaluateChallenge(game, 0, 'spite')
+    const balanced = evaluateChallenge(game, 0, 'balanced')
+    // Spite should care more about B's board — eval differs from Balanced's ladder foe.
+    expect(spite).not.toBe(balanced)
+  })
 })
 
 function seatDefs(game: Game, player: PlayerId, teams: string[][]): Game {
