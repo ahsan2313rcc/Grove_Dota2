@@ -106,7 +106,7 @@ export interface SwingEvent {
 /** Game-turn offsets measured for every play. */
 export const IMPACT_HORIZONS = [1, 3, 5, 10] as const
 /** Blend of horizon advantages that makes up Impact. */
-export const IMPACT_WEIGHTS = [0.25, 0.3, 0.25, 0.2] as const
+export const IMPACT_WEIGHTS = [0.35, 0.3, 0.25, 0.1] as const
 
 export interface RoundEvent {
   seed: number

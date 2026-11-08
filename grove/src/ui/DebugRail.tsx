@@ -724,7 +724,7 @@ function ImpactTable({ rows }: { rows: CardBalanceRow[] }) {
       <h3>Highest impact</h3>
       <p className="quiet debug-legend">
         Impact = how much Rel improved over the next +1/+3/+5/+10 turns vs an average play at that stage of the game
-        (weights 25% / 30% / 25% / 20%). Ranked by |Impact| × √n. Hover a cell for horizons + mechanical EV bag.
+        (weights 35% / 30% / 25% / 10%). Ranked by |Impact| × √n — √n lifts well-sampled cards without letting raw volume drown signal. Hover a cell for horizons + mechanical EV bag.
       </p>
       <CardSortTable
         rows={rows}
