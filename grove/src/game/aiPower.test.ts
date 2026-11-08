@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { searchModeForStrat } from './ai.ts'
 import { AI_POWER_MAX, AI_POWER_MIN, aiSearchBudget, setAiThoughtPower } from './aiPower.ts'
 
 describe('ai thought power', () => {
@@ -15,5 +16,14 @@ describe('ai thought power', () => {
     expect(setAiThoughtPower(0)).toBe(AI_POWER_MIN)
     expect(setAiThoughtPower(99)).toBe(AI_POWER_MAX)
     expect(setAiThoughtPower(7)).toBe(7)
+  })
+
+  it('keeps Stats/batch heuristics on Challenge (no demotion vs Neural)', () => {
+    expect(searchModeForStrat('balanced', true)).toBe('challenge')
+    expect(searchModeForStrat('spite', true)).toBe('challenge')
+    expect(searchModeForStrat('tempo', true)).toBe('challenge')
+    expect(searchModeForStrat('architect', true)).toBe('challenge')
+    expect(searchModeForStrat('neural', true)).toBe('neural')
+    expect(searchModeForStrat('neural', false)).toBe('neural')
   })
 })

@@ -70,18 +70,23 @@ export function cycleStrat(index: number): AiStrat {
 }
 
 /**
- * `challenge` — strongest heuristic (turn beam + sharper eval). Use vs humans.
- * `full` — wide 1-ply tree (Watch default before challenge).
- * `fast` — batch sims (~20 games/sec), budgeted 1-ply.
- * `neural` — offline-trained net with 1-ply apply + value(after) (quality over speed).
+ * `challenge` — strongest heuristic (turn beam + sharper eval). Use vs humans / Watch / Stats.
+ * `full` — wide 1-ply tree (legacy).
+ * `fast` — alias for Challenge at current thought power (kept for callers; not a weak brain).
+ * `neural` — trained value net with turn beam.
  *
- * Limit is speculative `apply` cost: challenge/full/neural fire many applies per decision.
+ * Thought power (`aiSearchBudget`) is the shared speed/quality knob for Challenge and Neural.
+ * Stats must not demote heuristics while leaving Neural on a full budget — that produced ~90% Neural.
  */
 export type AiSearchMode = 'full' | 'fast' | 'challenge' | 'neural'
 
-/** Map seat strat → search brain. Neural seats use the net; others use Challenge (max). */
+/**
+ * Map seat strat → search brain.
+ * Heuristics always Challenge; Neural always the net.
+ * `batchFast` is ignored for mode selection (was the Stats demotion that crippled Balanced/Spite/…).
+ */
 export function searchModeForStrat(strat: AiStrat, batchFast = false): AiSearchMode {
-  if (batchFast) return 'fast'
+  void batchFast
   if (strat === 'neural') return 'neural'
   return 'challenge'
 }
@@ -107,7 +112,7 @@ export function chooseAiAction(state: Game, mode: AiSearchMode = 'full'): Action
     const pendingMode: AiSearchMode =
       seatStrat === 'neural' || mode === 'neural'
         ? 'neural'
-        : mode === 'challenge'
+        : mode === 'challenge' || mode === 'fast'
           ? 'challenge'
           : 'full'
     return {
@@ -134,9 +139,12 @@ export function chooseAiAction(state: Game, mode: AiSearchMode = 'full'): Action
   const freeExile = clinkzPick(state, actor)
   if (freeExile) return freeExile
 
-  if (resolved === 'challenge') return chooseAiActionChallenge(state, actor, strat)
-  if (resolved === 'neural') return chooseAiActionNeural(state, actor, strat, { fast: mode === 'fast' })
-  if (resolved === 'fast') return chooseAiActionFast(state, actor, strat)
+  // Challenge + Neural share thought-power budgets. Never pass `fast:true` here —
+  // that was Stats giving Neural a full search while heuristics got a toy brain.
+  if (resolved === 'challenge' || resolved === 'fast') {
+    return chooseAiActionChallenge(state, actor, strat)
+  }
+  if (resolved === 'neural') return chooseAiActionNeural(state, actor, strat)
 
   let best: Action = { type: 'end' }
   let bestScore = evaluate(state, actor, strat) + endBias(state, actor, strat)

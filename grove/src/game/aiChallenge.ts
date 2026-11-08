@@ -93,8 +93,12 @@ type BeamNode = {
   steps: number
 }
 
-export function chooseAiActionChallenge(state: Game, actor: PlayerId, strat: AiStrat): Action {
-  const budget = aiSearchBudget()
+export function chooseAiActionChallenge(
+  state: Game,
+  actor: PlayerId,
+  strat: AiStrat,
+  budget: ReturnType<typeof aiSearchBudget> = aiSearchBudget(),
+): Action {
   const cash = aiComboPick(state)
   if (cash) return { type: 'combo', uids: cash }
 
@@ -130,7 +134,7 @@ export function chooseAiActionChallenge(state: Game, actor: PlayerId, strat: AiS
         continue
       }
 
-      const actions = challengeCandidates(cursor, actor, strat)
+      const actions = challengeCandidates(cursor, actor, strat, budget)
       for (const action of actions) {
         const after = apply({ ...cursor, autoAll: true }, action)
         if (!moved(cursor, after) && action.type !== 'end') continue
@@ -215,7 +219,12 @@ export function chooseAiPendingChallenge(state: Game): string[] {
   return best.length >= pending.min ? best : ids.slice(0, pending.min)
 }
 
-function challengeCandidates(state: Game, actor: PlayerId, strat: AiStrat): Action[] {
+function challengeCandidates(
+  state: Game,
+  actor: PlayerId,
+  strat: AiStrat,
+  budget: ReturnType<typeof aiSearchBudget> = aiSearchBudget(),
+): Action[] {
   const out: Action[] = []
   const hand = state.players[actor].hand
   const heroUids = hand.filter((card) => card.kind === 'hero' && !isTrapHero(card.defId)).map((card) => card.uid)
@@ -248,7 +257,6 @@ function challengeCandidates(state: Game, actor: PlayerId, strat: AiStrat): Acti
     if (card.kind === 'item' && state.active === actor) out.push({ type: 'play', uid: card.uid, team: '' })
   }
 
-  const budget = aiSearchBudget()
   const ranked = rankHand(state, actor, hand, strat)
   for (const card of ranked.slice(0, budget.handPly + 1)) {
     const teams = pickTeams(state, card.uid, card.defId, card.kind).slice(0, budget.teamOpts + 1)

@@ -60,6 +60,27 @@ export function aiSearchBudget(level = power): AiSearchBudget {
   }
 }
 
+/**
+ * Compact budgets for offline training throughput only (`opts.fast` on Neural / train loops).
+ * Stats matchups use `aiSearchBudget()` for both Challenge and Neural so thought power is fair.
+ */
+export const BATCH_CHALLENGE_BUDGET: AiSearchBudget = {
+  beam: 5,
+  depth: 3,
+  handPly: 5,
+  teamOpts: 2,
+  pendingTry: 8,
+}
+
+/** Neural train-fast budget (kept in sync with nnValue FAST_BUDGET). */
+export const BATCH_NEURAL_BUDGET: AiSearchBudget = {
+  beam: 3,
+  depth: 2,
+  handPly: 4,
+  teamOpts: 1,
+  pendingTry: 6,
+}
+
 export function aiThoughtPowerLabel(level = power): string {
   const p = clamp(level)
   if (p <= 2) return 'Fast'
