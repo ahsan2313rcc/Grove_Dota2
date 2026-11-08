@@ -1078,6 +1078,19 @@ function Lobby({
             )
           })}
         </ul>
+        <button type="button" className="primary block lobby-start" data-testid="play-solo" onClick={start}>
+          {debugPreview ? `Sim ${queue} game${queue === 1 ? '' : 's'}` : savedLocal ? 'New match' : 'Start match'}
+        </button>
+        <button type="button" className="block" data-testid="play-online" onClick={onOnline}>Play online (ranked)</button>
+        <p className="quiet lobby-hint">
+          {debugPreview
+            ? 'Seat strats apply to every simulated match. Blank seed rolls a random start.'
+            : humans >= 2
+              ? 'Multiple humans pass the seat automatically.'
+              : humans === 1
+                ? 'You go first. AI seats take their turns on their own.'
+                : 'All AI is fine for spectating and debugging.'}
+        </p>
         {savedLocal && !debugPreview ? (
           <div className="resume-box" data-testid="resume-local-box">
             <p className="quiet">Unfinished local match found.</p>
@@ -1131,19 +1144,6 @@ function Lobby({
             </button>
           </div>
         ) : null}
-        <button type="button" className="primary block lobby-start" data-testid="play-solo" onClick={start}>
-          {debugPreview ? `Sim ${queue} game${queue === 1 ? '' : 's'}` : savedLocal ? 'New match' : 'Start match'}
-        </button>
-        <p className="quiet lobby-hint">
-          {debugPreview
-            ? 'Seat strats apply to every simulated match. Blank seed rolls a random start.'
-            : humans >= 2
-              ? 'Multiple humans pass the seat automatically.'
-              : humans === 1
-                ? 'You go first. AI seats take their turns on their own.'
-                : 'All AI is fine for spectating and debugging.'}
-        </p>
-        <button type="button" className="block" data-testid="play-online" onClick={onOnline}>Play online (ranked)</button>
         <details className="lobby-options">
           <summary>
             <span>Match options</span>
