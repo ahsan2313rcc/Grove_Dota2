@@ -334,59 +334,64 @@ export function DebugRail({
         {summary.roundMilestones.every((row) => row.samples === 0) ? (
           <p className="quiet">No round snapshots yet — run a Stats batch.</p>
         ) : (
-          <>
-            <table className="debug-table debug-table-compact">
-              <thead>
-                <tr>
-                  <th>Round</th>
-                  <th className="debug-num">N</th>
-                  {Array.from({ length: Math.max(1, summary.seats) }, (_, seat) => (
-                    <th key={`s${seat}`} className="debug-num" title={`Seat ${seat + 1} avg score / hand`}>S{seat + 1}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {summary.roundMilestones.filter((row) => row.samples > 0).map((row) => (
-                  <tr key={row.round}>
-                    <td><strong>R{row.round}</strong></td>
-                    <td className="debug-num">{row.samples}</td>
+          <div className="debug-rel-grid">
+            <div>
+              <h4 className="debug-subhead">By seat</h4>
+              <table className="debug-table debug-table-compact">
+                <thead>
+                  <tr>
+                    <th>Round</th>
+                    <th className="debug-num">N</th>
                     {Array.from({ length: Math.max(1, summary.seats) }, (_, seat) => (
-                      <td key={`${row.round}-${seat}`} className="debug-num">
-                        {fmt(row.avgScoreBySeat[seat] ?? 0)}
-                        <small>/{fmt(row.avgHandBySeat[seat] ?? 0)}</small>
-                      </td>
+                      <th key={`s${seat}`} className="debug-num" title={`Seat ${seat + 1} avg score / hand`}>S{seat + 1}</th>
                     ))}
                   </tr>
-                ))}
-              </tbody>
-            </table>
-            <p className="quiet debug-legend">By strat at each milestone (score / hand).</p>
-            <table className="debug-table debug-table-compact">
-              <thead>
-                <tr>
-                  <th>Strat</th>
+                </thead>
+                <tbody>
                   {summary.roundMilestones.filter((row) => row.samples > 0).map((row) => (
-                    <th key={`rh${row.round}`} className="debug-num">R{row.round}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {uniqueMilestoneStrats(summary).map((strat) => (
-                  <tr key={strat}>
-                    <td><strong>{stratLabel(strat)}</strong></td>
-                    {summary.roundMilestones.filter((row) => row.samples > 0).map((row) => {
-                      const cell = row.byStrat.find((entry) => entry.strat === strat)
-                      return (
-                        <td key={`${strat}-${row.round}`} className="debug-num">
-                          {cell ? <>{fmt(cell.avgScore)}<small>/{fmt(cell.avgHand)}</small></> : '—'}
+                    <tr key={row.round}>
+                      <td><strong>R{row.round}</strong></td>
+                      <td className="debug-num">{row.samples}</td>
+                      {Array.from({ length: Math.max(1, summary.seats) }, (_, seat) => (
+                        <td key={`${row.round}-${seat}`} className="debug-num">
+                          {fmt(row.avgScoreBySeat[seat] ?? 0)}
+                          <small>/{fmt(row.avgHandBySeat[seat] ?? 0)}</small>
                         </td>
-                      )
-                    })}
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div>
+              <h4 className="debug-subhead">By strat</h4>
+              <table className="debug-table debug-table-compact">
+                <thead>
+                  <tr>
+                    <th>Strat</th>
+                    {summary.roundMilestones.filter((row) => row.samples > 0).map((row) => (
+                      <th key={`rh${row.round}`} className="debug-num">R{row.round}</th>
+                    ))}
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </>
+                </thead>
+                <tbody>
+                  {uniqueMilestoneStrats(summary).map((strat) => (
+                    <tr key={strat}>
+                      <td><strong>{stratLabel(strat)}</strong></td>
+                      {summary.roundMilestones.filter((row) => row.samples > 0).map((row) => {
+                        const cell = row.byStrat.find((entry) => entry.strat === strat)
+                        return (
+                          <td key={`${strat}-${row.round}`} className="debug-num">
+                            {cell ? <>{fmt(cell.avgScore)}<small>/{fmt(cell.avgHand)}</small></> : '—'}
+                          </td>
+                        )
+                      })}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
         )}
       </div>
 
@@ -398,19 +403,19 @@ export function DebugRail({
         </p>
         <div className="debug-rel-grid">
           <div>
-            <h4 className="debug-subhead">By strat</h4>
-            <LeadOutcomeTable
-              head="Strat"
-              rows={summary.leadByStrat}
-              labelOf={(row) => stratLabel(row.key as AiStrat)}
-            />
-          </div>
-          <div>
             <h4 className="debug-subhead">By seat</h4>
             <LeadOutcomeTable
               head="Seat"
               rows={summary.leadBySeat}
               labelOf={(row) => row.label}
+            />
+          </div>
+          <div>
+            <h4 className="debug-subhead">By strat</h4>
+            <LeadOutcomeTable
+              head="Strat"
+              rows={summary.leadByStrat}
+              labelOf={(row) => stratLabel(row.key as AiStrat)}
             />
           </div>
         </div>
@@ -430,17 +435,17 @@ export function DebugRail({
         </p>
         <div className="debug-rel-grid">
           <div>
-            <h4 className="debug-subhead">By strat</h4>
-            <AncientDrawTable
-              head="Strat"
-              rows={summary.ancientDraws.filter((row) => row.kind === 'strat')}
-            />
-          </div>
-          <div>
             <h4 className="debug-subhead">By seat</h4>
             <AncientDrawTable
               head="Seat"
               rows={summary.ancientDraws.filter((row) => row.kind === 'seat')}
+            />
+          </div>
+          <div>
+            <h4 className="debug-subhead">By strat</h4>
+            <AncientDrawTable
+              head="Strat"
+              rows={summary.ancientDraws.filter((row) => row.kind === 'strat')}
             />
           </div>
         </div>
