@@ -379,10 +379,14 @@ export function DebugRail({
         <h3>Shape compare {effectiveTurn == null ? '(final)' : `(T${effectiveTurn})`}</h3>
         <p className="quiet debug-legend">
           Core ×N = same-attr stack N (5+ → ×5). Mix · M = M distinct attrs. Dual-count allowed.
-          Avg pts = mean team score (pure core ≤15; mix gets attack by default).
-          Pts/card = points ÷ heroes (cards for terrain). Pure = mono cores, or mixes with one hero per attribute. Terrain: 3 alike = 8 + reward, 2 + 1 = 3, 1 of each = 5.
+          Avg pts = mean team score. Pts/card = points ÷ heroes (cards for terrain). Pure = mono cores, or mixes with one hero per attribute.
         </p>
-        <ShapeTable rows={shapeRows} />
+        <ShapeTable rows={shapeRows.filter((row) => !row.id.endsWith('_terrain'))} />
+        <h4 className="debug-subhead">Terrain combos</h4>
+        <p className="quiet debug-legend">
+          Three alike = 8 + reward (River → rune, Jungle → neutral, Lane → tower). 1 of each = 5. Mixed combo (2 + 1) = 3.
+        </p>
+        <ShapeTable rows={shapeRows.filter((row) => row.id.endsWith('_terrain'))} />
       </div>
 
       <div className="debug-block">
@@ -396,79 +400,83 @@ export function DebugRail({
           ]}
           rows={summary.eventStats}
           rowKey={(row) => row.id}
+          pageSize={10}
         />
       </div>
-
-      <HeroModeTable
-        total={summary.heroPlaysTotal}
-        silenced={summary.heroPlaysSilenced}
-        open={summary.heroPlaysOpen}
-        seats={summary.seats}
-      />
 
       <ImpactTable rows={summary.contested} />
 
       <div className="debug-rel-grid">
+        <HeroModeTable
+          total={summary.heroPlaysTotal}
+          silenced={summary.heroPlaysSilenced}
+          open={summary.heroPlaysOpen}
+          seats={summary.seats}
+        />
         <div className="debug-block">
-          <h3>Abilities</h3>
-          <p className="quiet debug-legend">On-play / reactivate swings only (not body placement).</p>
-          <CardSortTable rows={summary.abilities} empty="No ability activations yet." />
-        </div>
-        <div className="debug-block">
-          <h3>By ability type</h3>
-          <p className="quiet debug-legend">Primary effect family per hero ability.</p>
-          <SortableTable
-            empty="No ability types yet."
-            defaultSort={{ key: 'plays', dir: 'desc' }}
-            columns={[
-              { key: 'label', label: 'Type', get: (row) => <strong>{row.label}</strong>, sortValue: (row) => row.label },
-              { key: 'plays', label: 'n', get: (row) => String(row.plays), sortValue: (row) => row.plays, className: 'debug-num' },
-              { key: 'rel', label: 'Rel', get: (row) => signed(row.avgRelativeSwing), sortValue: (row) => row.avgRelativeSwing, className: 'debug-num' },
-              { key: 'self', label: 'Self', get: (row) => signed(row.avgActorSwing), sortValue: (row) => row.avgActorSwing, className: 'debug-num' },
-              {
-                key: 'win',
-                label: 'Win%',
-                get: (row) => (row.presence > 0 ? `${Math.round(row.winRate * 100)}%` : '—'),
-                sortValue: (row) => row.winRate,
-                className: 'debug-num',
-              },
-            ]}
-            rows={summary.byAbilityType}
-            rowKey={(row) => row.id}
-          />
+          <h3>Items / runes / neutrals / towers</h3>
+          <CardSortTable rows={summary.loot} empty="No loot plays yet." pageSize={10} />
         </div>
       </div>
 
       <div className="debug-rel-grid">
         <div className="debug-block">
-          <h3>Terrains</h3>
-          <CardSortTable rows={summary.terrains} empty="No terrain plays yet." />
+          <h3>By attribute</h3>
+          <p className="quiet debug-legend">Hero body + ability swings rolled by attr.</p>
+          <SortableTable
+            empty="No attr samples yet."
+            defaultSort={{ key: 'plays', dir: 'desc' }}
+            columns={[
+              {
+                key: 'attr',
+                label: 'Attr',
+                get: (row) => <strong>{row.attr === 'none' ? '—' : attrLabel(row.attr)}</strong>,
+                sortValue: (row) => row.attr,
+              },
+              { key: 'plays', label: 'n', get: (row) => String(row.plays), sortValue: (row) => row.plays, className: 'debug-num' },
+              { key: 'rel', label: 'Rel', get: (row) => signed(row.avgRelativeSwing), sortValue: (row) => row.avgRelativeSwing, className: 'debug-num' },
+              { key: 'self', label: 'Self', get: (row) => signed(row.avgActorSwing), sortValue: (row) => row.avgActorSwing, className: 'debug-num' },
+            ]}
+            rows={summary.byAttr}
+            rowKey={(row) => String(row.attr)}
+          />
         </div>
         <div className="debug-block">
-          <h3>Items / runes / neutrals / towers</h3>
-          <CardSortTable rows={summary.loot} empty="No loot plays yet." />
+          <h3>Terrains</h3>
+          <CardSortTable rows={summary.terrains} empty="No terrain plays yet." pageSize={10} />
         </div>
       </div>
 
       <div className="debug-block">
-        <h3>By attribute</h3>
-        <p className="quiet debug-legend">Hero body + ability swings rolled by attr.</p>
+        <h3>By ability type</h3>
+        <p className="quiet debug-legend">
+          Primary effect family per on-play ability. Impact uses the same horizon baseline as the card tables (Rel dropped here — ability Rel mixed body seating).
+        </p>
         <SortableTable
-          empty="No attr samples yet."
-          defaultSort={{ key: 'plays', dir: 'desc' }}
+          empty="No ability types yet."
+          defaultSort={{ key: 'impact', dir: 'desc' }}
           columns={[
-            {
-              key: 'attr',
-              label: 'Attr',
-              get: (row) => <strong>{row.attr === 'none' ? '—' : attrLabel(row.attr)}</strong>,
-              sortValue: (row) => row.attr,
-            },
+            { key: 'label', label: 'Type', get: (row) => <strong>{row.label}</strong>, sortValue: (row) => row.label },
             { key: 'plays', label: 'n', get: (row) => String(row.plays), sortValue: (row) => row.plays, className: 'debug-num' },
-            { key: 'rel', label: 'Rel', get: (row) => signed(row.avgRelativeSwing), sortValue: (row) => row.avgRelativeSwing, className: 'debug-num' },
             { key: 'self', label: 'Self', get: (row) => signed(row.avgActorSwing), sortValue: (row) => row.avgActorSwing, className: 'debug-num' },
+            {
+              key: 'impact',
+              label: 'Impact',
+              get: (row) => signed(row.avgImpact),
+              sortValue: (row) => row.avgImpact,
+              className: 'debug-num',
+            },
+            {
+              key: 'win',
+              label: 'Win%',
+              get: (row) => (row.presence > 0 ? pctCell(row.winRate, row.wins, row.presence, summary.seats) : '—'),
+              sortValue: (row) => winRateShown(row.winRate, summary.seats),
+              className: 'debug-num',
+            },
           ]}
-          rows={summary.byAttr}
-          rowKey={(row) => String(row.attr)}
+          rows={summary.byAbilityType}
+          rowKey={(row) => row.id}
+          pageSize={10}
         />
       </div>
 
@@ -553,6 +561,8 @@ function cycleSort(current: SortState, key: string): SortState {
   return null
 }
 
+const PAGE_SIZE = 10
+
 function SortableTable<T>({
   columns,
   rows,
@@ -560,15 +570,20 @@ function SortableTable<T>({
   empty = 'Nothing yet.',
   defaultSort = null,
   limit,
+  pageSize,
 }: {
   columns: Column<T>[]
   rows: T[]
   rowKey: (row: T) => string
   empty?: string
   defaultSort?: SortState
+  /** Hard cap (no paging). Prefer pageSize for top-N with next/prev. */
   limit?: number
+  /** Page through sorted rows this many at a time (default off). */
+  pageSize?: number
 }) {
   const [sort, setSort] = useState<SortState>(defaultSort)
+  const [page, setPage] = useState(0)
   if (rows.length === 0) return <p className="quiet">{empty}</p>
   const ordered = [...rows]
   if (sort) {
@@ -584,42 +599,65 @@ function SortableTable<T>({
       })
     }
   }
-  const shown = limit ? ordered.slice(0, limit) : ordered
+  const capped = limit ? ordered.slice(0, limit) : ordered
+  const size = pageSize && pageSize > 0 ? pageSize : 0
+  const pages = size ? Math.max(1, Math.ceil(capped.length / size)) : 1
+  const safePage = Math.min(page, pages - 1)
+  const shown = size ? capped.slice(safePage * size, safePage * size + size) : capped
+  const rankBase = size ? safePage * size : 0
   return (
-    <table className="debug-table debug-table-sort">
-      <thead>
-        <tr>
-          <th className="debug-rank-col" title="Rank">#</th>
-          {columns.map((col) => {
-            const active = sort?.key === col.key
-            const mark = !active ? '' : sort.dir === 'desc' ? ' ↓' : ' ↑'
-            return (
-              <th key={col.key} className={col.className}>
-                <button
-                  type="button"
-                  className={`debug-sort${active ? ' on' : ''}`}
-                  aria-pressed={active}
-                  title={`Sort by ${col.label}`}
-                  onClick={() => setSort((current) => cycleSort(current, col.key))}
-                >
-                  {col.label}{mark}
-                </button>
-              </th>
-            )
-          })}
-        </tr>
-      </thead>
-      <tbody>
-        {shown.map((row, index) => (
-          <tr key={rowKey(row)}>
-            <td className="debug-rank-col">{index + 1}</td>
-            {columns.map((col) => (
-              <td key={col.key} className={col.className}>{col.get(row)}</td>
-            ))}
+    <div className="debug-table-wrap">
+      <table className="debug-table debug-table-sort">
+        <thead>
+          <tr>
+            <th className="debug-rank-col" title="Rank">#</th>
+            {columns.map((col) => {
+              const active = sort?.key === col.key
+              const mark = !active ? '' : sort.dir === 'desc' ? ' ↓' : ' ↑'
+              return (
+                <th key={col.key} className={col.className}>
+                  <button
+                    type="button"
+                    className={`debug-sort${active ? ' on' : ''}`}
+                    aria-pressed={active}
+                    title={`Sort by ${col.label}`}
+                    onClick={() => {
+                      setSort((current) => cycleSort(current, col.key))
+                      setPage(0)
+                    }}
+                  >
+                    {col.label}{mark}
+                  </button>
+                </th>
+              )
+            })}
           </tr>
-        ))}
-      </tbody>
-    </table>
+        </thead>
+        <tbody>
+          {shown.map((row, index) => (
+            <tr key={rowKey(row)}>
+              <td className="debug-rank-col">{rankBase + index + 1}</td>
+              {columns.map((col) => (
+                <td key={col.key} className={col.className}>{col.get(row)}</td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      {size && capped.length > size ? (
+        <div className="debug-page" data-testid="debug-table-page">
+          <button type="button" disabled={safePage <= 0} onClick={() => setPage((value) => Math.max(0, value - 1))}>
+            Prev {size}
+          </button>
+          <span className="quiet">
+            {rankBase + 1}–{Math.min(rankBase + size, capped.length)} of {capped.length}
+          </span>
+          <button type="button" disabled={safePage >= pages - 1} onClick={() => setPage((value) => Math.min(pages - 1, value + 1))}>
+            Next {size}
+          </button>
+        </div>
+      ) : null}
+    </div>
   )
 }
 
@@ -670,33 +708,25 @@ function HeroModeTable({
         heroWins
         heroWinMode={mode}
         seats={seats}
+        pageSize={PAGE_SIZE}
       />
     </div>
   )
 }
 
 function ImpactTable({ rows }: { rows: CardBalanceRow[] }) {
-  const [showAll, setShowAll] = useState(false)
   return (
     <div className="debug-block" data-testid="debug-impact-table">
-      <h3>
-        Highest impact{' '}
-        <button
-          type="button"
-          className="debug-mode-cycle"
-          data-testid="contested-show-all"
-          onClick={() => setShowAll((value) => !value)}
-        >
-          {showAll ? 'Top 16' : 'Show all'}
-        </button>
-      </h3>
+      <h3>Highest impact</h3>
       <p className="quiet debug-legend">
-        Ranked by |Impact| × √n, so the biggest measured swings in either direction surface.
+        Impact = how much Rel improved over the next +1/+3/+5/+10 turns vs an average play at that stage of the game
+        (weights 25% / 30% / 25% / 20%). Ranked by |Impact| × √n. Hover a cell for horizons + mechanical EV bag.
       </p>
       <CardSortTable
-        rows={showAll ? rows : rows.slice(0, 16)}
+        rows={rows}
         empty="No impact samples yet."
         defaultSort={{ key: 'impact', dir: 'desc' }}
+        pageSize={PAGE_SIZE}
       />
     </div>
   )
@@ -788,6 +818,7 @@ function CardSortTable({
   heroWins = false,
   heroWinMode = 'total' as HeroSwingMode,
   seats = 0,
+  pageSize = PAGE_SIZE,
 }: {
   rows: CardBalanceRow[]
   empty?: string
@@ -798,6 +829,7 @@ function CardSortTable({
   heroWinMode?: HeroSwingMode
   /** Lobby size for seat-scaled hero Win% (fair ≈ 50%). */
   seats?: number
+  pageSize?: number
 }) {
   const winCols: Column<CardBalanceRow>[] = heroWins
     ? heroWinColumns(heroWinMode, seats)
@@ -828,6 +860,7 @@ function CardSortTable({
       defaultSort={defaultSort}
       rows={rows}
       rowKey={(row) => `${row.kind}-${row.defId}`}
+      pageSize={pageSize}
       columns={[
         {
           key: 'card',

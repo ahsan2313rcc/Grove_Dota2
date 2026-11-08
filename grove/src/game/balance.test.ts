@@ -45,7 +45,12 @@ describe('balance', () => {
       expect(sample.presence).toBeGreaterThanOrEqual(0)
     }
     expect(summary.heroLow.length + summary.terrainLow.length + summary.lootLow.length).toBeGreaterThan(0)
-    expect(summary.shapeCompare).toHaveLength(10)
+    expect(summary.shapeCompare).toHaveLength(12)
+    expect(summary.shapeCompare.some((row) => row.id === 'river_terrain')).toBe(true)
+    expect(summary.shapeCompare.some((row) => row.id === 'jungle_terrain')).toBe(true)
+    expect(summary.shapeCompare.some((row) => row.id === 'lane_terrain')).toBe(true)
+    expect(summary.shapeCompare.some((row) => row.id === 'mix_terrain')).toBe(true)
+    expect(summary.shapeCompare.some((row) => row.id === 'pair_terrain')).toBe(true)
     expect(summary.eventStats.length).toBeGreaterThan(8)
     expect(summary.avgPtsByTurn.length).toBeGreaterThan(0)
     expect(summary.avgCardsByTurn.length).toBe(summary.avgPtsByTurn.length)
@@ -172,7 +177,7 @@ describe('balance', () => {
     }
     const mid = Math.max(1, Math.floor(full.turns / 2) || 1)
     const atMid = summarizeShapesAtTurn([full], ALL_STRAT_FILTER, mid)
-    expect(atMid).toHaveLength(10)
+    expect(atMid).toHaveLength(12)
     const graph = buildTurnGraph([full], ALL_STRAT_FILTER, 'seatScore', null)
     expect(Array.isArray(graph)).toBe(true)
     const rel = buildTurnGraph([full], ALL_STRAT_FILTER, 'rel', summary.graphHeroes[0]?.defId ?? null)

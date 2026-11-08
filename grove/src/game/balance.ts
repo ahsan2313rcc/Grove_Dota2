@@ -158,6 +158,10 @@ export interface ShapeCounts {
   pureMix3: number
   pureMix4: number
   coreTerrains: number
+  /** Three Rivers / Jungles / Lanes (also counted in coreTerrains). */
+  riverTerrains: number
+  jungleTerrains: number
+  laneTerrains: number
   mixTerrains: number
   pairTerrains: number
   coreTeamPoints: number
@@ -175,6 +179,9 @@ export interface ShapeCounts {
   mixTeamHeroes3: number
   mixTeamHeroes4: number
   coreTerrainPoints: number
+  riverTerrainPoints: number
+  jungleTerrainPoints: number
+  laneTerrainPoints: number
   mixTerrainPoints: number
   pairTerrainPoints: number
 }
@@ -287,7 +294,9 @@ export interface ShapeCompareRow {
     | 'mix_team'
     | 'mix_team_3'
     | 'mix_team_4'
-    | 'core_terrain'
+    | 'river_terrain'
+    | 'jungle_terrain'
+    | 'lane_terrain'
     | 'mix_terrain'
     | 'pair_terrain'
   label: string
@@ -321,6 +330,8 @@ export interface AbilityTypeRow {
   plays: number
   avgActorSwing: number
   avgRelativeSwing: number
+  /** Measured Impact (same baseline as card tables). */
+  avgImpact: number
   /** Matches where a filtered seat activated this effect type at least once. */
   presence: number
   wins: number
@@ -410,6 +421,9 @@ const EMPTY_SHAPES = (): ShapeCounts => ({
   pureMix3: 0,
   pureMix4: 0,
   coreTerrains: 0,
+  riverTerrains: 0,
+  jungleTerrains: 0,
+  laneTerrains: 0,
   mixTerrains: 0,
   pairTerrains: 0,
   coreTeamPoints: 0,
@@ -427,6 +441,9 @@ const EMPTY_SHAPES = (): ShapeCounts => ({
   mixTeamHeroes3: 0,
   mixTeamHeroes4: 0,
   coreTerrainPoints: 0,
+  riverTerrainPoints: 0,
+  jungleTerrainPoints: 0,
+  laneTerrainPoints: 0,
   mixTerrainPoints: 0,
   pairTerrainPoints: 0,
 })
@@ -919,7 +936,7 @@ export function summarizeReports(reports: MatchReport[], filter: StratFilter = A
   const presenceMap = new Map<string, { presence: number; wins: number }>()
   const kindMap = new Map<PlayKind, { plays: number; actor: number; relative: number }>()
   const attrMap = new Map<Attr | 'none', { plays: number; actor: number; relative: number }>()
-  const abilityTypeMap = new Map<AbilityEffectType, { plays: number; actor: number; relative: number; presence: number; wins: number }>()
+  const abilityTypeMap = new Map<AbilityEffectType, { plays: number; actor: number; relative: number; impact: number; presence: number; wins: number }>()
   const ptsByTurn = new Map<number, number[]>()
   const cardsByTurn = new Map<number, number[]>()
   const stratMap = new Map<AiStrat, { seats: number; wins: number; finishes: number; score: number; standing: number; actor: number; relative: number; plays: number }>()
@@ -1024,10 +1041,11 @@ export function summarizeReports(reports: MatchReport[], filter: StratFilter = A
 
       if (swing.kind === 'ability') {
         const type = abilityEffectType(swing.defId)
-        const typeRow = abilityTypeMap.get(type) ?? { plays: 0, actor: 0, relative: 0, presence: 0, wins: 0 }
+        const typeRow = abilityTypeMap.get(type) ?? { plays: 0, actor: 0, relative: 0, impact: 0, presence: 0, wins: 0 }
         typeRow.plays += 1
         typeRow.actor += swing.actorSwing
         typeRow.relative += swing.relativeSwing
+        typeRow.impact += impactFor(swing)
         abilityTypeMap.set(type, typeRow)
         seatAbilityTypes[swing.actor]?.add(type)
       }
@@ -1044,7 +1062,7 @@ export function summarizeReports(reports: MatchReport[], filter: StratFilter = A
         if (!allowsStrat(filter, report.seatStrats[seat]!)) continue
         const won = report.winner === seat
         for (const type of seatAbilityTypes[seat] ?? []) {
-          const typeRow = abilityTypeMap.get(type) ?? { plays: 0, actor: 0, relative: 0, presence: 0, wins: 0 }
+          const typeRow = abilityTypeMap.get(type) ?? { plays: 0, actor: 0, relative: 0, impact: 0, presence: 0, wins: 0 }
           typeRow.presence += 1
           if (won) typeRow.wins += 1
           abilityTypeMap.set(type, typeRow)
@@ -1169,11 +1187,12 @@ export function summarizeReports(reports: MatchReport[], filter: StratFilter = A
         plays: row.plays,
         avgActorSwing: row.plays ? row.actor / row.plays : 0,
         avgRelativeSwing: row.plays ? row.relative / row.plays : 0,
+        avgImpact: row.plays ? row.impact / row.plays : 0,
         presence: row.presence,
         wins: row.wins,
         winRate: row.presence ? row.wins / row.presence : 0,
       }))
-      .sort((a, b) => b.plays - a.plays || b.avgRelativeSwing - a.avgRelativeSwing),
+      .sort((a, b) => Math.abs(b.avgImpact) - Math.abs(a.avgImpact) || b.plays - a.plays),
     byStrat: [...stratMap.entries()]
       .map(([strat, row]) => ({
         strat,
@@ -1345,9 +1364,11 @@ function buildShapeCompareRows(shapeTotals: ShapeCounts, matchCount: number): Sh
     shapeRow('mix_team', 'Mixed team', shapeTotals.mixTeams, shapeTotals.mixTeamPoints, shapeTotals.mixTeamHeroes, shapeTotals.pureMix3 + shapeTotals.pureMix4, matchCount, shapeTotals.mixTeams, maxMixTeamPoints()),
     shapeRow('mix_team_3', 'Mixed · 3 attrs', shapeTotals.mixTeams3, shapeTotals.mixTeamPoints3, shapeTotals.mixTeamHeroes3, shapeTotals.pureMix3, matchCount, shapeTotals.mixTeams3, maxMixTeamPoints()),
     shapeRow('mix_team_4', 'Mixed · 4 attrs', shapeTotals.mixTeams4, shapeTotals.mixTeamPoints4, shapeTotals.mixTeamHeroes4, shapeTotals.pureMix4, matchCount, shapeTotals.mixTeams4, maxMixTeamPoints()),
-    shapeRow('core_terrain', 'Core terrain · 3 alike', shapeTotals.coreTerrains, shapeTotals.coreTerrainPoints, shapeTotals.coreTerrains * 3, null, matchCount),
-    shapeRow('mix_terrain', 'Mixed terrain · 1 of each', shapeTotals.mixTerrains, shapeTotals.mixTerrainPoints, shapeTotals.mixTerrains * 3, null, matchCount),
-    shapeRow('pair_terrain', 'Pair terrain · 2 + 1', shapeTotals.pairTerrains, shapeTotals.pairTerrainPoints, shapeTotals.pairTerrains * 3, null, matchCount),
+    shapeRow('river_terrain', 'River · 3 alike', shapeTotals.riverTerrains, shapeTotals.riverTerrainPoints, shapeTotals.riverTerrains * 3, null, matchCount),
+    shapeRow('jungle_terrain', 'Jungle · 3 alike', shapeTotals.jungleTerrains, shapeTotals.jungleTerrainPoints, shapeTotals.jungleTerrains * 3, null, matchCount),
+    shapeRow('lane_terrain', 'Lane · 3 alike', shapeTotals.laneTerrains, shapeTotals.laneTerrainPoints, shapeTotals.laneTerrains * 3, null, matchCount),
+    shapeRow('mix_terrain', '1 of each · River+Jungle+Lane', shapeTotals.mixTerrains, shapeTotals.mixTerrainPoints, shapeTotals.mixTerrains * 3, null, matchCount),
+    shapeRow('pair_terrain', 'Mixed combo · 2 + 1', shapeTotals.pairTerrains, shapeTotals.pairTerrainPoints, shapeTotals.pairTerrains * 3, null, matchCount),
   ]
 }
 
@@ -1725,9 +1746,21 @@ function shapeCountsFor(game: Game, playerId: number): ShapeCounts {
     } else if (combo.kind === 'pair') {
       shapes.pairTerrains += 1
       shapes.pairTerrainPoints += combo.points
-    } else {
+    } else if (combo.kind === 'river') {
       shapes.coreTerrains += 1
       shapes.coreTerrainPoints += combo.points
+      shapes.riverTerrains += 1
+      shapes.riverTerrainPoints += combo.points
+    } else if (combo.kind === 'jungle') {
+      shapes.coreTerrains += 1
+      shapes.coreTerrainPoints += combo.points
+      shapes.jungleTerrains += 1
+      shapes.jungleTerrainPoints += combo.points
+    } else if (combo.kind === 'lane') {
+      shapes.coreTerrains += 1
+      shapes.coreTerrainPoints += combo.points
+      shapes.laneTerrains += 1
+      shapes.laneTerrainPoints += combo.points
     }
   }
   return shapes

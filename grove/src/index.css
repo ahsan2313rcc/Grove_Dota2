@@ -418,13 +418,26 @@ button.debug-mode-cycle:hover {
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
 }
-.debug-rel-grid h4 {
-  margin: 0 0 6px;
+.debug-rel-grid h4,
+.debug-subhead {
+  margin: 10px 0 6px;
   font-size: 0.78rem;
   color: var(--cream-dim);
   text-transform: uppercase;
   letter-spacing: 0.06em;
   font-weight: 600;
+}
+.debug-table-wrap { display: flex; flex-direction: column; gap: 6px; }
+.debug-page {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.debug-page button {
+  padding: 0.25rem 0.65rem;
+  font-size: 0.78rem;
 }
 @media (max-width: 720px) {
   .debug-rel-grid { grid-template-columns: 1fr; }
