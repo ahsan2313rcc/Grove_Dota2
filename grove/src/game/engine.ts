@@ -881,12 +881,14 @@ function landSquad(
   const resolved = resolveTeam(state, actor, team)
   if (!resolved) return state
   let [next, teamId] = resolved
+  // Empty at resolve time ⇒ forming a new team (Puck must allow the whole squad, not just the first body).
+  const formingNew = (teamById(next, teamId)?.team.heroes.length ?? 0) === 0
   for (const uid of extras) {
     const held = findHand(next, uid)
     if (!held || held.player.id !== actor || held.card.kind !== 'hero') continue
-    next = playHeroOnto(next, actor, held.card, teamId, false)
+    next = playHeroOnto(next, actor, held.card, teamId, false, formingNew)
   }
-  if (active) next = playHeroOnto(next, actor, active, teamId, fireActive)
+  if (active) next = playHeroOnto(next, actor, active, teamId, fireActive, formingNew)
   return next
 }
 
@@ -897,14 +899,22 @@ function landCompanions(state: Game, actor: PlayerId, extras: string[], team: st
 function playHero(state: Game, actor: PlayerId, card: CardInst, team: string, fire: boolean): Game {
   const resolved = resolveTeam(state, actor, team)
   if (!resolved) return state
-  return playHeroOnto(resolved[0], actor, card, resolved[1], fire)
+  const formingNew = (teamById(resolved[0], resolved[1])?.team.heroes.length ?? 0) === 0
+  return playHeroOnto(resolved[0], actor, card, resolved[1], fire, formingNew)
 }
 
-function playHeroOnto(state: Game, actor: PlayerId, card: CardInst, teamId: string, fire: boolean): Game {
+function playHeroOnto(
+  state: Game,
+  actor: PlayerId,
+  card: CardInst,
+  teamId: string,
+  fire: boolean,
+  formingNew = false,
+): Game {
   const hero = makeHero(card, actor, actor, state)
   const dest = teamById(state, teamId)
   if (!dest) return state
-  const reason = enterReason(state, dest.team, heroWeight(hero), false)
+  const reason = enterReason(state, dest.team, heroWeight(hero), false, { formingNew })
   if (reason) return log(state, reason)
   const trapped = !!dest.team.trap
   let next = putOnTeam(removeHand(state, actor, card.uid), actor, teamId, hero)

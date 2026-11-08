@@ -877,13 +877,19 @@ export function teamChoices(
   return choices
 }
 
-export function enterReason(state: Game, team: Team, weight: number, token: boolean): string | null {
+export function enterReason(
+  state: Game,
+  team: Team,
+  weight: number,
+  token: boolean,
+  opts?: { formingNew?: boolean },
+): string | null {
   if (team.noEnter) return 'Heroes cannot enter that team.'
   if (team.heroes.some((hero) => hero.defId === 'omniknight') && !aurasSuppressed(state, team.heroes[0]?.controller ?? -1)) {
     return 'Guardian Angel seals this team.'
   }
-  // Puck: enemy heroes cannot enter teams (new teams still form via newTeam).
-  if (team.heroes.length > 0) {
+  // Puck: enemy heroes cannot enter existing teams. Brand-new teams (incl. squad deploy) still form.
+  if (team.heroes.length > 0 && !opts?.formingNew) {
     const owner = team.heroes[0]!.controller
     if (
       allLocs(state).some((loc) => loc.hero.defId === 'puck' && loc.hero.controller !== owner && !aurasSuppressed(state, loc.hero.controller))
