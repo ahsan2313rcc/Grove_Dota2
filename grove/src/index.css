@@ -1759,10 +1759,10 @@ button.debug-mode-cycle:hover {
     grid-template-columns: 1fr;
   }
   .lane {
-    grid-template-columns: 96px minmax(0, 1fr);
+    grid-template-columns: 84px minmax(0, 1fr);
   }
-  .seat { width: 96px; padding: 8px; }
-  .seat strong { font-size: 1.25rem; }
+  .seat { width: 84px; padding: 6px; }
+  .seat strong { font-size: 1.15rem; }
   .turn-chip strong { font-size: 1.05rem; }
   .board-arrow { width: 28px; height: 48px; font-size: 1.35rem; }
   .shell:not(.debug) .stage { flex-direction: column; }
@@ -1773,15 +1773,71 @@ button.debug-mode-cycle:hover {
     order: 2;
     box-shadow: none;
     backdrop-filter: none;
+    padding: 8px;
+    gap: 6px;
   }
+  .hud .actions button { padding: 0.45rem 0.65rem; }
   .board { order: 1; }
   .handbar {
     order: 3;
     background: rgba(8, 16, 13, 0.45);
+    padding: 6px 2px 2px;
   }
+  .handbar .card {
+    width: 92px;
+    min-height: 128px;
+    padding: 6px;
+  }
+  .handbar .card.has-art { min-height: 134px; }
   .lobby { grid-template-columns: 1fr; align-items: start; }
-  .team { min-width: 160px; max-width: 168px; width: 160px; }
+  .team { min-width: 140px; max-width: 152px; width: 140px; }
   .detail { max-height: none; }
+
+  /* Instant / ability targeting: keep the ask readable, drop source portrait art. */
+  .scrim {
+    align-items: end;
+    place-items: end center;
+    padding: 0;
+  }
+  .scrim > .sheet {
+    width: 100%;
+    max-width: 100%;
+    max-height: min(78dvh, 720px);
+    margin: 0;
+    border-radius: 18px 18px 0 0;
+    padding: 12px 12px calc(12px + env(safe-area-inset-bottom, 0px));
+    gap: 8px;
+  }
+  .scrim > .sheet > .eyebrow { margin-bottom: 0; font-size: 0.72rem; }
+  .prompt-head.has-art { grid-template-columns: 1fr; gap: 6px; }
+  .prompt-source { display: none; }
+  .prompt-copy h2 { font-size: 1.05rem; line-height: 1.25; }
+  .choices {
+    flex-direction: column;
+    flex-wrap: nowrap;
+    gap: 6px;
+    max-height: min(46dvh, 420px);
+    overflow: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  .choice {
+    width: 100%;
+    flex-direction: row;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 12px;
+    border-radius: 12px;
+  }
+  .choice .card.compact { display: none; }
+  .choice-copy { flex: 1; min-width: 0; gap: 4px; }
+  .choice > strong,
+  .choice-copy > strong {
+    font-size: 0.95rem;
+  }
+  .choice > small,
+  .choice-copy > small {
+    font-size: 0.78rem;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

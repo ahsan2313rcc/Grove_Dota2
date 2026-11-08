@@ -399,7 +399,8 @@ export function DebugRail({
         <h3>Lead outcomes</h3>
         <p className="quiet debug-legend">
           Among wins with a mid checkpoint (latest milestone round before the final table-round), vs the best other seat:
-          Held = ahead by more than ±{LEAD_CONTEST_BAND} · Contesting = within ±{LEAD_CONTEST_BAND} · Behind = down by more than ±{LEAD_CONTEST_BAND}.
+          Held = ahead by more than ±{LEAD_CONTEST_BAND} · Close = within ±{LEAD_CONTEST_BAND} · Behind = down by more than ±{LEAD_CONTEST_BAND}.
+          Held% / Comeback% use those mid-checkpoint wins (Held+Close+Behind).
         </p>
         <div className="debug-rel-grid">
           <div>
@@ -1228,7 +1229,8 @@ function LeadOutcomeTable({
           <th className="debug-num" title={`Ahead by more than ${LEAD_CONTEST_BAND} at mid checkpoint`}>Held</th>
           <th className="debug-num" title={`Within ±${LEAD_CONTEST_BAND} of the best other seat`}>Close</th>
           <th className="debug-num" title={`Down by more than ${LEAD_CONTEST_BAND} at mid checkpoint`}>Behind</th>
-          <th className="debug-num" title="Held / samples with a mid checkpoint">Held%</th>
+          <th className="debug-num" title="Held lead wins / mid-checkpoint wins">Held%</th>
+          <th className="debug-num" title="Comeback wins / mid-checkpoint wins">Comeback%</th>
         </tr>
       </thead>
       <tbody>
@@ -1241,7 +1243,9 @@ function LeadOutcomeTable({
             <td className="debug-num">{row.fromBehind}</td>
             <td className="debug-num">
               {row.samples > 0 ? `${Math.round((row.heldLead / row.samples) * 100)}%` : '—'}
-              {row.samples > 0 ? <small>/{row.samples}</small> : null}
+            </td>
+            <td className="debug-num">
+              {row.samples > 0 ? `${Math.round((row.fromBehind / row.samples) * 100)}%` : '—'}
             </td>
           </tr>
         ))}
