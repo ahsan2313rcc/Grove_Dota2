@@ -35,7 +35,7 @@ const BASICS: Block[] = [
     summary: 'Build teams and terrain combos. Highest score when the match ends wins.',
     detail: [
       'Your score is the sum of every team you control plus every terrain combo you have scored.',
-      'Whoever controls The Ancient when the match ends also gets +10.',
+      `Whoever controls The Ancient when the match ends also gets +${DEFAULT_SCORE_RULES.ancientBonus} (tunable in Match options).`,
       'The match ends after Ancient Draw (or an empty deck) once each player has taken one last turn, or when someone wins early on the target score.',
     ],
   },
@@ -72,7 +72,7 @@ const BASICS: Block[] = [
     badgeClass: 'timing-instant',
     summary: 'Ancient Draw, empty deck, or target score. Highest total wins.',
     detail: [
-      'Ancient Draw: drawing The Ancient starts the final round — each player gets one more turn, then highest score wins (+10 to whoever controls the Ancient).',
+      `Ancient Draw: drawing The Ancient starts the final round — each player gets one more turn, then highest score wins (+${DEFAULT_SCORE_RULES.ancientBonus} to whoever controls the Ancient; set in Match options).`,
       'Emptying the shared deck starts the same final round.',
       'Target score (default on): end your turn on it and still hold it alone at the start of your next turn to win early.',
       'Ties are possible; the engine does not force a tiebreak.',
@@ -364,8 +364,9 @@ function ScoringPanel({ section }: { section: ScoreSection }) {
           <h3>The Ancient</h3>
         </header>
         <p>
-          Neutral body placed free when drawn. Counts as any one attribute (whichever scores best). +10 to whoever
-          controls it when the match ends — not to whoever drew it. Drawing it starts the final round.
+          Neutral body placed free when drawn. Counts as any one attribute (whichever scores best). +
+          {DEFAULT_SCORE_RULES.ancientBonus} to whoever controls it when the match ends — not to whoever drew it
+          (tunable in Match options → Win condition). Drawing it starts the final round.
         </p>
       </section>
       <section className="rule-block" data-testid="rule-special-brew">

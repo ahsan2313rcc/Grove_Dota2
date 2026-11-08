@@ -8,7 +8,7 @@ Authoritative rules for agents and implementers. Card text lives in `src/game/ca
 
 Grove is a competitive multiplayer card game (typically **2 seats**; engine supports more). Players build **teams of heroes** and play **terrain combos** for points. One **shared deck**, shared **grave**, and shared **exile**. Separate face-down reward piles: **runes**, **neutrals**, **towers**.
 
-**Win condition:** The match ends when **The Ancient** is revealed and each player has taken one final turn, when a player **holds the target score** alone (see 4.6), **or** when the shared deck is empty. Highest total score wins (teams + terrain combo points + 10 for whoever controls The Ancient). Ties are possible (no forced tiebreak in engine finish).
+**Win condition:** The match ends when **The Ancient** is revealed and each player has taken one final turn, when a player **holds the target score** alone (see 4.6), **or** when the shared deck is empty. Highest total score wins (teams + terrain combo points + Ancient controller bonus, default **+10**, tunable in Match options). Ties are possible (no forced tiebreak in engine finish).
 
 ---
 
@@ -19,7 +19,7 @@ Grove is a competitive multiplayer card game (typically **2 seats**; engine supp
 | **Hero** | Main deck | Has attribute (STR/AGI/INT/UNI), attack type (Melee/Ranged), ability timing |
 | **Item** | Main deck | Played from hand; often targeted |
 | **Terrain** | Main deck (36 total: river/jungle/lane) | Never played alone — always as a **combo of exactly 3** |
-| **Ancient** | Main deck (1 copy) | Neutral body; placed free when drawn; +10 to its controller at the end; starts the final round |
+| **Ancient** | Main deck (1 copy) | Neutral body; placed free when drawn; controller bonus at the end (default +10); starts the final round |
 | **Rune** | Rune pile | Reward from 3 Rivers |
 | **Neutral** | Neutral pile | Reward from 3 Jungles; token body on a team (except Tormentor) |
 | **Tower** | Tower pile | Reward from 3 Lanes |
@@ -99,7 +99,7 @@ While `pending` is set, only **choose** (answer the prompt) is legal. AI/`autoAl
 One copy of **The Ancient** sits in the main deck after the opening deal, placed by player count (see setup step 4).
 
 - **Revealed by draw:** the drawer plays it **for free** into a team they control or a new team (`ancient-place` prompt). It is a neutral body: 0 flat points, counts as **any one attribute** (whichever scores best), can be targeted, moved, stolen, or destroyed like a hero.
-- **+10** goes to whoever **controls** it when the match ends — not to whoever drew it.
+- The Ancient **controller bonus** (default **+10**, Match options) goes to whoever **controls** it when the match ends — not to whoever drew it.
 - Drawing it starts the **final round**: finish the current turn, then each opponent takes one more turn.
 - **Revealed from grave or exile** (milled / exiled into those zones): it is not placed; it only starts the final round.
 - If the deck empties before or instead of The Ancient, that also starts the final round; highest score wins.

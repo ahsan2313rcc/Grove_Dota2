@@ -30,6 +30,8 @@ export interface ScoreRules {
   pairCombo: number
   /** When true, The Ancient is shuffled into the deck after the opening deal. */
   ancientEndgame: boolean
+  /** End-of-match points for whoever controls The Ancient on the board. */
+  ancientBonus: number
   /** When true, ending your turn at the target score starts a final round you win by holding it alone. */
   scoreWin: boolean
   /** Target score by seat count, index 0 = 2 players … index 6 = 8 players. */
@@ -55,6 +57,7 @@ export const DEFAULT_SCORE_RULES: ScoreRules = {
   mixCombo: 5,
   pairCombo: 3,
   ancientEndgame: true,
+  ancientBonus: 10,
   scoreWin: true,
   winScores: [50, 40, 35, 30, 30, 30, 30],
   ancientDepths: [50, 60, 60, 80, 80, 90, 90],
@@ -90,6 +93,7 @@ export function cloneRules(rules: ScoreRules): ScoreRules {
     mixCombo: rules.mixCombo,
     pairCombo: rules.pairCombo ?? DEFAULT_SCORE_RULES.pairCombo,
     ancientEndgame: rules.ancientEndgame !== false,
+    ancientBonus: rules.ancientBonus ?? DEFAULT_SCORE_RULES.ancientBonus,
     scoreWin: rules.scoreWin ?? DEFAULT_SCORE_RULES.scoreWin,
     winScores: [...(rules.winScores ?? DEFAULT_SCORE_RULES.winScores)] as SeatTable,
     ancientDepths: [...(rules.ancientDepths ?? DEFAULT_SCORE_RULES.ancientDepths)] as SeatTable,
@@ -112,6 +116,7 @@ export function normalizeRules(rules: ScoreRules): ScoreRules {
     mixCombo: clamp(rules.mixCombo),
     pairCombo: clamp(rules.pairCombo ?? DEFAULT_SCORE_RULES.pairCombo),
     ancientEndgame: rules.ancientEndgame !== false,
+    ancientBonus: clamp(rules.ancientBonus ?? DEFAULT_SCORE_RULES.ancientBonus),
     scoreWin: rules.scoreWin ?? DEFAULT_SCORE_RULES.scoreWin,
     winScores: DEFAULT_SCORE_RULES.winScores.map((fallback, index) => {
       const value = Math.round(Number(rules.winScores?.[index] ?? fallback))

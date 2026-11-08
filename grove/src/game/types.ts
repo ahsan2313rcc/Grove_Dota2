@@ -314,7 +314,7 @@ export interface Game {
   /** Lifestealer Infest: return LS when host is destroyed. */
   infests: { ls: CardInst; hostUid: string; homeTeamId: string; owner: PlayerId }[]
   /**
-   * Ancient revealed: the final round is running. The +10 goes to whoever controls the Ancient on the board at the end.
+   * Ancient revealed: the final round is running. The Ancient controller bonus goes to whoever controls it on the board at the end.
    * `bonusSeat` is legacy and always null.
    * Each seat then gets one end-turn; when `endsLeft` hits 0 the match finishes.
    */

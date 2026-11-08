@@ -1,5 +1,4 @@
 import {
-  ANCIENT_BONUS,
   ANCIENT_ID,
   CAST_IDS,
   HERO_BY_ID,
@@ -10,7 +9,7 @@ import {
   display,
   firesAbility,
 } from './catalog.ts'
-import { scoreBodies, type ScoreBody } from './scoring.ts'
+import { getScoreRules, scoreBodies, type ScoreBody } from './scoring.ts'
 import type {
   CastResume,
   Attr,
@@ -353,7 +352,7 @@ export function scoreState(state: Game, id: PlayerId): { teams: number; terrains
   const teams = player.teams.reduce((sum, team) => sum + scoreTeam(state, team).points, 0)
   const terrains = player.combos.reduce((sum, combo) => sum + combo.points, 0)
   const meepoBonus = controls(state, id, 'meepo') ? terrainKinds(state, id).size : 0
-  const ancientBonus = controls(state, id, ANCIENT_ID) ? ANCIENT_BONUS : 0
+  const ancientBonus = controls(state, id, ANCIENT_ID) ? getScoreRules().ancientBonus : 0
   return { teams, terrains, total: teams + terrains + meepoBonus + ancientBonus }
 }
 
@@ -780,7 +779,7 @@ function askAncientPlace(state: Game, actor: PlayerId, card: CardInst): Game {
   }
   return ask(state, {
     actor,
-    prompt: `Place The Ancient (+${ANCIENT_BONUS} to whoever controls it at the end) on a team you control.`,
+    prompt: `Place The Ancient (+${getScoreRules().ancientBonus} to whoever controls it at the end) on a team you control.`,
     mode: 'pick',
     min: 1,
     max: 1,

@@ -20,7 +20,7 @@ export function ScoreRulesPanel({
     onChange(normalized)
   }
 
-  function setNum<K extends 'heroPoints' | 'coreCombo' | 'mixCombo' | 'pairCombo'>(key: K, raw: number) {
+  function setNum<K extends 'heroPoints' | 'coreCombo' | 'mixCombo' | 'pairCombo' | 'ancientBonus'>(key: K, raw: number) {
     commit({ ...draft, [key]: raw })
   }
 
@@ -102,7 +102,19 @@ export function ScoreRulesPanel({
           checked={draft.ancientEndgame}
           onChange={(event) => commit({ ...draft, ancientEndgame: event.target.checked })}
         />
-        Ancient endgame (+10 on draw reveal, then one final turn each)
+        Ancient endgame (controller bonus at end, then one final turn each)
+      </label>
+      <label>
+        Ancient points
+        <input
+          data-testid="score-ancient-bonus"
+          type="number"
+          min={0}
+          max={99}
+          disabled={!draft.ancientEndgame}
+          value={draft.ancientBonus}
+          onChange={(event) => setNum('ancientBonus', Number(event.target.value) || 0)}
+        />
       </label>
       <div className="debug-speeds">
         <button type="button" data-testid="score-defaults" onClick={() => commit(DEFAULT_SCORE_RULES)}>

@@ -46,7 +46,7 @@ export const ANCIENT_BONUS = 10
 export const ANCIENT = {
   id: ANCIENT_ID,
   name: 'The Ancient',
-  text: 'Neutral. When you draw The Ancient, play it for free into a team you control or a new team; it counts as any one attribute. Ancient Draw: Drawing the Ancient card starts the final round: each player gets one more turn, then the highest score wins — +10 to whoever controls the Ancient. Revealed from the grave or exile, it only starts the final round.',
+  text: `Neutral. When you draw The Ancient, play it for free into a team you control or a new team; it counts as any one attribute. Ancient Draw: Drawing the Ancient card starts the final round: each player gets one more turn, then the highest score wins — +${ANCIENT_BONUS} to whoever controls the Ancient (Match options can change the bonus). Revealed from the grave or exile, it only starts the final round.`,
   kind: 'ancient' as const,
 }
 

@@ -5,7 +5,9 @@ const SEATS = [2, 3, 4, 5, 6, 7, 8] as const
 export function winSummary(rules: ScoreRules, seats: number): string {
   const index = Math.max(0, Math.min(6, seats - 2))
   const target = rules.scoreWin ? `first to hold ${rules.winScores[index]}` : 'no target score'
-  const ancient = rules.ancientEndgame ? `Ancient ~${rules.ancientDepths[index]}% down` : 'no Ancient'
+  const ancient = rules.ancientEndgame
+    ? `Ancient ~${rules.ancientDepths[index]}% · +${rules.ancientBonus}`
+    : 'no Ancient'
   return `${target} · ${ancient}`
 }
 
@@ -42,8 +44,21 @@ export function WinConditionPanel({ value, onChange }: { value: ScoreRules; onCh
         Ancient endgame
       </label>
       <p className="quiet">
-        Ancient Draw: Drawing the Ancient card starts the final round: each player gets one more turn, then the highest score wins — +10 to whoever controls the Ancient. Depth is how far down the deck it sits after the deal, ±5%.
+        Drawing The Ancient starts the final round: each player gets one more turn, then the highest score wins.
+        Whoever controls The Ancient on the board gets +{value.ancientBonus} at the end. Depth is how far down the deck it sits after the deal, ±5%.
       </p>
+      <label>
+        Ancient points
+        <input
+          data-testid="win-ancient-bonus"
+          type="number"
+          min={0}
+          max={99}
+          disabled={!value.ancientEndgame}
+          value={value.ancientBonus}
+          onChange={(event) => commit({ ...value, ancientBonus: Number(event.target.value) || 0 })}
+        />
+      </label>
       <table className="win-table">
         <thead>
           <tr>
@@ -90,6 +105,7 @@ export function WinConditionPanel({ value, onChange }: { value: ScoreRules; onCh
             ...value,
             scoreWin: DEFAULT_SCORE_RULES.scoreWin,
             ancientEndgame: DEFAULT_SCORE_RULES.ancientEndgame,
+            ancientBonus: DEFAULT_SCORE_RULES.ancientBonus,
             winScores: DEFAULT_SCORE_RULES.winScores,
             ancientDepths: DEFAULT_SCORE_RULES.ancientDepths,
           })

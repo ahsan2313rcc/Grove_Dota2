@@ -3,7 +3,7 @@ import { display, NEUTRAL_RULE_STEPS, RECAST_IDS, RECAST_RULE, TRAP_RULE_STEPS }
 import { HoverRulesHint } from './HoverRules.tsx'
 import { comboPlans, morphCasts, needsTeam, playableFromGrave, teamsFor, undyingRevive } from '../game/engine.ts'
 import { allLocs, findHero, isTrapHero, scoreState, scoreTeam } from '../game/flow.ts'
-import { teamShapes } from '../game/scoring.ts'
+import { getScoreRules, teamShapes } from '../game/scoring.ts'
 import type { Action, CardInst, Game, PlayerId } from '../game/types.ts'
 import { CardFace } from './CardFace.tsx'
 import { Prompt } from './Prompt.tsx'
@@ -1197,6 +1197,7 @@ function WinConditionSheet({
   const target = game.winScore ?? null
   const holds = game.holds ?? []
   const scores = game.players.map((player) => scoreState(game, player.id).total)
+  const ancientPts = getScoreRules().ancientBonus
   const ancientHolder = game.ancient
     ? allLocs(game).find((loc) => loc.hero.defId === 'ancient')?.hero.controller
     : undefined
@@ -1207,7 +1208,7 @@ function WinConditionSheet({
         <h2 id="win-live-title">Win condition</h2>
         <p data-testid="win-final-rule">
           {game.ancientEnabled
-            ? 'Ancient Draw: Drawing the Ancient card starts the final round: each player gets one more turn, then the highest score wins — +10 to whoever controls the Ancient.'
+            ? `Ancient Draw: Drawing the Ancient card starts the final round: each player gets one more turn, then the highest score wins — +${ancientPts} to whoever controls the Ancient.`
             : 'When the shared deck empties, the final round begins: each player gets one more turn, then the highest score wins.'}
         </p>
         {target ? (
@@ -1225,8 +1226,8 @@ function WinConditionSheet({
                   ancientHolder === undefined
                     ? ''
                     : ancientHolder === viewer
-                      ? ' · +10 yours'
-                      : ` · +10 ${names[ancientHolder] ?? 'seat'}`
+                      ? ` · +${ancientPts} yours`
+                      : ` · +${ancientPts} ${names[ancientHolder] ?? 'seat'}`
                 }`
               : game.ancientEnabled
                 ? 'Ancient still in the deck'
