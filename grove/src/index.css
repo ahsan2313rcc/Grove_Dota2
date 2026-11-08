@@ -445,30 +445,35 @@ button.debug-mode-cycle:hover {
 .debug-seed-page {
   margin: 4px 0 8px;
 }
+.debug-seed-grid {
+  align-items: start;
+}
 .debug-seed-table td,
 .debug-seed-table th {
   vertical-align: top;
 }
-.debug-seed-seats,
-.debug-seed-scores-cell {
+.debug-seed-seats {
+  min-width: 9rem;
+}
+.debug-seed-seats > div {
   display: flex;
-  flex-direction: column;
-  gap: 2px;
-  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  white-space: nowrap;
 }
-.debug-seed-scores-cell {
-  align-items: flex-end;
-}
-.debug-seed-seats span.on,
-.debug-seed-scores-cell span.on {
+.debug-seed-seats > div.on {
   color: var(--gold);
   font-weight: 600;
 }
+.debug-seed-seat-score {
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  min-width: 1.75rem;
+}
 .debug-seed-win {
-  max-width: 16rem;
   color: var(--cream-dim);
   font-size: 0.78rem;
-  line-height: 1.25;
+  white-space: nowrap;
 }
 .shell.debug.stats-only .stage.stats-stage {
   display: block;

@@ -737,6 +737,18 @@ function ImpactTable({ rows }: { rows: CardBalanceRow[] }) {
 }
 
 const SEED_PAGE = 20
+const SEED_SIDE = 10
+
+/** Collapse finish text to Ancient / score / empty deck. */
+function seedWinKind(report: MatchReport): string {
+  if (!report.over) return '—'
+  const reason = report.overReason ?? ''
+  if (/ancient/i.test(reason)) return 'Ancient'
+  if (/holds|target/i.test(reason)) return 'score'
+  if (/deck is empty|final round ends/i.test(reason)) return 'empty deck'
+  if (/soft-lock|halted/i.test(reason)) return 'halted'
+  return '—'
+}
 
 function SeedScoresTable({ reports }: { reports: MatchReport[] }) {
   const [page, setPage] = useState(0)
@@ -754,6 +766,8 @@ function SeedScoresTable({ reports }: { reports: MatchReport[] }) {
   const safePage = Math.min(page, pages - 1)
   const start = safePage * SEED_PAGE
   const shown = ordered.slice(start, start + SEED_PAGE)
+  const left = shown.slice(0, SEED_SIDE)
+  const right = shown.slice(SEED_SIDE, SEED_PAGE)
   const rangeLabel = `${start + 1}–${Math.min(start + SEED_PAGE, ordered.length)} of ${ordered.length}`
 
   function pager(where: 'top' | 'bottom') {
@@ -784,58 +798,61 @@ function SeedScoresTable({ reports }: { reports: MatchReport[] }) {
     <div className="debug-block" data-testid="debug-seed-scores">
       <h3>Seed scores</h3>
       <p className="quiet debug-legend">
-        Newest first. Seat = index + strat. Score / turn at finish. Win = how the match closed.
+        Newest first · 10 left / 10 right. Winner seat highlighted. Win = Ancient, score, or empty deck.
       </p>
       {ordered.length > SEED_PAGE ? pager('top') : null}
-      <div className="debug-table-wrap">
-        <table className="debug-table debug-table-compact debug-seed-table">
-          <thead>
-            <tr>
-              <th>Seed</th>
-              <th>Seats</th>
-              <th className="debug-num">Score</th>
-              <th className="debug-num">Turn</th>
-              <th>Win</th>
-            </tr>
-          </thead>
-          <tbody>
-            {shown.map((report) => (
+      <div className="debug-rel-grid debug-seed-grid">
+        <SeedScoreSide rows={left} side="left" />
+        <SeedScoreSide rows={right} side="right" />
+      </div>
+      {ordered.length > SEED_PAGE ? pager('bottom') : null}
+    </div>
+  )
+}
+
+function SeedScoreSide({ rows, side }: { rows: MatchReport[]; side: 'left' | 'right' }) {
+  if (rows.length === 0) return <p className="quiet">—</p>
+  return (
+    <div className="debug-table-wrap">
+      <table className="debug-table debug-table-compact debug-seed-table" data-testid={`debug-seed-side-${side}`}>
+        <thead>
+          <tr>
+            <th>Seed</th>
+            <th>Seats</th>
+            <th className="debug-num">Turn</th>
+            <th>Win</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((report) => {
+            const win = seedWinKind(report)
+            return (
               <tr key={report.seed}>
                 <td>
                   <strong>d{report.seed}</strong>
                   {report.mixture ? <small> mix</small> : null}
                 </td>
                 <td className="debug-seed-seats">
-                  {report.seatStrats.map((strat, seat) => (
-                    <span key={`${report.seed}-${seat}`} className={report.winner === seat ? 'on' : undefined}>
-                      {seat} {stratLabel(strat)}
-                    </span>
-                  ))}
-                </td>
-                <td className="debug-num debug-seed-scores-cell">
-                  {report.over
-                    ? report.finalScores.map((score, seat) => (
-                      <span key={`${report.seed}-sc-${seat}`} className={report.winner === seat ? 'on' : undefined}>
-                        {score}
-                      </span>
-                    ))
-                    : 'open'}
+                  {report.seatStrats.map((strat, seat) => {
+                    const score = report.over ? report.finalScores[seat] : null
+                    return (
+                      <div
+                        key={`${report.seed}-${seat}`}
+                        className={report.winner === seat ? 'on' : undefined}
+                      >
+                        <span className="debug-seed-seat-label">{seat} {stratLabel(strat)}</span>
+                        <span className="debug-seed-seat-score">{score == null ? '—' : score}</span>
+                      </div>
+                    )
+                  })}
                 </td>
                 <td className="debug-num">T{report.turns}</td>
-                <td className="debug-seed-win" title={report.overReason ?? undefined}>
-                  {report.over
-                    ? (report.overReason
-                      ?? (report.winner != null
-                        ? `Seat ${report.winner} (${stratLabel(report.winnerStrat ?? report.seatStrats[report.winner] ?? 'balanced')})`
-                        : 'Tie'))
-                    : '—'}
-                </td>
+                <td className="debug-seed-win" title={report.overReason ?? undefined}>{win}</td>
               </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-      {ordered.length > SEED_PAGE ? pager('bottom') : null}
+            )
+          })}
+        </tbody>
+      </table>
     </div>
   )
 }

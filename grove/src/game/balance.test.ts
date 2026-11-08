@@ -18,6 +18,9 @@ describe('balance', () => {
     const report = runMatchFast(58, 2)
     expect(report.over).toBe(true)
     expect(report.overReason).toBeTruthy()
+    expect(
+      /ancient|holds|target|deck is empty|final round ends|soft-lock|halted/i.test(report.overReason ?? ''),
+    ).toBe(true)
     expect(report.swings.length).toBeGreaterThan(0)
     expect(report.rounds.length).toBeGreaterThan(0)
     expect(report.finalScores).toHaveLength(2)
