@@ -346,7 +346,7 @@ function offerResponse(state: Game): Game {
     if (cards.length === 0) continue
     return ask({ ...state, respond: { ...window, index: index + 1 } }, {
       actor: seat,
-      prompt: `${window.about}. Play an Instant now, pass this action, or pass the rest of this turn.`,
+      prompt: `${window.about}. Instant now — pass this action, or pass the turn.`,
       mode: 'pick',
       min: 1,
       max: 1,

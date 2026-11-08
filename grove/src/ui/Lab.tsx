@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react'
+import { runDebugChecks, type DebugCheckResult } from '../game/labDebug.ts'
 import { buildLab, LAB_BROKEN, LAB_FLAGGED, labCards, labSetup, runLab, type LabResult } from '../game/lab.ts'
 import { display, NEUTRAL_RULE_STEPS, TRAP_RULE_STEPS } from '../game/catalog.ts'
 import type { Game } from '../game/types.ts'
@@ -13,6 +14,8 @@ export function Lab({ onClose, onPlay }: { onClose: () => void; onPlay: (game: G
   const [pick, setPick] = useState(cards[0]?.defId ?? '')
   const [seed, setSeed] = useState(7)
   const [sweep, setSweep] = useState<Sweep | null>(null)
+  const [debugRun, setDebugRun] = useState<DebugCheckResult[] | null>(null)
+  const checks = useMemo(() => (pick ? runDebugChecks(pick) : []), [pick])
   const needle = query.trim().toLowerCase()
   const shown = cards.filter((card) => !needle || `${card.name} ${card.text}`.toLowerCase().includes(needle))
   const card = cards.find((entry) => entry.defId === pick)
@@ -54,6 +57,14 @@ export function Lab({ onClose, onPlay }: { onClose: () => void; onPlay: (game: G
             title="Auto-plays every hero, item, and neutral on its lab board and lists any that break or look suspicious"
           >
             Run every card
+          </button>
+          <button
+            type="button"
+            onClick={() => setDebugRun(runDebugChecks())}
+            data-testid="lab-debug-checks"
+            title="Runs the regression checks that apply to specific cards (Puck, Phoenix, Teleport, Halberd, Mars, Omniknight, Crystal Maiden)"
+          >
+            Debug checks
           </button>
           {card ? (
             <button
@@ -118,6 +129,24 @@ export function Lab({ onClose, onPlay }: { onClose: () => void; onPlay: (game: G
           </div>
         ) : null}
 
+        {debugRun ? (
+          <div className="lab-sweep" data-testid="lab-debug-run">
+            <strong>
+              Debug checks: {debugRun.filter((entry) => entry.ok).length}/{debugRun.length} passed
+            </strong>
+            <ul className="lab-lines">
+              {debugRun.map((entry) => (
+                <li key={`${entry.defId}-${entry.name}`} className={entry.ok ? undefined : 'warn'}>
+                  <button type="button" className="lab-chip" data-bad={entry.ok ? undefined : 'true'} onClick={() => setPick(entry.defId)}>
+                    {display(entry.defId).name}
+                  </button>
+                  {' '}{entry.name}{entry.ok ? '' : ` — ${entry.detail}`}
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
+
         <div className="lab-split">
           <ul className="glossary-list lab-cards">
             {shown.map((entry) => (
@@ -154,6 +183,19 @@ export function Lab({ onClose, onPlay }: { onClose: () => void; onPlay: (game: G
                   {result.issues.map((line) => <li key={line} className="warn">{line}</li>)}
                   {result.warnings.map((line) => <li key={line}>{line}</li>)}
                 </ul>
+              ) : null}
+
+              {checks.length > 0 ? (
+                <>
+                  <h3>Debug checks</h3>
+                  <ul className="lab-lines" data-testid="lab-card-checks">
+                    {checks.map((entry) => (
+                      <li key={entry.name} className={entry.ok ? undefined : 'warn'}>
+                        {entry.ok ? 'Pass' : 'Fail'} — {entry.name}{entry.ok ? '' : `: ${entry.detail}`}
+                      </li>
+                    ))}
+                  </ul>
+                </>
               ) : null}
 
               <h3>Board</h3>
