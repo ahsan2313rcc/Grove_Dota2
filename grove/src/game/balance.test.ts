@@ -45,12 +45,14 @@ describe('balance', () => {
       expect(sample.presence).toBeGreaterThanOrEqual(0)
     }
     expect(summary.heroLow.length + summary.terrainLow.length + summary.lootLow.length).toBeGreaterThan(0)
-    expect(summary.shapeCompare).toHaveLength(12)
+    expect(summary.shapeCompare).toHaveLength(14)
     expect(summary.shapeCompare.some((row) => row.id === 'river_terrain')).toBe(true)
     expect(summary.shapeCompare.some((row) => row.id === 'jungle_terrain')).toBe(true)
     expect(summary.shapeCompare.some((row) => row.id === 'lane_terrain')).toBe(true)
     expect(summary.shapeCompare.some((row) => row.id === 'mix_terrain')).toBe(true)
     expect(summary.shapeCompare.some((row) => row.id === 'pair_terrain')).toBe(true)
+    expect(summary.shapeCompare.some((row) => row.id === 'small_team_1')).toBe(true)
+    expect(summary.shapeCompare.some((row) => row.id === 'small_team_2')).toBe(true)
     expect(summary.eventStats.length).toBeGreaterThan(8)
     expect(summary.avgPtsByTurn.length).toBeGreaterThan(0)
     expect(summary.avgCardsByTurn.length).toBe(summary.avgPtsByTurn.length)
@@ -177,7 +179,7 @@ describe('balance', () => {
     }
     const mid = Math.max(1, Math.floor(full.turns / 2) || 1)
     const atMid = summarizeShapesAtTurn([full], ALL_STRAT_FILTER, mid)
-    expect(atMid).toHaveLength(12)
+    expect(atMid).toHaveLength(14)
     const graph = buildTurnGraph([full], ALL_STRAT_FILTER, 'seatScore', null)
     expect(Array.isArray(graph)).toBe(true)
     const rel = buildTurnGraph([full], ALL_STRAT_FILTER, 'rel', summary.graphHeroes[0]?.defId ?? null)
@@ -301,6 +303,49 @@ describe('balance', () => {
     const rowPressure = (ability?.avgPressure ?? 0) + (heroPlay?.avgPressure ?? 0)
     const rowDestroy = (ability?.avgDestroy ?? 0) + (heroPlay?.avgDestroy ?? 0)
     expect(rowPressure + rowDestroy).toBeGreaterThan(0)
+  })
+
+  it('tracks 1-of-each and pair terrain combos as separate plays', () => {
+    let game = apply(createGame({ seed: 41, mode: 'hotseat', names: ['A', 'B'] }), { type: 'ready' })
+    let river: CardInst
+    let jungle: CardInst
+    let lane: CardInst
+    let river2: CardInst
+    let jungle2: CardInst
+    let river3: CardInst
+    ;[game, river] = makeCard(game, 'river', 'terrain')
+    ;[game, jungle] = makeCard(game, 'jungle', 'terrain')
+    ;[game, lane] = makeCard(game, 'lane', 'terrain')
+    ;[game, river2] = makeCard(game, 'river', 'terrain')
+    ;[game, jungle2] = makeCard(game, 'jungle', 'terrain')
+    ;[game, river3] = makeCard(game, 'river', 'terrain')
+    game = setPlayer(game, 0, (seat) => ({
+      ...seat,
+      hand: [river, jungle, lane],
+      actions: 2,
+    }))
+    const tracker = new BalanceTracker(41)
+    tracker.start(game)
+
+    let prior = game
+    game = apply(game, { type: 'combo', uids: [river.uid, jungle.uid, lane.uid] })
+    tracker.observe(prior, { type: 'combo', uids: [river.uid, jungle.uid, lane.uid] }, game)
+    game = passTracked(game, tracker)
+
+    game = setPlayer(game, 0, (seat) => ({ ...seat, hand: [river2, jungle2, river3], actions: 2 }))
+    prior = game
+    game = apply(game, { type: 'combo', uids: [river2.uid, jungle2.uid, river3.uid] })
+    tracker.observe(prior, { type: 'combo', uids: [river2.uid, jungle2.uid, river3.uid] }, game)
+
+    const report = tracker.finish(game)
+    const defs = report.swings.filter((swing) => swing.kind === 'combo').map((swing) => swing.defId)
+    expect(defs).toContain('one_of_each')
+    expect(defs).toContain('pair_combo')
+    expect(defs).not.toContain('mixed_path')
+    const summary = summarizeReports([report])
+    const names = summary.terrains.map((row) => row.name)
+    expect(names).toContain('1 of each')
+    expect(names).toContain('Mixed combo')
   })
 
   it('splits body placement vs ability swing when a cast prompt opens', () => {

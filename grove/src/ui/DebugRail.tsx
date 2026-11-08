@@ -378,30 +378,89 @@ export function DebugRail({
       <div className="debug-block">
         <h3>Shape compare {effectiveTurn == null ? '(final)' : `(T${effectiveTurn})`}</h3>
         <p className="quiet debug-legend">
-          Core ×N = same-attr stack N (5+ → ×5). Mix · M = M distinct attrs. Dual-count allowed.
-          Avg pts = mean team score. Pts/card = points ÷ heroes (cards for terrain). Pure = mono cores, or mixes with one hero per attribute.
+          End-of-game (or scrubbed turn) board snapshot. Core ×N = same-attr stack. Mix · M = distinct attrs. Dual-count allowed.
+          Small = teams of 1–2. Pts/card = points ÷ heroes.
         </p>
-        <ShapeTable rows={shapeRows.filter((row) => !row.id.endsWith('_terrain'))} />
-        <h4 className="debug-subhead">Terrain combos</h4>
+        <div className="debug-rel-grid">
+          <div>
+            <h4 className="debug-subhead">Core teams</h4>
+            <ShapeTable
+              rows={shapeRows.filter((row) => row.id === 'core_team' || row.id.startsWith('core_team_'))}
+            />
+          </div>
+          <div>
+            <h4 className="debug-subhead">Mixed & small</h4>
+            <ShapeTable
+              rows={shapeRows.filter(
+                (row) => row.id === 'mix_team' || row.id.startsWith('mix_team_') || row.id.startsWith('small_team_'),
+              )}
+            />
+          </div>
+        </div>
+        <h4 className="debug-subhead">Terrain combos (on board)</h4>
         <p className="quiet debug-legend">
-          Three alike = 8 + reward (River → rune, Jungle → neutral, Lane → tower). 1 of each = 5. Mixed combo (2 + 1) = 3.
+          Snapshot of scored combos still on the board. Three alike = 8 + reward. 1 of each = 5. Mixed (2 + 1) = 3.
         </p>
-        <ShapeTable rows={shapeRows.filter((row) => row.id.endsWith('_terrain'))} />
+        <div className="debug-rel-grid">
+          <div>
+            <h4 className="debug-subhead">River / Jungle / Lane</h4>
+            <ShapeTable
+              rows={shapeRows.filter((row) => row.id === 'river_terrain' || row.id === 'jungle_terrain' || row.id === 'lane_terrain')}
+            />
+          </div>
+          <div>
+            <h4 className="debug-subhead">1 of each & mixed</h4>
+            <ShapeTable
+              rows={shapeRows.filter((row) => row.id === 'mix_terrain' || row.id === 'pair_terrain')}
+            />
+          </div>
+        </div>
       </div>
 
-      <div className="debug-block">
-        <h3>Event counts</h3>
-        <SortableTable
-          empty="No events yet."
-          columns={[
-            { key: 'label', label: 'Event', get: (row) => row.label, sortValue: (row) => row.label },
-            { key: 'total', label: 'Total', get: (row) => String(row.total), sortValue: (row) => row.total, className: 'debug-num' },
-            { key: 'per', label: '/match', get: (row) => fmt(row.perMatch), sortValue: (row) => row.perMatch, className: 'debug-num' },
-          ]}
-          rows={summary.eventStats}
-          rowKey={(row) => row.id}
-          pageSize={10}
-        />
+      <div className="debug-rel-grid">
+        <div className="debug-block">
+          <h3>Event counts</h3>
+          <SortableTable
+            empty="No events yet."
+            columns={[
+              { key: 'label', label: 'Event', get: (row) => row.label, sortValue: (row) => row.label },
+              { key: 'total', label: 'Total', get: (row) => String(row.total), sortValue: (row) => row.total, className: 'debug-num' },
+              { key: 'per', label: '/match', get: (row) => fmt(row.perMatch), sortValue: (row) => row.perMatch, className: 'debug-num' },
+            ]}
+            rows={summary.eventStats}
+            rowKey={(row) => row.id}
+            pageSize={10}
+          />
+        </div>
+        <div className="debug-block">
+          <h3>By ability type</h3>
+          <p className="quiet debug-legend">Primary effect family per on-play ability. n / Impact / Win% only.</p>
+          <SortableTable
+            empty="No ability types yet."
+            defaultSort={{ key: 'impact', dir: 'desc' }}
+            columns={[
+              { key: 'label', label: 'Type', get: (row) => <strong>{row.label}</strong>, sortValue: (row) => row.label },
+              { key: 'plays', label: 'n', get: (row) => String(row.plays), sortValue: (row) => row.plays, className: 'debug-num' },
+              {
+                key: 'impact',
+                label: 'Impact',
+                get: (row) => signed(row.avgImpact),
+                sortValue: (row) => row.avgImpact,
+                className: 'debug-num',
+              },
+              {
+                key: 'win',
+                label: 'Win%',
+                get: (row) => (row.presence > 0 ? pctCell(row.winRate, row.wins, row.presence) : '—'),
+                sortValue: (row) => row.winRate,
+                className: 'debug-num',
+              },
+            ]}
+            rows={summary.byAbilityType}
+            rowKey={(row) => row.id}
+            pageSize={10}
+          />
+        </div>
       </div>
 
       <ImpactTable rows={summary.contested} />
@@ -441,42 +500,12 @@ export function DebugRail({
           />
         </div>
         <div className="debug-block">
-          <h3>Terrains</h3>
+          <h3>Terrains played</h3>
+          <p className="quiet debug-legend">
+            Every combo play across the match (not end-board). Rows: River / Jungle / Lane / 1 of each / Mixed combo.
+          </p>
           <CardSortTable rows={summary.terrains} empty="No terrain plays yet." pageSize={10} />
         </div>
-      </div>
-
-      <div className="debug-block">
-        <h3>By ability type</h3>
-        <p className="quiet debug-legend">
-          Primary effect family per on-play ability. Impact uses the same horizon baseline as the card tables (Rel dropped here — ability Rel mixed body seating).
-        </p>
-        <SortableTable
-          empty="No ability types yet."
-          defaultSort={{ key: 'impact', dir: 'desc' }}
-          columns={[
-            { key: 'label', label: 'Type', get: (row) => <strong>{row.label}</strong>, sortValue: (row) => row.label },
-            { key: 'plays', label: 'n', get: (row) => String(row.plays), sortValue: (row) => row.plays, className: 'debug-num' },
-            { key: 'self', label: 'Self', get: (row) => signed(row.avgActorSwing), sortValue: (row) => row.avgActorSwing, className: 'debug-num' },
-            {
-              key: 'impact',
-              label: 'Impact',
-              get: (row) => signed(row.avgImpact),
-              sortValue: (row) => row.avgImpact,
-              className: 'debug-num',
-            },
-            {
-              key: 'win',
-              label: 'Win%',
-              get: (row) => (row.presence > 0 ? pctCell(row.winRate, row.wins, row.presence) : '—'),
-              sortValue: (row) => row.winRate,
-              className: 'debug-num',
-            },
-          ]}
-          rows={summary.byAbilityType}
-          rowKey={(row) => row.id}
-          pageSize={10}
-        />
       </div>
 
       {game ? (
@@ -921,10 +950,7 @@ function impactTooltip(row: CardBalanceRow): string {
 }
 
 function attrLabel(attr: string): string {
-  if (attr === 'STR') return 'Strength'
-  if (attr === 'AGI') return 'Agility'
-  if (attr === 'INT') return 'Intelligence'
-  if (attr === 'UNI') return 'Universal'
+  if (attr === 'STR' || attr === 'AGI' || attr === 'INT' || attr === 'UNI') return attr
   return attr
 }
 

@@ -1,6 +1,6 @@
 import { chooseAiAction, chooseAiPendingForSeat, cycleStrat, DEFAULT_STRAT, searchModeForStrat } from './ai.ts'
 import { display, firesAbility, HERO_BY_ID } from './catalog.ts'
-import { apply, createGame, type SeatSpec } from './engine.ts'
+import { apply, comboShape, createGame, type SeatSpec } from './engine.ts'
 import {
   DEFAULT_CALIBRATION,
   diffPlayEffects,
@@ -157,6 +157,9 @@ export interface ShapeCounts {
   /** Mixed teams with exactly 3 / 4+ attrs and 3+ heroes. */
   pureMix3: number
   pureMix4: number
+  /** Teams of 1 / 2 heroes (no CORE / MIXED shape). */
+  smallTeams1: number
+  smallTeams2: number
   coreTerrains: number
   /** Three Rivers / Jungles / Lanes (also counted in coreTerrains). */
   riverTerrains: number
@@ -171,6 +174,8 @@ export interface ShapeCounts {
   coreTeamPoints5: number
   mixTeamPoints3: number
   mixTeamPoints4: number
+  smallTeamPoints1: number
+  smallTeamPoints2: number
   coreTeamHeroes: number
   mixTeamHeroes: number
   coreTeamHeroes3: number
@@ -178,6 +183,8 @@ export interface ShapeCounts {
   coreTeamHeroes5: number
   mixTeamHeroes3: number
   mixTeamHeroes4: number
+  smallTeamHeroes1: number
+  smallTeamHeroes2: number
   coreTerrainPoints: number
   riverTerrainPoints: number
   jungleTerrainPoints: number
@@ -294,6 +301,8 @@ export interface ShapeCompareRow {
     | 'mix_team'
     | 'mix_team_3'
     | 'mix_team_4'
+    | 'small_team_1'
+    | 'small_team_2'
     | 'river_terrain'
     | 'jungle_terrain'
     | 'lane_terrain'
@@ -420,6 +429,8 @@ const EMPTY_SHAPES = (): ShapeCounts => ({
   pureCore5: 0,
   pureMix3: 0,
   pureMix4: 0,
+  smallTeams1: 0,
+  smallTeams2: 0,
   coreTerrains: 0,
   riverTerrains: 0,
   jungleTerrains: 0,
@@ -433,6 +444,8 @@ const EMPTY_SHAPES = (): ShapeCounts => ({
   coreTeamPoints5: 0,
   mixTeamPoints3: 0,
   mixTeamPoints4: 0,
+  smallTeamPoints1: 0,
+  smallTeamPoints2: 0,
   coreTeamHeroes: 0,
   mixTeamHeroes: 0,
   coreTeamHeroes3: 0,
@@ -440,6 +453,8 @@ const EMPTY_SHAPES = (): ShapeCounts => ({
   coreTeamHeroes5: 0,
   mixTeamHeroes3: 0,
   mixTeamHeroes4: 0,
+  smallTeamHeroes1: 0,
+  smallTeamHeroes2: 0,
   coreTerrainPoints: 0,
   riverTerrainPoints: 0,
   jungleTerrainPoints: 0,
@@ -570,12 +585,20 @@ export class BalanceTracker {
       }
     } else if (action.type === 'combo') {
       this.turnCards += 1
+      const actor = before.active
       const ids = action.uids
-        .map((uid) => before.players[before.active]?.hand.find((card) => card.uid === uid)?.defId)
+        .map((uid) => {
+          const hand = before.players[actor]?.hand.find((card) => card.uid === uid)
+          if (hand) return hand.defId
+          return before.grave.find((card) => card.uid === uid && card.kind === 'terrain')?.defId
+        })
         .filter((id): id is string => !!id)
-      const mixed = new Set(ids).size > 1
+      // Split 1-of-each (River+Jungle+Lane) from pair (2+1); both used to share mixed_path.
+      const shape = comboShape(ids.map((defId) => ({ defId })))
+      const defId =
+        shape === 'core' ? (ids[0] ?? 'terrain') : shape === 'mixed' ? 'one_of_each' : 'pair_combo'
       this.sealImpact(before)
-      this.openImpact(before, before.active, mixed ? 'mixed_path' : (ids[0] ?? 'terrain'), 'combo')
+      this.openImpact(before, before.active, defId, 'combo')
       this.bumpEvent(before.active, 'playTerrain')
     } else if (action.type === 'morph') {
       this.turnCards += 1
@@ -809,7 +832,13 @@ export class BalanceTracker {
       silenced: silencedPlay,
       effects: EMPTY_EFFECTS(),
     }
-    if (defId !== 'draw' && defId !== 'mixed_path' && defId !== 'ember_spirit') {
+    if (
+      defId !== 'draw'
+      && defId !== 'mixed_path'
+      && defId !== 'one_of_each'
+      && defId !== 'pair_combo'
+      && defId !== 'ember_spirit'
+    ) {
       const set = this.seatPlaySets[actor] ?? (this.seatPlaySets[actor] = new Set())
       set.add(defId)
     }
@@ -841,8 +870,18 @@ export class BalanceTracker {
     const relativeSwing = actorSwing - (oppAfter - oppBefore)
     const fieldSwing = afterTotals.reduce((sum, score, id) => sum + Math.abs(score - (beforeTotals[id] ?? 0)), 0)
     const defId = frame.defId
-    const info = defId === 'draw' || defId === 'mixed_path' ? null : display(defId)
-    const name = defId === 'draw' ? 'Draw' : defId === 'mixed_path' ? 'Mixed path' : (info?.name ?? defId)
+    const info =
+      defId === 'draw' || defId === 'mixed_path' || defId === 'one_of_each' || defId === 'pair_combo'
+        ? null
+        : display(defId)
+    const name =
+      defId === 'draw'
+        ? 'Draw'
+        : defId === 'one_of_each' || defId === 'mixed_path'
+          ? '1 of each'
+          : defId === 'pair_combo'
+            ? 'Mixed combo'
+            : (info?.name ?? defId)
     const shownKind: PlayKind = frame.kind === 'combo' ? 'combo' : frame.kind
     const bucket = relBucket(shownKind, defId)
     const attr =
@@ -1364,6 +1403,8 @@ function buildShapeCompareRows(shapeTotals: ShapeCounts, matchCount: number): Sh
     shapeRow('mix_team', 'Mixed team', shapeTotals.mixTeams, shapeTotals.mixTeamPoints, shapeTotals.mixTeamHeroes, shapeTotals.pureMix3 + shapeTotals.pureMix4, matchCount, shapeTotals.mixTeams, maxMixTeamPoints()),
     shapeRow('mix_team_3', 'Mixed · 3 attrs', shapeTotals.mixTeams3, shapeTotals.mixTeamPoints3, shapeTotals.mixTeamHeroes3, shapeTotals.pureMix3, matchCount, shapeTotals.mixTeams3, maxMixTeamPoints()),
     shapeRow('mix_team_4', 'Mixed · 4 attrs', shapeTotals.mixTeams4, shapeTotals.mixTeamPoints4, shapeTotals.mixTeamHeroes4, shapeTotals.pureMix4, matchCount, shapeTotals.mixTeams4, maxMixTeamPoints()),
+    shapeRow('small_team_1', 'Small · 1 hero', shapeTotals.smallTeams1, shapeTotals.smallTeamPoints1, shapeTotals.smallTeamHeroes1, null, matchCount, shapeTotals.smallTeams1),
+    shapeRow('small_team_2', 'Small · 2 heroes', shapeTotals.smallTeams2, shapeTotals.smallTeamPoints2, shapeTotals.smallTeamHeroes2, null, matchCount, shapeTotals.smallTeams2),
     shapeRow('river_terrain', 'River · 3 alike', shapeTotals.riverTerrains, shapeTotals.riverTerrainPoints, shapeTotals.riverTerrains * 3, null, matchCount),
     shapeRow('jungle_terrain', 'Jungle · 3 alike', shapeTotals.jungleTerrains, shapeTotals.jungleTerrainPoints, shapeTotals.jungleTerrains * 3, null, matchCount),
     shapeRow('lane_terrain', 'Lane · 3 alike', shapeTotals.laneTerrains, shapeTotals.laneTerrainPoints, shapeTotals.laneTerrains * 3, null, matchCount),
@@ -1639,7 +1680,18 @@ function softFinish(game: Game, reason: string): Game {
 function relBucket(kind: PlayKind, defId: string): RelBucket {
   if (kind === 'ability') return 'ability'
   if (kind === 'hero' || kind === 'morph') return 'hero'
-  if (kind === 'combo' || kind === 'terrain' || defId === 'mixed_path' || defId === 'river' || defId === 'jungle' || defId === 'lane') return 'terrain'
+  if (
+    kind === 'combo'
+    || kind === 'terrain'
+    || defId === 'mixed_path'
+    || defId === 'one_of_each'
+    || defId === 'pair_combo'
+    || defId === 'river'
+    || defId === 'jungle'
+    || defId === 'lane'
+  ) {
+    return 'terrain'
+  }
   if (kind === 'item' || kind === 'rune' || kind === 'neutral' || kind === 'tower') return 'loot'
   return 'other'
 }
@@ -1737,7 +1789,18 @@ function shapeCountsFor(game: Game, playerId: number): ShapeCounts {
       }
     }
 
-    if (!hasCore && !hasMix) shapes.openTeams += 1
+    if (!hasCore && !hasMix) {
+      shapes.openTeams += 1
+      if (size === 1) {
+        shapes.smallTeams1 += 1
+        shapes.smallTeamPoints1 += scored.points
+        shapes.smallTeamHeroes1 += 1
+      } else if (size === 2) {
+        shapes.smallTeams2 += 1
+        shapes.smallTeamPoints2 += scored.points
+        shapes.smallTeamHeroes2 += 2
+      }
+    }
   }
   for (const combo of player.combos) {
     if (combo.kind === 'mixed') {
