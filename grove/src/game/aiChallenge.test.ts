@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import { chooseAiAction } from './ai.ts'
-import { chooseAiActionChallenge } from './aiChallenge.ts'
+import { chooseAiActionChallenge, evaluateChallenge } from './aiChallenge.ts'
 import { apply, createGame } from './engine.ts'
+import { blankTeam, makeCard, makeHero, setPlayer } from './flow.ts'
+import type { CardInst, Game, PlayerId } from './types.ts'
+import { setAiThoughtPower } from './aiPower.ts'
 
 describe('challenge AI', () => {
   it('returns a legal action on an opening position', () => {
@@ -29,4 +32,61 @@ describe('challenge AI', () => {
     const action = chooseAiAction(game, 'challenge')
     expect(action.type).toBeTruthy()
   })
+
+  it('values a filled core and engine auras over a barren board', () => {
+    let thin = apply(createGame({ seed: 21, mode: 'hotseat', names: ['A', 'B'] }), { type: 'ready' })
+    let rich = thin
+    rich = seatDefs(rich, 0, [['sven', 'axe', 'tidehunter'], ['puck']])
+    thin = seatDefs(thin, 0, [['crystal_maiden']])
+    expect(evaluateChallenge(rich, 0, 'architect')).toBeGreaterThan(evaluateChallenge(thin, 0, 'architect'))
+  })
+
+  it('prefers spending an action to fill a nearly-complete team over ending', () => {
+    setAiThoughtPower(8)
+    let game = apply(createGame({ seed: 22, mode: 'hotseat', names: ['A', 'B'] }), { type: 'ready' })
+    game = seatDefs(game, 0, [['sven', 'axe']])
+    game = only(game, 0, ['tidehunter', 'mars'])
+    game = setPlayer(game, 0, (seat) => ({ ...seat, actions: 1 }))
+    const action = chooseAiActionChallenge(game, 0, 'tempo')
+    expect(action.type).not.toBe('end')
+  })
 })
+
+function seatDefs(game: Game, player: PlayerId, teams: string[][]): Game {
+  let next = game
+  const built = []
+  for (const [index, defs] of teams.entries()) {
+    const heroes = []
+    for (const defId of defs) {
+      let card: CardInst
+      ;[next, card] = makeCard(next, defId, 'hero')
+      heroes.push(makeHero(card, player, player, next))
+    }
+    built.push({ ...blankTeam(`seat-${player}-${index}`), heroes })
+  }
+  return setPlayer(next, player, (seat) => ({ ...seat, teams: built }))
+}
+
+function only(game: Game, player: PlayerId, defIds: string[]): Game {
+  let next = game
+  const found: CardInst[] = []
+  for (const defId of defIds) {
+    const card =
+      next.deck.find((entry) => entry.defId === defId)
+      ?? next.players.flatMap((seat) => seat.hand).find((entry) => entry.defId === defId)
+    if (!card) throw new Error(`missing ${defId}`)
+    found.push(card)
+    next = {
+      ...next,
+      deck: next.deck.filter((entry) => entry.uid !== card.uid),
+      players: next.players.map((seat) => ({
+        ...seat,
+        hand: seat.hand.filter((entry) => entry.uid !== card.uid),
+      })),
+    }
+  }
+  return {
+    ...next,
+    players: next.players.map((seat, index) => (index === player ? { ...seat, hand: found } : seat)),
+  }
+}
