@@ -849,6 +849,13 @@ button.debug-mode-cycle:hover {
   outline-offset: 2px;
   cursor: pointer;
 }
+.card.is-marked,
+.team.is-marked,
+.handbar .card.is-ready,
+.sheet .card.is-ready {
+  outline: 2px solid var(--gold);
+  outline-offset: 2px;
+}
 .hud .actions { flex-wrap: wrap; }
 
 .hud .actions button { padding: 0.4rem 0.7rem; font-size: 0.85rem; }

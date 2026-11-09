@@ -633,6 +633,8 @@ describe('heroes', () => {
     game = apply(game, { type: 'end' })
     game = apply(game, { type: 'ready' })
     game = apply(game, { type: 'play', uid: uid(game, 0, 'tidehunter'), team: 'new' })
+    const ravaged = game.players[1].teams.find((team) => team.heroes.some((hero) => hero.defId === 'phantom_assassin'))
+    game = apply(game, { type: 'choose', ids: [`team:${ravaged?.id ?? ''}`] })
     game = passInstants(game)
     expect(game.players[0].teams.flatMap((team) => team.heroes.map((hero) => hero.defId)).sort()).toEqual(['sven', 'tidehunter'])
     expect(game.players[1].teams.length).toBe(1)

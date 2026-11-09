@@ -119,3 +119,15 @@ export function playsAsInstant(game: Game, viewer: PlayerId, card: CardInst): bo
   if (card.kind === 'item' && game.primalItems?.caster === viewer) return true
   return false
 }
+
+/** Hand outline: instant or on-play rune, neutral, tower, and item cards, plus anything free this turn. */
+export function handGlow(game: Game, viewer: PlayerId, card: CardInst): boolean {
+  const info = display(card.defId)
+  const pile = info.kind === 'rune' || info.kind === 'neutral' || info.kind === 'tower' || info.kind === 'item'
+  if (pile && (info.instant || info.timing === 'cast' || info.timing === 'instant')) return true
+  if (game.freePlay.includes(card.uid)) return true
+  if (card.kind === 'item' && game.freeItems > 0) return true
+  if (card.kind === 'item' && game.clinkzExile.some((entry) => entry.uid === card.uid)) return true
+  if (card.kind === 'item' && game.primalItems?.caster === viewer) return true
+  return false
+}

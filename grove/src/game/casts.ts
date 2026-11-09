@@ -220,7 +220,7 @@ export function cast(state: Game, resume: CastResume): Game {
       return log(state, asked.text === 'No legal target.' ? `${about.spell ?? about.name} has no legal target.` : asked.text)
     }
     if (asked.type === 'ask') {
-      return ask(state, { ...asked.q, resume })
+      return ask(state, { ...asked.q, prompt: withTargets(state, resume, asked.q.prompt), resume })
     }
     const pickedHeroes = heroIds(resume.picked)
     const pickedTeams = rawTeams(resume.picked)
@@ -1083,6 +1083,21 @@ function questions(state: Game, resume: CastResume): Ask {
       if (board.length === 0) return ready()
       return pose(target, 'Destroy one hero you control.', board)
     }
+    case 'tidehunter': {
+      const taken = new Set(rawTeams(resume.picked))
+      for (const id of opponents(state, actor)) {
+        if (state.players[id]!.teams.some((team) => taken.has(team.id))) continue
+        const choices = teamChoices(state, actor, kind, (_team, player) => player.id === id)
+        if (choices.length === 0) continue
+        let prompt = `Choose ${pname(state, id)}'s team.`
+        if (choices.length === 1) {
+          const note = announceTargets(state, { ...resume, picked: [...resume.picked, choices[0]!.id] })
+          if (note) prompt = `${prompt} Target: ${note}.`
+        }
+        return pose(actor, prompt, choices)
+      }
+      return ready()
+    }
     case 'razor':
       if (at > 0) return ready()
       return pose(actor, 'Exile a hero.', heroChoices(state, actor, kind, (loc) => loc.hero.uid !== resume.sourceUid))
@@ -1224,7 +1239,8 @@ function effect(state: Game, resume: CastResume): Game {
     case 'spirit_breaker':
       return log(state, 'Charge of Darkness waits for an enemy ability.')
     case 'tidehunter': {
-      let next = log(state, 'Ravage.')
+      const note = announceTargets(state, resume)
+      let next = log(state, note ? `Ravage targets ${note}.` : 'Ravage.')
       // One team per enemy — prefer picked teams, else each opponent's first team.
       const picked = new Set(teams)
       for (const id of opponents(state, actor)) {
@@ -2964,6 +2980,14 @@ function gateAbility(state: Game, heroUid: string, resume: CastResume): Game {
     })
   }
   return cast(state, { ...resume, armed: true, windowed: true })
+}
+
+/** Fold targets already chosen onto the prompt so the action line can name them. */
+function withTargets(state: Game, resume: CastResume, prompt: string): string {
+  if (/Target:/i.test(prompt)) return prompt
+  const note = announceTargets(state, resume)
+  if (!note) return prompt
+  return `${prompt.replace(/[.\s]*$/, '')}. Target: ${note}.`
 }
 
 function announceTargets(state: Game, resume: CastResume): string {

@@ -208,6 +208,31 @@ describe('reworked heroes', () => {
     expect(allLocs(game).some((loc) => loc.hero.uid === zeus)).toBe(false)
   })
 
+  it('Spirit Breaker can redirect Ravage, and the window names the team', () => {
+    let game = toHand(ready(), 0, ['tidehunter'])
+    game = toHand(game, 1, ['spirit_breaker'])
+    let teamA = ''
+    let teamB = ''
+    ;[game, teamA] = team(game, 1, ['axe'])
+    ;[game, teamB] = team(game, 1, ['lina'])
+    game = apply(game, { type: 'play', uid: uidOf(game, 0, 'tidehunter'), team: 'new' })
+    expect(game.pending?.choices.map((choice) => choice.id)).toEqual(
+      expect.arrayContaining([`team:${teamA}`, `team:${teamB}`]),
+    )
+    game = apply(game, { type: 'choose', ids: [`team:${teamB}`] })
+    expect(game.pending?.resume.kind).toBe('instant-window')
+    expect(game.pending?.prompt).toMatch(/Target: Dire's team B/)
+    expect(game.pending?.choices.some((choice) => choice.defId === 'spirit_breaker')).toBe(true)
+    const breaker = game.pending!.choices.find((choice) => choice.defId === 'spirit_breaker')!
+    game = apply(game, { type: 'choose', ids: [breaker.id] })
+    expect(game.pending?.resume.kind).toBe('spirit-place')
+    const seat = game.pending!.choices.find((choice) => choice.id === 'seat:new')?.id ?? game.pending!.choices[0]!.id
+    game = drain(apply(game, { type: 'choose', ids: [seat] }))
+    expect(allLocs(game).some((loc) => loc.hero.defId === 'lina')).toBe(true)
+    expect(allLocs(game).some((loc) => loc.hero.defId === 'axe')).toBe(true)
+    expect(allLocs(game).some((loc) => loc.hero.defId === 'spirit_breaker')).toBe(false)
+  })
+
   it('Spirit Breaker seats, then redirects an enemy ability onto itself', () => {
     let game = toHand(ready(), 0, ['lina'])
     game = toHand(game, 1, ['spirit_breaker'])

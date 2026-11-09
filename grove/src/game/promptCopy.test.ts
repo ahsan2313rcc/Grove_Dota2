@@ -51,6 +51,24 @@ describe('prompt copy', () => {
     expect(copy.artId).toBe('timbersaw')
   })
 
+  it('puts a locked target on the action line', () => {
+    const copy = promptCopy({
+      prompt: "Ravage: Choose Dire's team. Target: Dire's team A.",
+      choices: [{ id: 'team:a', label: 'Dire', team: 'Team A', bonus: 'STR x1' }],
+      about: {
+        defId: 'tidehunter',
+        name: 'Tidehunter',
+        spell: 'Ravage',
+        text: 'Return a team from each enemy to their hand. They each discard 5 cards.',
+      },
+      resume: { kind: 'cast', actor: 0, sourceUid: 'h', defId: 'tidehunter', picked: ['team:a'] },
+    })
+    expect(copy.action).toBe(
+      "Ravage: Return a team from each enemy to their hand. They each discard 5 cards. Target: Dire's team A.",
+    )
+    expect(copy.ask).toBe("Choose Dire's team.")
+  })
+
   it('keeps a plain discard as the ask when there is no separate action', () => {
     const copy = promptCopy({
       prompt: 'Discard down to 7.',

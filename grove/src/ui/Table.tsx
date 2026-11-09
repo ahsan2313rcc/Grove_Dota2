@@ -4,10 +4,10 @@ import { HoverRulesHint } from './HoverRules.tsx'
 import { comboPlans, morphCasts, needsTeam, playableFromGrave, teamsFor, undyingRevive } from '../game/engine.ts'
 import { allLocs, findHero, isTrapHero, scoreState, scoreTeam } from '../game/flow.ts'
 import { getScoreRules, teamShapes } from '../game/scoring.ts'
-import type { Action, CardInst, Game, PlayerId } from '../game/types.ts'
+import type { Action, CardInst, Game, PlayerId, Resume } from '../game/types.ts'
 import { CardFace } from './CardFace.tsx'
 import { Prompt } from './Prompt.tsx'
-import { handRevealed, heroMarks, isCombo, playBlock, playsAsInstant, shownAttrs, shownRange, statusLines } from './present.ts'
+import { handGlow, handRevealed, heroMarks, isCombo, playBlock, playsAsInstant, shownAttrs, shownRange, statusLines } from './present.ts'
 import { ALL_STRAT_FILTER, type BalanceSummary, type MatchReport, type StratFilter } from '../game/balance.ts'
 import { DebugRail, type DebugSpeed, type DebugView } from './DebugRail.tsx'
 import { Glossary } from './Glossary.tsx'
@@ -373,11 +373,28 @@ export function Table({
   const boardPick = !!(answering && answering.mode === 'pick' && answering.max === 1)
   const hotHeroes = new Set<string>()
   const hotTeams = new Set<string>()
-  if (boardPick && answering) {
+  const markedHeroes = new Set<string>()
+  const markedTeams = new Set<string>()
+  if (answering) {
     for (const choice of answering.choices) {
-      if (choice.id.startsWith('hero:')) hotHeroes.add(choice.id.slice(5))
-      if (choice.id.startsWith('team:')) hotTeams.add(choice.id.slice(5))
+      const heroUid = choiceHeroUid(choice.id)
+      const teamId = choice.id.startsWith('team:') ? choice.id.slice(5) : null
+      if (heroUid) {
+        if (boardPick) hotHeroes.add(heroUid)
+        else markedHeroes.add(heroUid)
+      }
+      if (teamId) {
+        if (boardPick) hotTeams.add(teamId)
+        else markedTeams.add(teamId)
+      }
+      if (answering.mode === 'groups') markedHeroes.add(choice.id)
     }
+    for (const id of lockedPicks(answering.resume)) {
+      if (id.startsWith('hero:')) markedHeroes.add(id.slice(5))
+      if (id.startsWith('team:')) markedTeams.add(id.slice(5))
+    }
+    for (const uid of hotHeroes) markedHeroes.delete(uid)
+    for (const id of hotTeams) markedTeams.delete(id)
   }
   const reactCandidates = !networked && !debug && humans.length > 1 && !game.pending && !game.over && !game.veil
     ? humans.filter((id) => id !== game.active && id !== viewer)
@@ -569,7 +586,16 @@ export function Table({
                     revealTraps={debug || labSession}
                     hotHeroes={hotHeroes}
                     hotTeams={hotTeams}
-                    onPickHero={boardPick ? (uid) => onAction({ type: 'choose', ids: [`hero:${uid}`] }) : undefined}
+                    markedHeroes={markedHeroes}
+                    markedTeams={markedTeams}
+                    onPickHero={
+                      boardPick
+                        ? (uid) => {
+                            const choice = answering?.choices.find((entry) => entry.id === `hero:${uid}` || entry.id === `kill:${uid}`)
+                            if (choice) onAction({ type: 'choose', ids: [choice.id] })
+                          }
+                        : undefined
+                    }
                     onPickTeam={boardPick ? (teamId) => onAction({ type: 'choose', ids: [`team:${teamId}`] }) : undefined}
                     onInspect={(next) => {
                       setFocus((current) => {
@@ -820,6 +846,7 @@ export function Table({
                 || extras.includes(card.uid)
                 || (focus?.kind === 'hand' && focus.uid === card.uid)
               }
+              className={handGlow(game, viewer, card) ? 'is-ready' : undefined}
               onClick={() => clickHand(card)}
               testId={`hand-${card.defId}`}
             />
@@ -829,6 +856,7 @@ export function Table({
               key={`clinkz-${card.uid}`}
               defId={card.defId}
               layout="hand"
+              className={handGlow(game, viewer, card) ? 'is-ready' : undefined}
               selected={focus?.kind === 'card' && focus.defId === card.defId}
               onClick={() => {
                 setFocus({ kind: 'card', defId: card.defId })
@@ -905,6 +933,18 @@ function teamStatuses(team: Game['players'][number]['teams'][number]): string[] 
   return labels
 }
 
+function choiceHeroUid(id: string): string | null {
+  if (id.startsWith('hero:') || id.startsWith('kill:')) return id.slice(id.indexOf(':') + 1)
+  return null
+}
+
+function lockedPicks(resume: Resume): string[] {
+  if (resume.kind === 'cast') return resume.picked
+  if (resume.kind === 'jugg-kill') return resume.after.picked
+  if ('cast' in resume && resume.cast) return resume.cast.picked
+  return []
+}
+
 function teamLetter(index: number): string {
   if (index < 26) return String.fromCharCode(65 + index)
   return String(index + 1)
@@ -927,6 +967,8 @@ function Lane({
   revealTraps = false,
   hotHeroes,
   hotTeams,
+  markedHeroes,
+  markedTeams,
   onPickHero,
   onPickTeam,
   onInspect,
@@ -948,6 +990,8 @@ function Lane({
   revealTraps?: boolean
   hotHeroes?: Set<string>
   hotTeams?: Set<string>
+  markedHeroes?: Set<string>
+  markedTeams?: Set<string>
   onPickHero?: (uid: string) => void
   onPickTeam?: (teamId: string) => void
   onInspect: (focus: Focus) => void
@@ -973,7 +1017,7 @@ function Lane({
             return (
               <article
                 key={team.id}
-                className={`team${hotTeams?.has(team.id) ? ' is-target' : ''}`}
+                className={`team${hotTeams?.has(team.id) ? ' is-target' : markedTeams?.has(team.id) ? ' is-marked' : ''}`}
                 data-testid={mine ? `team-${index}` : undefined}
                 onClick={(event) => {
                   if (!hotTeams?.has(team.id) || !onPickTeam) return
@@ -997,7 +1041,7 @@ function Lane({
                       key={hero.uid}
                       defId={hero.defId}
                       peek
-                      className={hotHeroes?.has(hero.uid) ? 'is-target' : undefined}
+                      className={hotHeroes?.has(hero.uid) ? 'is-target' : markedHeroes?.has(hero.uid) ? 'is-marked' : undefined}
                       attrs={shownAttrs(game, hero)}
                       range={shownRange(hero)}
                       marks={heroMarks(hero)}
@@ -1500,6 +1544,7 @@ function HandSheet({
                 key={card.uid}
                 defId={card.defId}
                 layout="hand"
+                className={handGlow(game, owner, card) ? 'is-ready' : undefined}
                 onClick={() => onCard(card)}
               />
             ))}
