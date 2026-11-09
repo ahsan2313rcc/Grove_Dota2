@@ -609,7 +609,7 @@ export function chooseAiPending(state: Game): string[] {
   const hasYes = pending.choices.some((choice) => choice.id === 'yes')
   const hasNo = pending.choices.some((choice) => choice.id === 'no')
   if (hasYes && hasNo) {
-    if (/fire that ability|destroy shadow shaman|play it|for free|take the|reactivate|cast /i.test(pending.prompt)) return ['yes']
+    if (/fire that ability|activate .+ ability|destroy shadow shaman|play it|for free|take the|reactivate|cast /i.test(pending.prompt)) return ['yes']
     if (/discard 1|Nether Ward/i.test(pending.prompt)) {
       return state.players[actor].hand.length > 1 ? ['discard'] : ['fizzle']
     }

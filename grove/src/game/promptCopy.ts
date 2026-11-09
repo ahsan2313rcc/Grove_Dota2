@@ -18,6 +18,17 @@ export function promptCopy(pending: Pick<Pending, 'prompt' | 'choices' | 'about'
     }
   }
 
+  const named = pending.prompt.trim().match(/^Activate (.+?)'s ability \((.+)\)\??$/)
+  if (named) {
+    const detail = named[2]!.replace(/[.!?]+$/, '')
+    return {
+      action: `Activate ${named[1]}'s ability (${detail}).`,
+      ask: 'Activate it, or leave it.',
+      artId: pending.about?.defId ?? null,
+      mark: null,
+    }
+  }
+
   if (pending.resume.kind === 'instant-window' && pending.about) {
     return {
       action: abilityLine(pending),

@@ -31,6 +31,26 @@ describe('prompt copy', () => {
     expect(copy.artId).toBe('timbersaw')
   })
 
+  it('names the hero and a short ability line when you may activate it', () => {
+    const copy = promptCopy({
+      prompt: "Activate Timbersaw's ability (Destroy all Strength heroes in target enemy team)?",
+      choices: [
+        { id: 'yes', label: 'Activate' },
+        { id: 'no', label: 'Leave it' },
+      ],
+      about: {
+        defId: 'timbersaw',
+        name: 'Timbersaw',
+        spell: 'Whirling Death',
+        text: 'Destroy all Strength heroes in target enemy team.',
+      },
+      resume: { kind: 'cast', actor: 0, sourceUid: 'h', defId: 'blink', picked: [] },
+    })
+    expect(copy.action).toBe("Activate Timbersaw's ability (Destroy all Strength heroes in target enemy team).")
+    expect(copy.ask).toBe('Activate it, or leave it.')
+    expect(copy.artId).toBe('timbersaw')
+  })
+
   it('keeps a plain discard as the ask when there is no separate action', () => {
     const copy = promptCopy({
       prompt: 'Discard down to 7.',

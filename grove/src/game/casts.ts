@@ -78,6 +78,7 @@ interface Question {
   min: number
   max: number
   mode: Mode
+  about?: Pending['about']
 }
 
 type Ask = { type: 'ask'; q: Question } | { type: 'fizzle'; text: string } | { type: 'ready' }
@@ -117,9 +118,36 @@ function pose(
   min = 1,
   max = 1,
   mode: Mode = 'pick',
+  about?: Pending['about'],
 ): Ask {
   if (min > 0 && choices.length === 0) return fizzle('No legal target.')
-  return { type: 'ask', q: { actor, prompt, choices, min, max, mode } }
+  return { type: 'ask', q: { actor, prompt, choices, min, max, mode, ...(about ? { about } : {}) } }
+}
+
+function yesNo(): Choice[] {
+  return [
+    { id: 'yes', label: 'Activate' },
+    { id: 'no', label: 'Leave it' },
+  ]
+}
+
+/** Name the hero and the first line of its ability, for a fire-or-leave prompt. */
+function activateAsk(defId: string | undefined): { prompt: string; about?: Pending['about'] } {
+  if (!defId) return { prompt: 'Activate that ability, or leave it?' }
+  const info = display(defId)
+  const parts = (info.text || info.spell || info.name).match(/[^.!?]+[.!?]+|[^.!?]+$/g)?.map((part) => part.trim()).filter(Boolean) ?? []
+  let built = ''
+  for (const part of parts) {
+    const next = built ? `${built} ${part}` : part
+    if (next.replace(/[.!?]+$/, '').length > 110) break
+    built = next
+  }
+  const bare = (built || parts[0] || info.name).replace(/[.!?]+$/, '').trim()
+  const short = bare.length > 110 ? `${bare.slice(0, 107).trim()}…` : bare
+  return {
+    prompt: `Activate ${info.name}'s ability (${short})?`,
+    about: { defId, name: info.name, spell: info.spell, text: info.text, kind: info.kind },
+  }
 }
 
 function enemyHeroes(state: Game, actor: PlayerId, source: 'ability' | 'item' | 'reward', pred?: (uid: string) => boolean): Choice[] {
@@ -526,7 +554,11 @@ function questions(state: Game, resume: CastResume): Ask {
     case 'satanic':
       if (at === 0) return pose(actor, 'Choose an enemy hero.', enemyHeroes(state, actor, kind))
       if (at === 1) return pose(actor, 'Choose a team you control.', ownTeams(state, actor, true))
-      if (at === 2) return pose(actor, 'Fire that ability now?', [{ id: 'yes', label: 'Fire it' }, { id: 'no', label: 'Leave it' }])
+      if (at === 2) {
+        const host = heroIds(resume.picked)[0]
+        const asked = activateAsk(host ? findHero(state, host)?.hero.defId : undefined)
+        return pose(actor, asked.prompt, yesNo(), 1, 1, 'pick', asked.about)
+      }
       return ready()
     case 'tormentor':
     case 'stone_golem':
@@ -686,18 +718,15 @@ function questions(state: Game, resume: CastResume): Ask {
           }
           return pose(actor, 'Choose a team its owner controls.', choices)
         }
-        return pose(actor, 'Fire that ability now?', [
-          { id: 'yes', label: 'Fire it' },
-          { id: 'no', label: 'Leave it' },
-        ])
+        const asked = activateAsk(loc.hero.defId)
+        return pose(actor, asked.prompt, yesNo(), 1, 1, 'pick', asked.about)
       }
     case 'lifestealer':
       if (at === 0) return pose(actor, 'Choose an enemy hero.', enemyHeroes(state, actor, kind))
       if (at === 1) {
-        return pose(actor, 'Fire that ability now?', [
-          { id: 'yes', label: 'Fire it' },
-          { id: 'no', label: 'Leave it' },
-        ])
+        const host = heroIds(resume.picked)[0]
+        const asked = activateAsk(host ? findHero(state, host)?.hero.defId : undefined)
+        return pose(actor, asked.prompt, yesNo(), 1, 1, 'pick', asked.about)
       }
       return ready()
     case 'blink': {
@@ -709,10 +738,10 @@ function questions(state: Game, resume: CastResume): Ask {
       }
       if (at === 1) return pose(actor, 'Choose a team you control.', ownTeams(state, actor, true))
       if (at > 2) return ready()
-      return pose(actor, 'Activate its ability now?', [
-        { id: 'yes', label: 'Fire it' },
-        { id: 'no', label: 'Leave it' },
-      ])
+      const played = cardIds(resume.picked)[0]
+      const held = played ? state.players[actor]?.hand.find((card) => card.uid === played) : undefined
+      const asked = activateAsk(held?.defId)
+      return pose(actor, asked.prompt, yesNo(), 1, 1, 'pick', asked.about)
     }
     case 'tp_scroll':
       if (at === 0) return pose(actor, 'Choose a hero you control.', ownHeroes(state, actor, kind))
