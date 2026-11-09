@@ -18,6 +18,7 @@ export function CardFace({
   attrs,
   range,
   marks = [],
+  className: extraClass,
   onClick,
   testId,
 }: {
@@ -29,6 +30,7 @@ export function CardFace({
   attrs?: Attr[]
   range?: Range | null
   marks?: string[]
+  className?: string
   onClick?: () => void
   testId?: string
 }) {
@@ -70,7 +72,7 @@ export function CardFace({
               : info.kind === 'ancient'
                 ? 'Ancient'
                 : 'Tower'
-  const className = `card has-art${selected ? ' selected' : ''}${compact ? ' compact' : ''}${peek ? ' peek' : ''}`
+  const className = `card has-art${selected ? ' selected' : ''}${compact ? ' compact' : ''}${peek ? ' peek' : ''}${extraClass ? ` ${extraClass}` : ''}`
   const timingBadge = timing ? (
     <span className={`type-pill timing-${timing}`} title={TIMING_BADGE[timing]}>
       {TIMING_BADGE[timing]}

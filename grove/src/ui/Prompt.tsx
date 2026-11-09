@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { isTrapHero } from '../game/flow.ts'
+import { promptCopy } from '../game/promptCopy.ts'
 import type { Pending } from '../game/types.ts'
 import { CardArt } from './CardArt.tsx'
 import { CardFace } from './CardFace.tsx'
@@ -19,8 +20,7 @@ export function Prompt({
   const [picked, setPicked] = useState<string[]>([])
   const [bucket, setBucket] = useState<Record<string, string>>({})
   const grouped = pending.mode === 'split' || pending.mode === 'assign' || pending.mode === 'groups'
-  const exact = pending.min === pending.max
-  const hint = exact ? `Choose ${pending.min}.` : `Choose ${pending.min} to ${pending.max}.`
+  const copy = promptCopy(pending)
   const about =
     pending.about && (!isTrapHero(pending.about.defId) || revealTraps) ? pending.about : null
 
@@ -40,9 +40,9 @@ export function Prompt({
   const pickReady = picked.length >= pending.min && picked.length <= pending.max
 
   return (
-    <div className="scrim">
-      <section className="sheet" role="dialog" aria-modal="true" aria-labelledby="prompt-title">
-        <p className="eyebrow">{names[pending.actor]} answers</p>
+    <div className="scrim prompt-dock">
+      <section className="sheet" role="dialog" aria-labelledby="prompt-title">
+        <p className="eyebrow">{names[pending.actor]} · choose</p>
         <div className={`prompt-head${about ? ' has-art' : ''}`}>
           {about ? (
             <div className="prompt-source" data-testid="prompt-about">
@@ -50,8 +50,9 @@ export function Prompt({
             </div>
           ) : null}
           <div className="prompt-copy">
-            <h2 id="prompt-title" data-testid="prompt">{pending.prompt}</h2>
-            <p className="quiet">{grouped ? 'Assign every card.' : hint}</p>
+            <h2 id="prompt-title" data-testid="prompt">{copy.title}</h2>
+            {copy.rule ? <p className="prompt-rule" data-testid="prompt-rule">{copy.rule}</p> : null}
+            {copy.count ? <p className="quiet">{copy.count}</p> : null}
           </div>
         </div>
         <div className="choices">
@@ -63,7 +64,7 @@ export function Prompt({
                 <button key={choice.id} type="button" className={`choice${on ? ' on' : ''}`} onClick={() => toggle(choice.id)}>
                   {face}
                   <strong>{choice.label}</strong>
-                  {choice.hint ? <small>{choice.hint}</small> : null}
+                  {choice.hint && choice.hint !== copy.rule ? <small>{choice.hint}</small> : null}
                 </button>
               )
             }
@@ -72,7 +73,7 @@ export function Prompt({
                 {face}
                 <div className="choice-copy">
                   <strong>{choice.label}</strong>
-                  {choice.hint ? <small>{choice.hint}</small> : null}
+                  {choice.hint && choice.hint !== copy.rule ? <small>{choice.hint}</small> : null}
                   {grouped ? (
                     <div className="segment">
                       {segments(pending.mode, names).map((segment) => (

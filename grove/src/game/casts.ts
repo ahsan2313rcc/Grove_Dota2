@@ -2870,10 +2870,11 @@ export function offerInstantWindow(
   const about = display(resume.defId)
   const caster = pname(state, resume.actor)
   const targetNote = announceTargets(state, resume)
-  const targetLine = targetNote ? `Target: ${targetNote}.` : 'No target chosen.'
+  const spell = about.spell ?? about.name
+  const targetLine = targetNote ? ` Target: ${targetNote}.` : ''
   return ask(state, {
     actor: seat,
-    prompt: `${caster}'s ${about.spell ?? about.name} is about to fire. ${targetLine} ${about.text} Play an Instant to interrupt, or pass.`,
+    prompt: `${caster}: ${spell}.${targetLine} Interrupt, or pass.`,
     mode: 'pick',
     min: 1,
     max: 1,
