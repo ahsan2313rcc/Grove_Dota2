@@ -7,6 +7,7 @@ import { getScoreRules, teamShapes } from '../game/scoring.ts'
 import type { Action, CardInst, Game, PlayerId, Resume } from '../game/types.ts'
 import { CardFace } from './CardFace.tsx'
 import { Prompt } from './Prompt.tsx'
+import { opponentTurnFeed } from './opponentPlay.ts'
 import { handGlow, handRevealed, heroMarks, isCombo, playBlock, playsAsInstant, shownAttrs, shownRange, statusLines } from './present.ts'
 import { ALL_STRAT_FILTER, type BalanceSummary, type MatchReport, type StratFilter } from '../game/balance.ts'
 import { DebugRail, type DebugSpeed, type DebugView } from './DebugRail.tsx'
@@ -699,7 +700,9 @@ export function Table({
               </div>
             </div>
             <div className="actions">
-              {placing ? (
+              {watching ? (
+                <OpponentFeed lines={opponentTurnFeed(game, viewer)} />
+              ) : placing ? (
                 <>
                   {teamsFor(game, placing, extras).map((option) => (
                     <button
@@ -1506,11 +1509,23 @@ function paginateLog(log: string[]): { title: string; lines: { text: string; kin
 
 function classifyLog(line: string): LogKind {
   if (/'s turn\./.test(line)) return 'turn'
-  if (/plays Instant /.test(line)) return 'instant'
+  if (/plays Instant |counters /.test(line)) return 'instant'
   if (/ is an aura|aura\./i.test(line) || line.startsWith('Arcane Aura')) return 'aura'
-  if (/plays |fields |calls |draws \d+ (for the turn|as an action)|sets /.test(line)) return 'action'
-  if (/— /.test(line) || /stops |nullif|counters |Global Silence|Orchid|Shiva/.test(line)) return 'ability'
+  if (/plays |fields |calls |draws |sets |discards |destroys |kills |exiles |is exiled|returns |ends the turn|skips the turn|reveals |takes a reward/.test(line)) return 'action'
+  if (/— /.test(line) || /stops |nullif|Global Silence|Orchid|Shiva/.test(line)) return 'ability'
   return 'detail'
+}
+
+function OpponentFeed({ lines }: { lines: string[] }) {
+  const shown = lines.slice(-4)
+  return (
+    <div className="opp-feed" data-testid="opp-feed">
+      {shown.length === 0 ? <p>Waiting for the next play.</p> : null}
+      {shown.map((line, index) => (
+        <p key={`${index}-${line}`} data-testid="opp-line" className={index === shown.length - 1 ? 'is-current' : undefined}>{line}</p>
+      ))}
+    </div>
+  )
 }
 
 function HandSheet({

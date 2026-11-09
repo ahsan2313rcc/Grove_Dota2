@@ -79,6 +79,8 @@ export type SeatCount = 2 | 3 | 4 | 5 | 6 | 7 | 8
 
 const SEAT_OPTIONS: SeatCount[] = [2, 3, 4, 5, 6, 7, 8]
 const BASE_TICK_MS = 420
+/** Human matches: hold each finished opponent play so it can be read. */
+const OPPONENT_PLAY_MS = 3000
 /** Max background / sequential sims from lobby or debug rail (incl. Train Neural). */
 const MAX_QUEUE = 100_000
 
@@ -162,6 +164,22 @@ function learnLive(run: LiveRun, next: Game, actor: number) {
   run.recorder ??= new NnGameRecorder()
   run.recorder.observe(next, actor)
   if (next.over) run.recorder.finish(next)
+}
+
+/** One opponent action, including their own target choices. Stops when a human must answer. */
+function advanceFullPlay(run: LiveRun): LiveRun {
+  let current = run
+  for (let step = 0; step < 20; step += 1) {
+    const next = advanceTracked(current)
+    if (next.stuck || next.game === current.game) return next
+    current = next
+    const game = current.game
+    if (game.over || game.veil) return current
+    const pending = game.pending
+    if (!pending) return current
+    if (!(game.players[pending.actor]?.ai || game.autoAll)) return current
+  }
+  return current
 }
 
 function advanceTracked(run: LiveRun): LiveRun {
@@ -418,12 +436,15 @@ export default function App() {
     const pendingAi = !!game.pending && (!!game.players[game.pending.actor]?.ai || game.autoAll)
     const activeAi = !game.pending && (game.veil || !!game.players[game.active]?.ai)
     if (!pendingAi && !activeAi) return
+    // Between the AI's own plays, leave the last one on screen. Hotseat veil stays on the short tick.
+    const aiTurn = !!game.players[game.active]?.ai
+    const betweenPlays = !labSession && aiTurn && !game.pending && !stuck
     const timer = window.setTimeout(() => {
       setRuns((current) => {
         const run = current[0]
         if (!run) return current
         try {
-          const advanced = advanceTracked(run)
+          const advanced = !labSession && (aiTurn || pendingAi) ? advanceFullPlay(run) : advanceTracked(run)
           if (!labSession) saveLocalMatch(advanced.seed, advanced.game, getScoreRules())
           return [advanced]
         } catch (error) {
@@ -431,7 +452,7 @@ export default function App() {
           return [{ ...run, game: log(run.game, text), stuck: true, stall: run.stall + 1 }]
         }
       })
-    }, BASE_TICK_MS)
+    }, betweenPlays ? OPPONENT_PLAY_MS : BASE_TICK_MS)
     return () => window.clearTimeout(timer)
   }, [debug, game, stuck, labSession])
 

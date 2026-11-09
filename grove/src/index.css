@@ -1011,12 +1011,40 @@ button.debug-mode-cycle:hover {
 }
 .log-pager strong { flex: 1; text-align: center; }
 .log-line.log-turn { color: var(--gold); font-weight: 600; }
-.log-line.log-action { color: var(--cream); }
+.log-line.log-action,
+.log-line.log-instant {
+  color: var(--cream);
+  background: rgba(212, 175, 55, 0.14);
+  border-left: 3px solid var(--gold);
+  padding: 3px 8px;
+  border-radius: 6px;
+}
 .log-line.log-ability { color: #7ec8e3; }
-.log-line.log-instant { color: #e3b87e; }
+.log-line.log-instant { color: #f0d7a8; }
 .log-line.log-aura { color: #a8d08d; }
 .log-line.log-detail { color: var(--cream-dim); padding-left: 0.85rem; }
 .log-line strong { font-weight: 650; color: var(--cream); }
+.opp-feed {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+}
+.opp-feed p {
+  margin: 0;
+  padding: 6px 8px;
+  border-radius: 8px;
+  background: rgba(243, 236, 223, 0.06);
+  color: var(--cream-dim);
+  font-size: 0.88rem;
+  line-height: 1.35;
+}
+.opp-feed p.is-current {
+  color: var(--cream);
+  font-weight: 650;
+  background: rgba(212, 175, 55, 0.16);
+  border: 1px solid var(--gold);
+}
 
 .handbar {
   flex: 0 0 auto;
