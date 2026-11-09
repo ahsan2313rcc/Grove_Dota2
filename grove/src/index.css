@@ -1316,13 +1316,55 @@ button.debug-mode-cycle:hover {
   margin: 0 0 0 auto;
   box-shadow: -16px 0 36px rgba(0, 0, 0, 0.45);
 }
-.scrim.prompt-dock .prompt-copy h2 { font-size: 1.05rem; line-height: 1.25; }
-.prompt-rule {
-  margin: 0;
-  font-size: 0.8rem;
-  line-height: 1.35;
-  color: var(--cream-dim);
+.prompt-action { overflow: hidden; }
+.prompt-action-art,
+.prompt-mark {
+  float: left;
+  width: 48px;
+  height: 48px;
+  margin: 1px 10px 4px 0;
+  border-radius: 8px;
+  object-fit: cover;
 }
+.prompt-mark {
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--line);
+  background:
+    radial-gradient(circle at 30% 20%, rgba(224, 201, 138, 0.28), transparent 55%),
+    linear-gradient(145deg, #2a3a31, #1a1612);
+  color: var(--gold);
+  font-family: Fraunces, Georgia, serif;
+  font-size: 1.25rem;
+}
+.prompt-action-art.card-art.fallback { font-size: 1.25rem; }
+.prompt-action-text {
+  margin: 0;
+  font-size: 0.92rem;
+  line-height: 1.35;
+}
+.prompt-ask {
+  clear: both;
+  margin: 8px 0 0;
+  font-size: 1.05rem;
+  line-height: 1.25;
+}
+.choice-grid {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  column-gap: 12px;
+  row-gap: 2px;
+  flex: 1;
+  min-width: 0;
+  align-items: baseline;
+}
+.choice-grid strong { font-size: 0.86rem; }
+.choice-grid span {
+  font-size: 0.75rem;
+  color: var(--cream-dim);
+  overflow-wrap: anywhere;
+}
+.scrim.prompt-dock .choice.choice-team { align-items: stretch; }
 .scrim.prompt-dock .choices {
   flex-direction: column;
   flex-wrap: nowrap;
@@ -1927,6 +1969,7 @@ button.debug-mode-cycle:hover {
     border-radius: 12px;
   }
   .choice .card.compact { display: none; }
+  .scrim.prompt-dock .choice .card.compact { display: flex; }
   .choice-copy { flex: 1; min-width: 0; gap: 4px; }
   .choice > strong,
   .choice-copy > strong {

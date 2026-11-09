@@ -112,6 +112,10 @@ export interface Choice {
   label: string
   hint?: string
   defId?: string
+  /** Team letter label, e.g. "Team A". */
+  team?: string
+  /** Active scoring line for a team choice. */
+  bonus?: string
 }
 
 export interface CastResume {
@@ -338,6 +342,8 @@ export interface ResponseWindow {
   about: string
   seats: PlayerId[]
   index: number
+  /** Card that caused the action, when there is one. */
+  defId?: string
 }
 
 export interface DiscardDue {

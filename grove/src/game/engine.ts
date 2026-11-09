@@ -264,17 +264,17 @@ export function apply(state: Game, action: Action): Game {
   if (state.over && action.type !== 'ready') return state
   const base = action.type === 'choose' ? state : { ...state, destroyDepth: 0 }
   let reduced = reduce(base, action)
-  const about = responseAbout(state, action, reduced)
-  if (about) {
+  const noted = responseAbout(state, action, reduced)
+  if (noted) {
     const count = state.players.length
     const seats = Array.from({ length: count - 1 }, (_, step) => (state.active + step + 1) % count)
-    reduced = { ...reduced, respond: { about, seats, index: 0 } }
+    reduced = { ...reduced, respond: { about: noted.about, defId: noted.defId, seats, index: 0 } }
   }
   return settle(reduced)
 }
 
 /** Names the active player's main action when it changed the game, so opponents get a response window. */
-function responseAbout(before: Game, action: Action, after: Game): string | null {
+function responseAbout(before: Game, action: Action, after: Game): { about: string; defId?: string } | null {
   if (before.pending || before.veil || before.over || after.over || after.turn !== before.turn) return null
   const actor = before.active
   const was = before.players[actor]!
@@ -282,19 +282,19 @@ function responseAbout(before: Game, action: Action, after: Game): string | null
   const changed = was.actions !== now.actions || was.hand.length !== now.hand.length || before.deck.length !== after.deck.length
   if (!changed) return null
   const who = pname(before, actor)
-  if (action.type === 'draw') return `${who} draws`
-  if (action.type === 'combo') return `${who} places a terrain combo`
-  if (action.type === 'morph') return `${who} uses Morphling`
-  if (action.type === 'undying') return `${who} revives Undying`
+  if (action.type === 'draw') return { about: `${who} draws` }
+  if (action.type === 'combo') return { about: `${who} places a terrain combo` }
+  if (action.type === 'morph') return { about: `${who} uses Morphling` }
+  if (action.type === 'undying') return { about: `${who} revives Undying` }
   if (action.type === 'play') {
     const held = findHand(before, action.uid)
     if (held && held.player.id !== actor) return null
     const card = held?.card ?? before.grave[before.grave.length - 1]
-    if (card && isTrapHero(card.defId)) return `${who} sets a trap`
+    if (card && isTrapHero(card.defId)) return { about: `${who} sets a trap`, defId: card.defId }
     // Hero abilities already open an Instant window after targeting (Illusion has its
     // own pre-play counter). Skipping the second post-play response avoids a double ask.
     if (card && card.kind === 'hero' && firesAbility(card.defId)) return null
-    return `${who} plays ${card ? display(card.defId).name : 'a card'}`
+    return { about: `${who} plays ${card ? display(card.defId).name : 'a card'}`, defId: card?.defId }
   }
   return null
 }
@@ -344,7 +344,7 @@ function offerResponse(state: Game): Game {
     if (seat === state.active || state.passTurn?.includes(seat)) continue
     const cards = responseCards(state, seat)
     if (cards.length === 0) continue
-    return ask({ ...state, respond: { ...window, index: index + 1 } }, {
+    const asked = ask({ ...state, respond: { ...window, index: index + 1 } }, {
       actor: seat,
       prompt: `${window.about}. Instant now — pass this action, or pass the turn.`,
       mode: 'pick',
@@ -355,13 +355,22 @@ function offerResponse(state: Game): Game {
         { id: 'pass-turn', label: 'Pass this turn' },
         ...cards.map((card) => ({
           id: `instant:${card.uid}`,
-          label: `Interrupt · ${display(card.defId).name}`,
+          label: display(card.defId).name,
           defId: card.defId,
           hint: display(card.defId).text,
         })),
       ],
       resume: { kind: 'response' },
     })
+    if (!window.defId || !asked.pending) return asked
+    const info = display(window.defId)
+    return {
+      ...asked,
+      pending: {
+        ...asked.pending,
+        about: { defId: window.defId, name: info.name, spell: info.spell, text: info.text, kind: info.kind },
+      },
+    }
   }
   return { ...state, respond: null }
 }

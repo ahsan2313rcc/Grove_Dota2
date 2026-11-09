@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { isTrapHero } from '../game/flow.ts'
 import { promptCopy } from '../game/promptCopy.ts'
-import type { Pending } from '../game/types.ts'
+import type { Choice, Pending } from '../game/types.ts'
 import { CardArt } from './CardArt.tsx'
 import { CardFace } from './CardFace.tsx'
 
@@ -21,8 +21,14 @@ export function Prompt({
   const [bucket, setBucket] = useState<Record<string, string>>({})
   const grouped = pending.mode === 'split' || pending.mode === 'assign' || pending.mode === 'groups'
   const copy = promptCopy(pending)
-  const about =
-    pending.about && (!isTrapHero(pending.about.defId) || revealTraps) ? pending.about : null
+  const hiddenTrap = !!copy.artId && isTrapHero(copy.artId) && !revealTraps
+  const artId = hiddenTrap ? null : copy.artId
+  const mark = artId ? null : copy.mark ?? (hiddenTrap ? 'T' : null)
+  const count =
+    grouped ? 'Assign every card.'
+    : pending.max === 1 ? null
+    : pending.min === pending.max ? `Pick ${pending.min}.`
+    : `Pick ${pending.min}–${pending.max}.`
 
   function toggle(id: string) {
     if (pending.max === 1) {
@@ -42,38 +48,34 @@ export function Prompt({
   return (
     <div className="scrim prompt-dock">
       <section className="sheet" role="dialog" aria-labelledby="prompt-title">
-        <p className="eyebrow">{names[pending.actor]} · choose</p>
-        <div className={`prompt-head${about ? ' has-art' : ''}`}>
-          {about ? (
-            <div className="prompt-source" data-testid="prompt-about">
-              <CardArt defId={about.defId} size="icon" className="prompt-source-art" />
-            </div>
+        <div className="prompt-action">
+          {copy.action ? (
+            <>
+              {artId ? (
+                <CardArt defId={artId} size="icon" className="prompt-action-art" />
+              ) : mark ? (
+                <span className="prompt-mark" aria-hidden>{mark}</span>
+              ) : null}
+              <p className="prompt-action-text" data-testid="prompt-action">{copy.action}</p>
+            </>
           ) : null}
-          <div className="prompt-copy">
-            <h2 id="prompt-title" data-testid="prompt">{copy.title}</h2>
-            {copy.rule ? <p className="prompt-rule" data-testid="prompt-rule">{copy.rule}</p> : null}
-            {copy.count ? <p className="quiet">{copy.count}</p> : null}
-          </div>
+          <h2 id="prompt-title" className="prompt-ask" data-testid="prompt">{copy.ask}</h2>
+          {count ? <p className="quiet">{count}</p> : null}
         </div>
         <div className="choices">
           {pending.choices.map((choice) => {
             const on = picked.includes(choice.id)
-            const face = choice.defId ? <CardFace defId={choice.defId} compact /> : null
             if (!grouped && pending.max === 1) {
               return (
-                <button key={choice.id} type="button" className={`choice${on ? ' on' : ''}`} onClick={() => toggle(choice.id)}>
-                  {face}
-                  <strong>{choice.label}</strong>
-                  {choice.hint && choice.hint !== copy.rule ? <small>{choice.hint}</small> : null}
+                <button key={choice.id} type="button" className={`choice${choice.team ? ' choice-team' : ''}${on ? ' on' : ''}`} onClick={() => toggle(choice.id)}>
+                  <ChoiceBody choice={choice} />
                 </button>
               )
             }
             return (
-              <div key={choice.id} className={`choice${on ? ' on' : ''}`}>
-                {face}
+              <div key={choice.id} className={`choice${choice.team ? ' choice-team' : ''}${on ? ' on' : ''}`}>
+                <ChoiceBody choice={choice} />
                 <div className="choice-copy">
-                  <strong>{choice.label}</strong>
-                  {choice.hint && choice.hint !== copy.rule ? <small>{choice.hint}</small> : null}
                   {grouped ? (
                     <div className="segment">
                       {segments(pending.mode, names).map((segment) => (
@@ -109,6 +111,28 @@ export function Prompt({
         )}
       </section>
     </div>
+  )
+}
+
+function ChoiceBody({ choice }: { choice: Choice }) {
+  if (choice.team) {
+    return (
+      <span className="choice-grid">
+        <strong>{choice.label}</strong>
+        <span>{choice.hint}</span>
+        <strong>{choice.team}</strong>
+        <span>{choice.bonus || 'No bonus'}</span>
+      </span>
+    )
+  }
+  return (
+    <>
+      {choice.defId ? <CardFace defId={choice.defId} compact /> : null}
+      <span className="choice-copy">
+        <strong>{choice.label}</strong>
+        {choice.hint ? <small>{choice.hint}</small> : null}
+      </span>
+    </>
   )
 }
 

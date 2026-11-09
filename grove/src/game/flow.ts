@@ -865,17 +865,13 @@ export function teamChoices(
       if (!canTargetTeam(state, actor, team, player.id, source)) continue
       const scored = scoreTeam(state, team)
       const letter = String.fromCharCode(65 + (player.teams.indexOf(team) % 26))
-      const roster = team.heroes
-        .slice(0, 3)
-        .map((hero) => display(hero.defId).name)
-        .join(', ')
-      const more = team.heroes.length > 3 ? ` +${team.heroes.length - 3}` : ''
+      const roster = team.heroes.map((hero) => display(hero.defId).name).join(', ')
       choices.push({
         id: `team:${team.id}`,
-        label: `${pname(state, player.id)}'s Team ${letter}`,
-        hint: [roster ? `${roster}${more}` : 'empty', scored.why, String(scored.points)]
-          .filter(Boolean)
-          .join(' · '),
+        label: pname(state, player.id),
+        hint: roster || 'No heroes',
+        team: `Team ${letter}`,
+        bonus: scored.why,
         defId: team.heroes[0]?.defId,
       })
     }

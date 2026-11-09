@@ -2,23 +2,42 @@ import { describe, expect, it } from 'vitest'
 import { promptCopy } from './promptCopy.ts'
 
 describe('prompt copy', () => {
-  it('strips the ability text out of the title and keeps it as the rule', () => {
-    const text = 'Destroy target enemy hero.'
+  it('splits a draw response into the action and the ask', () => {
     const copy = promptCopy({
-      prompt: `Radiant's Laguna Blade is about to fire. Target: Lion. ${text} Interrupt, or pass.`,
-      mode: 'pick',
-      min: 1,
-      max: 1,
-      about: { defId: 'lina', name: 'Lina', spell: 'Laguna Blade', text },
+      prompt: 'Balanced draws. Instant now — pass this action, or pass the turn.',
+      choices: [{ id: 'pass', label: 'Pass' }],
+      resume: { kind: 'response' },
     })
-    expect(copy.title).not.toContain(text)
-    expect(copy.title).toMatch(/Laguna Blade/)
-    expect(copy.rule).toBe(text)
-    expect(copy.count).toBeNull()
+    expect(copy.action).toBe('Balanced draws.')
+    expect(copy.ask).toBe('Choose an instant or pass.')
+    expect(copy.artId).toBeNull()
+    expect(copy.mark).toBe('B')
   })
 
-  it('asks for a range only when more than one card is required', () => {
-    const copy = promptCopy({ prompt: 'Discard down to 7.', mode: 'pick', min: 2, max: 4 })
-    expect(copy.count).toBe('Pick 2–4.')
+  it('puts the ability text in the action and the target ask underneath', () => {
+    const copy = promptCopy({
+      prompt: 'Whirling Death: Choose an enemy team.',
+      choices: [{ id: 'team:a', label: 'Foe', team: 'Team A', bonus: 'STR x3' }],
+      about: {
+        defId: 'timbersaw',
+        name: 'Timbersaw',
+        spell: 'Whirling Death',
+        text: 'Destroy all STR heroes in target enemy team.',
+      },
+      resume: { kind: 'cast', actor: 0, sourceUid: 'h', defId: 'timbersaw', picked: [] },
+    })
+    expect(copy.action).toBe('Whirling Death: Destroy all STR heroes in target enemy team.')
+    expect(copy.ask).toBe('Choose an enemy team.')
+    expect(copy.artId).toBe('timbersaw')
+  })
+
+  it('keeps a plain discard as the ask when there is no separate action', () => {
+    const copy = promptCopy({
+      prompt: 'Discard down to 7.',
+      choices: [],
+      resume: { kind: 'limit', player: 0, then: 'end' },
+    })
+    expect(copy.action).toBeNull()
+    expect(copy.ask).toBe('Discard down to 7.')
   })
 })
