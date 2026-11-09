@@ -892,6 +892,19 @@ function countShapes(game: Game, id: PlayerId): { core: number; mix: number } {
   return { core, mix }
 }
 
+function teamStatuses(team: Game['players'][number]['teams'][number]): string[] {
+  const labels: string[] = []
+  if (team.trap) labels.push('Trap')
+  if (team.noEnter) labels.push('Sealed')
+  if (team.noLeave) labels.push('No leave')
+  if (team.glyph) labels.push('Glyph')
+  if (team.gaze) labels.push('Gaze')
+  if (team.mine) labels.push('Mine')
+  if (team.blade) labels.push('Blade')
+  if (team.guard) labels.push('Refraction')
+  return labels
+}
+
 function teamLetter(index: number): string {
   if (index < 26) return String.fromCharCode(65 + index)
   return String(index + 1)
@@ -969,7 +982,12 @@ function Lane({
                 }}
               >
                 <header>
-                  <span className="team-letter">{letter}</span>
+                  <span className="team-letter-row">
+                    <span className="team-letter">{letter}</span>
+                    {teamStatuses(team).map((label) => (
+                      <em key={label} className="team-status">{label}</em>
+                    ))}
+                  </span>
                   <strong className="team-points">{scored.points}</strong>
                   <span className="team-why">{scored.why}</span>
                 </header>
@@ -982,7 +1000,7 @@ function Lane({
                       className={hotHeroes?.has(hero.uid) ? 'is-target' : undefined}
                       attrs={shownAttrs(game, hero)}
                       range={shownRange(hero)}
-                      marks={heroMarks(hero, team)}
+                      marks={heroMarks(hero)}
                       onClick={() => {
                         if (hotHeroes?.has(hero.uid) && onPickHero) {
                           onPickHero(hero.uid)
@@ -997,7 +1015,6 @@ function Lane({
                       <CardFace
                         defId={team.trap.defId}
                         peek
-                        marks={['Trap']}
                         onClick={() => onInspect({ kind: 'card', defId: team.trap!.defId })}
                         testId="trap-face"
                       />
@@ -1006,14 +1023,6 @@ function Lane({
                     )
                   ) : null}
                 </div>
-                <footer>
-                  {team.glyph ? <em>Glyph</em> : null}
-                  {team.gaze ? <em>Gaze</em> : null}
-                  {team.noEnter ? <em>Sealed</em> : null}
-                  {team.mine ? <em>Mine</em> : null}
-                  {team.trap ? <em>Trap</em> : null}
-                  {team.heroes.length === 0 && !team.trap ? <em>Empty</em> : null}
-                </footer>
               </article>
             )
           })}
@@ -1144,7 +1153,7 @@ function Detail({
             </button>
           </p>
         ) : null}
-        {heroMarks(loc.hero, loc.team).length > 0 ? <p className="quiet">{heroMarks(loc.hero, loc.team).join(' · ')}</p> : null}
+        {heroMarks(loc.hero).length > 0 ? <p className="quiet">{heroMarks(loc.hero).join(' · ')}</p> : null}
         {canAct && morph ? <button type="button" onClick={() => onMorph(loc.hero.uid)}>{morph.label}</button> : null}
       </div>
     )

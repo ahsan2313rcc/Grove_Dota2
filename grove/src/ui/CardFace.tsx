@@ -39,9 +39,7 @@ export function CardFace({
 }) {
   if (faceDown) {
     const body = peek ? (
-      <span className="peek-body">
-        <span className="card-name">Trap</span>
-      </span>
+      <span className="peek-body" />
     ) : (
       <>
         <span className="back-ring" />

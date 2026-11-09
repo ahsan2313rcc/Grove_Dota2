@@ -1,7 +1,7 @@
 import { display } from '../game/catalog.ts'
 import { allLocs, attrsOf, graveLocked, instantsLocked, itemsLocked, rangeOf } from '../game/flow.ts'
 import { getScoreRules } from '../game/scoring.ts'
-import type { Attr, BoardHero, CardInst, Game, PlayerId, Range, Team } from '../game/types.ts'
+import type { Attr, BoardHero, CardInst, Game, PlayerId, Range } from '../game/types.ts'
 
 export function opponentOf(game: Game, id: PlayerId): PlayerId {
   const next = (id + 1) % game.players.length
@@ -20,7 +20,7 @@ export function isCombo(cards: CardInst[]): boolean {
   return kinds.size === 3
 }
 
-export function heroMarks(hero: BoardHero, team: Team): string[] {
+export function heroMarks(hero: BoardHero): string[] {
   const marks: string[] = []
   if (hero.defId === 'meepo') marks.push('+1 / terrain type')
   if (hero.token) marks.push('Neutral')
@@ -37,13 +37,6 @@ export function heroMarks(hero: BoardHero, team: Team): string[] {
     const held = display(hero.held.card.defId).name
     marks.push(hero.held.mode === 'morph' ? `Holds ${held}` : `Static ${held}`)
   }
-  if (team.glyph) marks.push('Glyph')
-  if (team.guard) marks.push('Refraction')
-  if (team.trap) marks.push('Trapped')
-  if (team.gaze) marks.push('Gaze')
-  if (team.noEnter) marks.push('No entry')
-  if (team.noLeave) marks.push('No leaving')
-  if (team.mine) marks.push('Mine')
   return marks
 }
 

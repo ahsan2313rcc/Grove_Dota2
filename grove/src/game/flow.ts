@@ -308,8 +308,7 @@ export function scoreTeam(
   brew?: Record<string, Attr>
 } {
   if (team.trap) {
-    const scored = scoreBodies(team.heroes.map((hero) => bodyFor(hero, [])), rules)
-    return { ...scored, why: `Trapped · ${scored.why}` }
+    return scoreBodies(team.heroes.map((hero) => bodyFor(hero, [])), rules)
   }
   const flex = team.heroes.filter((hero) => isBrewFlex(state, hero))
   if (flex.length === 0) {

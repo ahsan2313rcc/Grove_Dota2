@@ -734,13 +734,26 @@ button.debug-mode-cycle:hover {
   align-items: baseline;
 }
 .team footer, .combo-chip { display: flex; gap: 4px 6px; align-items: baseline; flex-wrap: wrap; }
-.team-letter {
+.team-letter-row {
   grid-column: 1;
   grid-row: 1;
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+  flex-wrap: wrap;
+}
+.team-letter {
   color: var(--gold);
   font-family: Fraunces, Georgia, serif;
   font-size: 1.15rem;
   line-height: 1;
+}
+.team-status {
+  font-style: normal;
+  color: var(--gold);
+  font-size: 0.72rem;
+  letter-spacing: 0.02em;
 }
 .team-points {
   grid-column: 2;
