@@ -1010,17 +1010,13 @@ function Lane({
                       }}
                     />
                   ))}
-                  {team.trap ? (
-                    revealTraps ? (
-                      <CardFace
-                        defId={team.trap.defId}
-                        peek
-                        onClick={() => onInspect({ kind: 'card', defId: team.trap!.defId })}
-                        testId="trap-face"
-                      />
-                    ) : (
-                      <CardFace defId={team.trap.defId} faceDown peek testId="trap-back" />
-                    )
+                  {team.trap && revealTraps ? (
+                    <CardFace
+                      defId={team.trap.defId}
+                      peek
+                      onClick={() => onInspect({ kind: 'card', defId: team.trap!.defId })}
+                      testId="trap-face"
+                    />
                   ) : null}
                 </div>
               </article>
