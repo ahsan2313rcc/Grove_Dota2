@@ -813,6 +813,7 @@ export function Table({
             <CardFace
               key={card.uid}
               defId={card.defId}
+              layout="hand"
               selected={
                 liveCombo.includes(card.uid)
                 || placing === card.uid
@@ -827,6 +828,7 @@ export function Table({
             <CardFace
               key={`clinkz-${card.uid}`}
               defId={card.defId}
+              layout="hand"
               selected={focus?.kind === 'card' && focus.defId === card.defId}
               onClick={() => {
                 setFocus({ kind: 'card', defId: card.defId })
@@ -1492,6 +1494,7 @@ function HandSheet({
               <CardFace
                 key={card.uid}
                 defId={card.defId}
+                layout="hand"
                 onClick={() => onCard(card)}
               />
             ))}

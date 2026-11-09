@@ -1012,13 +1012,68 @@ button.debug-mode-cycle:hover {
 .hand-label { justify-content: space-between; color: var(--cream-dim); font-size: 0.82rem; padding: 0 4px; }
 .hand-label .over-limit { color: #f0c2b4; font-weight: 600; }
 .handbar .hand-row { gap: 8px; scroll-snap-type: x mandatory; padding-bottom: 2px; }
-.handbar .card {
-  width: 108px;
-  min-height: 148px;
+.card.in-hand {
+  width: 200px;
+  min-height: 0;
+  padding: 8px 8px 10px;
+}
+.card.in-hand .card-art-frame {
+  height: 52px;
+  margin: -8px -8px 2px;
+}
+.card.in-hand .card-kicker { padding-right: 52px; font-size: 0.62rem; }
+.card.in-hand .card-name { font-size: 0.98rem; }
+.card.in-hand.has-art:not(.compact):not(.peek) .card-text {
+  -webkit-line-clamp: 6;
+  font-size: 0.8rem;
+  line-height: 1.28;
+}
+.card.in-hand.hand-hero {
+  width: 292px;
+  min-height: 124px;
+  display: grid;
+  grid-template-columns: 76px minmax(0, 1fr);
+  align-items: stretch;
+  gap: 8px;
   padding: 8px;
 }
-.handbar .card.has-art {
-  min-height: 156px;
+.card.in-hand.hand-hero .card-art-frame {
+  height: auto;
+  min-height: 108px;
+  margin: 0;
+  border-radius: 8px;
+  align-self: stretch;
+}
+.hand-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+.hand-title {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 6px;
+}
+.card.in-hand.hand-hero .card-name {
+  font-size: 0.98rem;
+  line-height: 1.1;
+}
+.hand-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+.card.in-hand.hand-hero .card-spell {
+  font-size: 0.74rem;
+  font-weight: 650;
+  line-height: 1.2;
+}
+.card.in-hand.hand-hero.has-art:not(.compact):not(.peek) .card-text {
+  -webkit-line-clamp: 7;
 }
 
 .card {
@@ -1915,12 +1970,14 @@ button.debug-mode-cycle:hover {
     background: rgba(8, 16, 13, 0.45);
     padding: 6px 2px 2px;
   }
-  .handbar .card {
-    width: 92px;
-    min-height: 128px;
-    padding: 6px;
+  .card.in-hand {
+    width: 176px;
+    padding: 6px 6px 8px;
   }
-  .handbar .card.has-art { min-height: 134px; }
+  .card.in-hand.hand-hero {
+    width: min(340px, 88vw);
+    grid-template-columns: 64px minmax(0, 1fr);
+  }
   .lobby { grid-template-columns: 1fr; align-items: start; }
   .team { min-width: 168px; width: 188px; max-width: none; }
   .detail { max-height: none; }
