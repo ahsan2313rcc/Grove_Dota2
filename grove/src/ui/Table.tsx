@@ -215,13 +215,6 @@ export function Table({
     document.querySelector('.lane.mine')?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
   }, [scrollViewer, statsOnly])
 
-  // Bring the acting seat into view when the turn changes, so an opponent's play is on screen.
-  const activeSeat = game?.active
-  useEffect(() => {
-    if (activeSeat == null || statsOnly || debug) return
-    document.querySelector('.lane.active')?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
-  }, [activeSeat, statsOnly, debug])
-
   useEffect(() => {
     if (reactSeat === null || !game) return
     const humans = game.players.filter((player) => !player.ai).map((player) => player.id)
@@ -536,7 +529,6 @@ export function Table({
           {lines.map((line) => <li key={line}>{line}</li>)}
         </ul>
       ) : null}
-      {!debug ? <PlayTape log={game.log} names={names} /> : null}
       {stuck ? <p className="banner warn">The Grove paused. End its turn if it cannot move.</p> : null}
 
       <div className="stage">
@@ -1332,35 +1324,6 @@ function PileButton({
       <strong>{count}</strong>
     </button>
   )
-}
-
-function PlayTape({ log, names }: { log: string[]; names: string[] }) {
-  const chunks = turnChunks(condenseLog(log))
-  const shown = chunks.slice(-2)
-  const lines = shown.flatMap((chunk, chunkIndex) => {
-    const body = chunkIndex === shown.length - 1 ? chunk.lines : chunk.lines.slice(-5)
-    return chunk.title ? [chunk.title, ...body] : body
-  })
-  if (lines.length === 0) return null
-  return (
-    <ol className="play-tape" data-testid="play-tape" aria-label="Recent plays">
-      {lines.map((line, index) => (
-        <li key={`${index}-${line}`} className={index === lines.length - 1 ? 'now' : /'s turn\./.test(line) ? 'turn' : undefined}>
-          {emphasize(line, names)}
-        </li>
-      ))}
-    </ol>
-  )
-}
-
-function turnChunks(lines: string[]): { title: string; lines: string[] }[] {
-  const chunks: { title: string; lines: string[] }[] = []
-  for (const line of lines) {
-    if (/'s turn\./.test(line)) chunks.push({ title: line, lines: [] })
-    else if (chunks.length === 0) chunks.push({ title: '', lines: [line] })
-    else chunks[chunks.length - 1]!.lines.push(line)
-  }
-  return chunks
 }
 
 function LogSheet({ log, names, onClose }: { log: string[]; names: string[]; onClose: () => void }) {
