@@ -34,7 +34,7 @@ export function CardFace({
   className?: string
   onClick?: () => void
   testId?: string
-  /** Wider hand strip: heroes put the ability beside a small portrait. */
+  /** Hand strip: same card, with the ability text given more of the face. */
   layout?: 'default' | 'hand'
 }) {
   if (faceDown) {
@@ -61,7 +61,6 @@ export function CardFace({
   const shownAttrs = attrs ?? (info.attr ? [info.attr] : [])
   const shownRange = range === undefined ? info.range : range
   const timing = info.timing
-  const handHero = layout === 'hand' && info.kind === 'hero'
   const kindLabel =
     info.kind === 'hero'
       ? 'Hero'
@@ -76,9 +75,9 @@ export function CardFace({
               : info.kind === 'ancient'
                 ? 'Ancient'
                 : 'Tower'
-  const className = `card has-art${layout === 'hand' ? ' in-hand' : ''}${handHero ? ' hand-hero' : ''}${selected ? ' selected' : ''}${compact ? ' compact' : ''}${peek ? ' peek' : ''}${extraClass ? ` ${extraClass}` : ''}`
+  const className = `card has-art${layout === 'hand' ? ' in-hand' : ''}${selected ? ' selected' : ''}${compact ? ' compact' : ''}${peek ? ' peek' : ''}${extraClass ? ` ${extraClass}` : ''}`
   const timingBadge = timing ? (
-    <span className={`type-pill timing-${timing}${handHero ? ' inline' : ''}`} title={TIMING_BADGE[timing]}>
+    <span className={`type-pill timing-${timing}`} title={TIMING_BADGE[timing]}>
       {TIMING_BADGE[timing]}
     </span>
   ) : null
@@ -99,29 +98,6 @@ export function CardFace({
         <span className="card-name">{info.name}</span>
       </span>
       {timing === 'aura' ? timingBadge : null}
-    </>
-  ) : handHero ? (
-    <>
-      <div className="card-art-frame">
-        <CardArt defId={defId} size="portrait" />
-        <span className="card-art-fade" />
-      </div>
-      <span className="hand-copy">
-        <span className="hand-title">
-          <span className="card-name">{info.name}</span>
-          {timingBadge}
-        </span>
-        <span className="hand-meta">
-          {shownAttrs.map((attr) => (
-            <span key={attr} className={`pill attr-${attr}`}>
-              {attr}
-            </span>
-          ))}
-          {shownRange ? <span className="pill range">{shownRange}</span> : null}
-          {info.spell ? <span className="card-spell">{info.spell}</span> : null}
-        </span>
-        <span className="card-text">{info.text}</span>
-      </span>
     </>
   ) : (
     <>
