@@ -1903,7 +1903,7 @@ function moveOnto(
   ) {
     return enqueue(state, uid, 'Rupture', false, true, state.rupture.caster)
   }
-  if (loc.hero.rupture && !loc.hero.bkb && thief === null) {
+  if (loc.hero.rupture && !loc.hero.bkb && loc.hero.enrage !== state.turn && thief === null) {
     return enqueue(state, uid, 'Rupture', false, true, null)
   }
   if (!creating) {
@@ -2649,6 +2649,7 @@ function hook(state: Game, resume: CastResume): Game {
     ward: null,
     hidden: null,
     bkb: null,
+    enrage: null,
     tether: null,
     muted: null,
     dawn: null,

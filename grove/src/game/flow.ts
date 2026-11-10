@@ -211,8 +211,8 @@ export function teamSize(team: Team): number {
 
 export function attrsOf(state: Game, hero: BoardHero): Attr[] {
   const loc = findHero(state, hero.uid)
-  if (!hero.bkb && loc?.team.gaze) return []
-  if (!hero.bkb && elderOrder(state, hero.controller)) return []
+  if (!hero.bkb && hero.enrage !== state.turn && loc?.team.gaze) return []
+  if (!hero.bkb && hero.enrage !== state.turn && elderOrder(state, hero.controller)) return []
   if (hero.attrMode === 'none') return []
   if (hero.attrMode === 'set') return hero.attrSet
   if (hero.defId === 'brewmaster' || hero.defId === ANCIENT_ID) return [brewAttr(state, hero)]
@@ -455,6 +455,7 @@ export function makeHero(card: CardInst, owner: PlayerId, controller: PlayerId, 
     ward: null,
     hidden: null,
     bkb: null,
+    enrage: null,
     tether: null,
     muted: null,
     dawn: null,
@@ -475,7 +476,7 @@ export function canTargetHero(state: Game, actor: PlayerId, hero: BoardHero, sou
   const loc = findHero(state, hero.uid)
   if (!loc) return false
   if (wardBlocks(hero, loc.team, source)) return false
-  if (hero.bkb && hero.controller !== actor) return false
+  if ((hero.bkb || hero.enrage === state.turn) && hero.controller !== actor) return false
   if (hero.controller === actor) return true
   if (hero.hidden) return false
   // Stone Golem: immune to ability effects while it remains.
@@ -514,13 +515,13 @@ export function canTargetHero(state: Game, actor: PlayerId, hero: BoardHero, sou
  * "Immune to all effects" (Black King Bar / Glyph team, Wheel of Wonder, Shield Rune,
  * Guardian Angel): no opponent effect can destroy, exile, bounce, tuck, move, steal or silence it.
  * `by === null` is an unowned effect and is blocked too; the controller's own effects still work.
- * Enrage only stops destruction (the ward flag), not exile or bounce.
+ * Enrage is the same immunity, but only until the current turn ends.
  */
 export function immuneFrom(state: Game, uid: string, by: PlayerId | null): boolean {
   const loc = findHero(state, uid)
   if (!loc) return false
   if (by !== null && by === loc.hero.controller) return false
-  if (loc.hero.bkb || loc.player.bkb || loc.hero.shield || loc.team.glyph) return true
+  if (loc.hero.bkb || loc.hero.enrage === state.turn || loc.player.bkb || loc.hero.shield || loc.team.glyph) return true
   if (loc.hero.defId === 'stone_golem' && !aurasSuppressed(state, loc.hero.controller)) return true
   return (
     loc.team.heroes.some((mate) => mate.defId === 'omniknight' && mate.controller === loc.hero.controller) &&
@@ -1536,7 +1537,7 @@ function expireBoards(state: Game): Game {
       mailTurn: null,
       teams: player.teams.map((team) => ({
         ...team,
-        heroes: team.heroes.map((hero) => ({ ...hero, dawn: null, tether: null })),
+        heroes: team.heroes.map((hero) => ({ ...hero, dawn: null, tether: null, enrage: null })),
       })),
     })),
   }

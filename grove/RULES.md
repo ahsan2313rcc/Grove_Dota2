@@ -197,7 +197,7 @@ Combos remain as scored terrain piles; some effects destroy/protect them (Hoodwi
 
 - Remove from hand → resolve effect (`cast` with item/reward defId).
 - Items → grave after use (typical). Rewards often exile.
-- **Ursa:** Whenever you play an item, Ursa cannot be destroyed this turn (destroy-ward until your next turn). Exile and bounce still work. Suppressed while an enemy Viper is in play.
+- **Ursa:** Whenever you play an item, Ursa is immune to all effects until that turn ends. It does not last into the next turn. Suppressed while an enemy Viper is in play.
 
 ---
 
@@ -266,7 +266,7 @@ Order of protection (unless `force`, or Troll Warlord “your destroys cannot be
 
 ### 8.0 Immunity
 
-"Immune to all effects" (Black King Bar and Glyph on a team, Ringmaster's Wheel of Wonder, Shield Rune, Omniknight's Guardian Angel) blocks every opponent effect on that hero: destroy (even forced), exile, bounce, tuck into the deck, move, steal, Dark Seer's Vacuum, and Global Silence / Shiva's Guard / Orchid on its own ability. The controller's own effects still work on it. Ursa's Enrage is destroy-ward only, not this immunity.
+"Immune to all effects" (Black King Bar and Glyph on a team, Ursa's Enrage, Ringmaster's Wheel of Wonder, Shield Rune, Omniknight's Guardian Angel) blocks every opponent effect on that hero: destroy (even forced), exile, bounce, tuck into the deck, move, steal, Dark Seer's Vacuum, and Global Silence / Shiva's Guard / Orchid on its own ability. The controller's own effects still work on it. Enrage ends when the turn ends. Black King Bar and the other stamps last until that caster's next turn.
 
 ### 8.2 Bounce / return to hand
 

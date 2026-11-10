@@ -984,7 +984,6 @@ function playToken(state: Game, actor: PlayerId, card: CardInst, team: string): 
 
 function playItem(state: Game, actor: PlayerId, card: CardInst, fromGrave = false): Game {
   let next = removeHand(state, actor, card.uid)
-  const stamp = { caster: actor, fromTurn: next.turn }
   if (!aurasSuppressedSafe(next, actor)) {
     next = allLocs(next).reduce((current, loc) => {
       if (loc.hero.defId !== 'ursa' || loc.hero.controller !== actor) return current
@@ -995,7 +994,7 @@ function playItem(state: Game, actor: PlayerId, card: CardInst, fromGrave = fals
           teams: player.teams.map((team) => ({
             ...team,
             heroes: team.heroes.map((hero) =>
-              hero.uid === loc.hero.uid ? { ...hero, ward: stamp } : hero,
+              hero.uid === loc.hero.uid ? { ...hero, enrage: next.turn } : hero,
             ),
           })),
         })) as Game['players'],

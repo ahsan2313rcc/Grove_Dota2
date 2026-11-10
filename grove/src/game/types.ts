@@ -36,6 +36,8 @@ export interface BoardHero {
   ward: Timed | null
   hidden: Timed | null
   bkb: Timed | null
+  /** Ursa Enrage: immune to all effects during this game turn. Cleared when the turn ends. */
+  enrage: number | null
   /** Io Tether: cannot be destroyed during this game turn. */
   tether: number | null
   /** Orchid interrupt: this hero's ability is nullified until the caster's next turn. */

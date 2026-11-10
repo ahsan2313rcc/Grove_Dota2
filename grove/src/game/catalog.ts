@@ -245,7 +245,7 @@ export const HEROES: HeroDef[] = [
   ),
   hero('terrorblade', 'Terrorblade', 'AGI', 'Melee', 'Sunder', 'Swap control of target team you control with a team an opponent controls.', 'cast'),
   hero('troll_warlord', 'Troll Warlord', 'AGI', 'Ranged', 'Battle Trance', 'Opponents cannot play instant cards during your turn.', 'aura'),
-  hero('ursa', 'Ursa', 'AGI', 'Melee', 'Enrage', 'Whenever you play an item card, Ursa cannot be destroyed this turn.', 'aura'),
+  hero('ursa', 'Ursa', 'AGI', 'Melee', 'Enrage', 'Whenever you play an item card, Ursa is immune to all effects until the end of this turn.', 'aura'),
   hero(
     'vengeful_spirit',
     'Vengeful Spirit',

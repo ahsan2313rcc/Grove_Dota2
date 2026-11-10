@@ -29,6 +29,7 @@ export function heroMarks(hero: BoardHero): string[] {
   if (hero.ward) marks.push('Cannot be destroyed')
   if (hero.hidden) marks.push('Hidden')
   if (hero.bkb) marks.push('Black King Bar')
+  if (hero.enrage !== null) marks.push('Immune')
   if (hero.tether !== null) marks.push('Tether')
   if (hero.muted) marks.push('Orchid')
   if (hero.rupture) marks.push('Rupture')
