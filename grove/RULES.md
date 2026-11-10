@@ -197,7 +197,7 @@ Combos remain as scored terrain piles; some effects destroy/protect them (Hoodwi
 
 - Remove from hand → resolve effect (`cast` with item/reward defId).
 - Items → grave after use (typical). Rewards often exile.
-- **Ursa:** When you play an item, your Ursas get destroy-ward until your next turn.
+- **Ursa:** Whenever you play an item, Ursa cannot be destroyed this turn (destroy-ward until your next turn). Exile and bounce still work. Suppressed while an enemy Viper is in play.
 
 ---
 
@@ -243,7 +243,7 @@ Timed flags store `{ caster, fromTurn }`. They clear at the **start** of that ca
 
 ## 8. Destroy, bounce, exile, discard
 
-Discards are chosen by the discarding player unless the card says "at random" (Chaos Knight). Owed discards (Meat Hook, Ravage, Mystic Flare, Retaliate) resolve right after the effect; with that many cards or fewer, the whole hand goes.
+Discards are chosen by the discarding player unless the card says "at random". Owed discards (Meat Hook, Ravage, Mystic Flare, Retaliate, Chaos Bolt) resolve right after the effect; with that many cards or fewer, the whole hand goes. Chaos Knight discards half of each hand, rounded down, counted after Chaos Knight has left the hand.
 
 ### 8.1 Destroy stack
 
@@ -266,7 +266,7 @@ Order of protection (unless `force`, or Troll Warlord “your destroys cannot be
 
 ### 8.0 Immunity
 
-"Immune to all effects" (Black King Bar and Glyph on a team, Ursa's Enrage, Ringmaster's Wheel of Wonder, Shield Rune, Omniknight's Guardian Angel) blocks every opponent effect on that hero: destroy (even forced), exile, bounce, tuck into the deck, move, steal, Dark Seer's Vacuum, and Global Silence / Shiva's Guard / Orchid on its own ability. The controller's own effects still work on it.
+"Immune to all effects" (Black King Bar and Glyph on a team, Ringmaster's Wheel of Wonder, Shield Rune, Omniknight's Guardian Angel) blocks every opponent effect on that hero: destroy (even forced), exile, bounce, tuck into the deck, move, steal, Dark Seer's Vacuum, and Global Silence / Shiva's Guard / Orchid on its own ability. The controller's own effects still work on it. Ursa's Enrage is destroy-ward only, not this immunity.
 
 ### 8.2 Bounce / return to hand
 
@@ -283,7 +283,7 @@ Also: Illusion, Tidehunter Ravage, Oracle False Promise path, Juxtapose, Dawn, e
 | Exile | Anywhere → exile (out of game) |
 | Bounce | Board → owner hand |
 
-**Ancient Apparition:** Enemy heroes that would enter the grave are exiled instead.
+**Ancient Apparition:** Whenever an enemy hero is destroyed, it is exiled instead. Discards, items, and that player's own heroes still go to the grave. Razor's Static Link holds an enemy hero off the board until Razor leaves, then reseats that hero; Razor also gains +1 action.
 
 **Muerta:** Enemies cannot take cards from the grave.
 

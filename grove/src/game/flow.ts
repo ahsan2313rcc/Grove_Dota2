@@ -511,9 +511,10 @@ export function canTargetHero(state: Game, actor: PlayerId, hero: BoardHero, sou
 }
 
 /**
- * "Immune to all effects" (Black King Bar / Glyph team, Enrage, Wheel of Wonder, Shield Rune,
+ * "Immune to all effects" (Black King Bar / Glyph team, Wheel of Wonder, Shield Rune,
  * Guardian Angel): no opponent effect can destroy, exile, bounce, tuck, move, steal or silence it.
  * `by === null` is an unowned effect and is blocked too; the controller's own effects still work.
+ * Enrage only stops destruction (the ward flag), not exile or bounce.
  */
 export function immuneFrom(state: Game, uid: string, by: PlayerId | null): boolean {
   const loc = findHero(state, uid)
@@ -635,12 +636,6 @@ function iceBlast(state: Game, controller: PlayerId): boolean {
   )
 }
 
-function iceBlastAny(state: Game): boolean {
-  return allLocs(state).some(
-    (loc) => loc.hero.defId === 'ancient_apparition' && !aurasSuppressed(state, loc.hero.controller),
-  )
-}
-
 export function toExile(state: Game, card: CardInst, note: string | null = `${display(card.defId).name} is exiled.`): Game {
   if ((card.defId === ANCIENT_ID || card.kind === 'ancient') && !state.ancient) {
     return revealAncient(state, 'exile', null, card)
@@ -655,12 +650,8 @@ export function toGrave(state: Game, card: CardInst, origin: GraveMark['origin']
     return revealAncient(state, 'grave', null, card)
   }
   if (card.kind === 'rune' || card.kind === 'neutral' || card.kind === 'tower') return toExile(state, card)
-  const owner = origin.type === 'board' ? origin.hero.controller : origin.type === 'hand' ? origin.player : null
-  // Ancient Apparition: cards that would enter the grave are exiled instead.
-  if (owner !== null && iceBlast(state, owner)) {
-    return toExile(state, card)
-  }
-  if (owner === null && iceBlastAny(state)) {
+  // Ancient Apparition: a destroyed enemy hero is exiled instead of entering the grave.
+  if (origin.type === 'board' && iceBlast(state, origin.hero.controller)) {
     return toExile(state, card)
   }
   let next: Game = {

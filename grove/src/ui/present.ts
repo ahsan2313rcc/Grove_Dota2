@@ -26,7 +26,7 @@ export function heroMarks(hero: BoardHero): string[] {
   if (hero.token) marks.push('Neutral')
   if (hero.roshan) marks.push('Roshan')
   if (hero.shield) marks.push('Shield')
-  if (hero.ward) marks.push('Ward')
+  if (hero.ward) marks.push('Cannot be destroyed')
   if (hero.hidden) marks.push('Hidden')
   if (hero.bkb) marks.push('Black King Bar')
   if (hero.tether !== null) marks.push('Tether')

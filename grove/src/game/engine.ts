@@ -985,21 +985,23 @@ function playToken(state: Game, actor: PlayerId, card: CardInst, team: string): 
 function playItem(state: Game, actor: PlayerId, card: CardInst, fromGrave = false): Game {
   let next = removeHand(state, actor, card.uid)
   const stamp = { caster: actor, fromTurn: next.turn }
-  next = allLocs(next).reduce((current, loc) => {
-    if (loc.hero.defId !== 'ursa' || loc.hero.controller !== actor) return current
-    return {
-      ...current,
-      players: current.players.map((player) => ({
-        ...player,
-        teams: player.teams.map((team) => ({
-          ...team,
-          heroes: team.heroes.map((hero) =>
-            hero.uid === loc.hero.uid ? { ...hero, bkb: stamp } : hero,
-          ),
-        })),
-      })) as Game['players'],
-    }
-  }, next)
+  if (!aurasSuppressedSafe(next, actor)) {
+    next = allLocs(next).reduce((current, loc) => {
+      if (loc.hero.defId !== 'ursa' || loc.hero.controller !== actor) return current
+      return {
+        ...current,
+        players: current.players.map((player) => ({
+          ...player,
+          teams: player.teams.map((team) => ({
+            ...team,
+            heroes: team.heroes.map((hero) =>
+              hero.uid === loc.hero.uid ? { ...hero, ward: stamp } : hero,
+            ),
+          })),
+        })) as Game['players'],
+      }
+    }, next)
+  }
   // Alchemist: draw whenever you play an item.
   for (const loc of allLocs(next)) {
     if (loc.hero.defId === 'alchemist' && loc.hero.controller === actor && !aurasSuppressedSafe(next, actor)) {

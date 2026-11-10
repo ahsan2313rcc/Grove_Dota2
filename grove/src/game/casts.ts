@@ -14,7 +14,6 @@ import {
   canTargetHero,
   clearAllTraps,
   comboLocked,
-  discardRandom,
   discardUid,
   enqueue,
   enterReason,
@@ -1100,7 +1099,7 @@ function questions(state: Game, resume: CastResume): Ask {
     }
     case 'razor':
       if (at > 0) return ready()
-      return pose(actor, 'Exile a hero.', heroChoices(state, actor, kind, (loc) => loc.hero.uid !== resume.sourceUid))
+      return pose(actor, 'Exile an enemy hero.', enemyHeroes(state, actor, kind))
     case 'morphling':
       if (at > 0) return ready()
       return pose(actor, 'Choose an enemy hero.', enemyHeroes(state, actor, kind))
@@ -1126,7 +1125,9 @@ function effect(state: Game, resume: CastResume): Game {
       return log({ ...state, noDraw: stamp }, "Berserker's Call: opponents cannot draw.")
     case 'chaos_knight': {
       let next = log(state, 'Chaos Bolt.')
-      for (const player of next.players) next = discardRandom(next, player.id, 1)
+      for (const player of next.players) {
+        next = queueDiscard(next, player.id, Math.floor(player.hand.length / 2), 'Chaos Bolt')
+      }
       return next
     }
     case 'natures_prophet':
@@ -1436,11 +1437,8 @@ function effect(state: Game, resume: CastResume): Game {
       return strike(state, heroes[0], actor)
     case 'morphling':
       return imprison(state, resume, heroes[0])
-    case 'razor': {
-      if (!heroes[0]) return state
-      const next = exileBoard(state, heroes[0], actor)
-      return log(setPlayer(next, actor, (player) => ({ ...player, actions: player.actions + 1 })), 'Static Link: +1 action.')
-    }
+    case 'razor':
+      return staticLink(state, resume)
     case 'naga_siren':
       return log({ ...state, naga: stamp }, 'Song of the Siren. Heroes cannot be destroyed.')
     case 'shadow_fiend':
@@ -2042,14 +2040,29 @@ function nova(state: Game, actor: PlayerId): Game {
   return log(addHand(next, actor, [item]), `Pulse Nova takes ${display(item.defId).name}.`)
 }
 
+function staticLink(state: Game, resume: CastResume): Game {
+  const uid = heroIds(resume.picked)[0]
+  if (!uid) return state
+  const actor = resume.actor
+  const holder = findHero(state, resume.sourceUid)
+  if (!holder) return state
+  if (holder.hero.held) state = releaseHeld(state, holder.hero)
+  const loc = findHero(state, uid)
+  if (!loc || loc.hero.controller === actor) return state
+  if (immuneFrom(state, uid, actor)) return log(state, immuneNote(state, uid))
+  const removed = removeHero(state, uid)
+  if (!removed.hero) return state
+  const card: CardInst = { uid: removed.hero.uid, defId: removed.hero.defId, kind: 'hero' }
+  let next = editFlag(removed.state, resume.sourceUid, (hero) => ({
+    ...hero,
+    held: { card, owner: loc.hero.owner, mode: 'razor', takenTurn: state.turn },
+  }))
+  next = setPlayer(next, actor, (player) => ({ ...player, actions: player.actions + 1 }))
+  return log(next, `Static Link exiles ${display(card.defId).name} until Razor leaves. +1 action.`)
+}
+
 function spray(state: Game, resume: CastResume): Game {
   const actor = resume.actor
-  if (resume.defId === 'chaos_knight') {
-    const pool = allLocs(state).filter((loc) => loc.hero.controller !== actor)
-    const [next, hit] = randomFrom(state, pool)
-    if (!hit) return log(next, 'Chaos Bolt finds no one.')
-    return enqueue(next, hit.hero.uid, 'Chaos Bolt', false, true, actor)
-  }
   if (resume.defId === 'snapfire') {
     const teamId = rawTeams(resume.picked)[0]
     const found = teamId ? teamById(state, teamId) : null

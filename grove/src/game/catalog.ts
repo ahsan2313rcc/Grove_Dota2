@@ -104,7 +104,7 @@ export const HEROES: HeroDef[] = [
   hero('axe', 'Axe', 'STR', 'Melee', "Berserker's Call", 'Opponents cannot draw cards from the deck until your next turn.', 'cast'),
   hero('bristleback', 'Bristleback', 'STR', 'Melee', 'Bristleback', 'Whenever Bristleback is destroyed, destroy a target enemy hero.', 'aura'),
   hero('centaur_warrunner', 'Centaur Warrunner', 'STR', 'Melee', 'Retaliate', 'Whenever an ally in this team is targeted by an opponent, that player discards a card for each Strength hero in this team.', 'aura'),
-  hero('chaos_knight', 'Chaos Knight', 'STR', 'Melee', 'Chaos Bolt', 'Each player discards a card at random.', 'cast'),
+  hero('chaos_knight', 'Chaos Knight', 'STR', 'Melee', 'Chaos Bolt', 'Each player discards half their hand, rounded down.', 'cast'),
   hero('clockwerk', 'Clockwerk', 'STR', 'Melee', 'Hookshot', 'Reveal the top 3 cards of the deck. Put one into your hand, one on top of the deck, and one into the grave.', 'cast'),
   hero('dawnbreaker', 'Dawnbreaker', 'STR', 'Melee', 'Solar Guardian', 'If target hero would be destroyed this turn, return it to your hand instead. Instant.', 'instant'),
   hero('doom', 'Doom', 'STR', 'Melee', 'Doom', 'Opponents cannot play item cards.', 'aura'),
@@ -212,7 +212,7 @@ export const HEROES: HeroDef[] = [
   hero('nyx_assassin', 'Nyx Assassin', 'AGI', 'Melee', 'Spiked Carapace', "Enter a team you control and counter the ability about to fire. If that hero is Intelligence, destroy it. Instant.", 'instant'),
   hero('phantom_assassin', 'Phantom Assassin', 'AGI', 'Melee', 'Coup de Grace', "Whenever an enemy hero returns to its owner's hand, exile it instead.", 'aura'),
   hero('phantom_lancer', 'Phantom Lancer', 'AGI', 'Melee', 'Juxtapose', 'Whenever Phantom Lancer would be destroyed, return him to your hand instead.', 'aura'),
-  hero('razor', 'Razor', 'AGI', 'Ranged', 'Static Link', 'Exile target hero. You gain +1 action.', 'cast'),
+  hero('razor', 'Razor', 'AGI', 'Ranged', 'Static Link', 'Exile target enemy hero until Razor leaves the board. You gain +1 action.', 'cast'),
   hero(
     'riki',
     'Riki',
@@ -245,7 +245,7 @@ export const HEROES: HeroDef[] = [
   ),
   hero('terrorblade', 'Terrorblade', 'AGI', 'Melee', 'Sunder', 'Swap control of target team you control with a team an opponent controls.', 'cast'),
   hero('troll_warlord', 'Troll Warlord', 'AGI', 'Ranged', 'Battle Trance', 'Opponents cannot play instant cards during your turn.', 'aura'),
-  hero('ursa', 'Ursa', 'AGI', 'Melee', 'Enrage', 'Whenever you play an item card, Ursa becomes immune to all effects.', 'aura'),
+  hero('ursa', 'Ursa', 'AGI', 'Melee', 'Enrage', 'Whenever you play an item card, Ursa cannot be destroyed this turn.', 'aura'),
   hero(
     'vengeful_spirit',
     'Vengeful Spirit',
@@ -259,7 +259,7 @@ export const HEROES: HeroDef[] = [
   hero('weaver', 'Weaver', 'AGI', 'Ranged', 'Time Lapse', 'Shuffle the grave into the deck. If The Ancient is in the deck, you choose how deep it goes.', 'cast'),
 
   // —— Intelligence ——
-  hero('ancient_apparition', 'Ancient Apparition', 'INT', 'Ranged', 'Ice Blast', 'Cards that would enter the grave are exiled instead.', 'aura'),
+  hero('ancient_apparition', 'Ancient Apparition', 'INT', 'Ranged', 'Ice Blast', 'Whenever an enemy hero is destroyed, it is exiled instead.', 'aura'),
   hero('chen', 'Chen', 'INT', 'Ranged', 'Holy Persuasion', 'Take the top Neutral card into your hand. You may play it immediately for free.', 'cast'),
   hero(
     'crystal_maiden',
