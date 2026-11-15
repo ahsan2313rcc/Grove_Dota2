@@ -42,13 +42,12 @@ import {
   clampDeckLimits,
   DEFAULT_DECK_LIMITS,
   HERO_DECK_MAX,
-  ITEM_DECK_MAX,
+  ITEM_DECK_STEPS,
+  itemStepLabel,
   loadDeckLimits,
   PRINTED_HERO_COUNT,
   saveDeckLimits,
-  TERRAIN_DECK_MAX,
-  terrainCopies,
-  terrainSplitLabel,
+  TERRAIN_DECK_STEPS,
   type DeckLimits,
 } from './game/deckLimits.ts'
 import { log, scoreState } from './game/flow.ts'
@@ -1071,48 +1070,6 @@ function Lobby({
             ))}
           </div>
         </fieldset>
-        <fieldset className="deck-limits">
-          <legend>Deck</legend>
-          <div className="deck-limit-grid">
-            <label>
-              Heroes
-              <input
-                data-testid="lobby-deck-heroes"
-                type="number"
-                min={0}
-                max={HERO_DECK_MAX}
-                value={deck.heroes}
-                onChange={(event) => setDeckCount('heroes', Number(event.target.value))}
-              />
-              <span className="quiet">of {PRINTED_HERO_COUNT}, random</span>
-            </label>
-            <label>
-              Items
-              <input
-                data-testid="lobby-deck-items"
-                type="number"
-                min={0}
-                max={ITEM_DECK_MAX}
-                value={deck.items}
-                onChange={(event) => setDeckCount('items', Number(event.target.value))}
-              />
-              <span className="quiet">of {DEFAULT_DECK_LIMITS.items} printed</span>
-            </label>
-            <label>
-              Terrains
-              <input
-                data-testid="lobby-deck-terrains"
-                type="number"
-                min={0}
-                max={TERRAIN_DECK_MAX}
-                value={deck.terrains}
-                onChange={(event) => setDeckCount('terrains', Number(event.target.value))}
-              />
-              <span className="quiet">{deck.terrains % 3 === 0 ? `${deck.terrains / 3} each` : terrainCopies(deck.terrains).join(' / ')}</span>
-            </label>
-          </div>
-          <p className="quiet">{terrainSplitLabel(deck.terrains)}. Same seed, same heroes. The Ancient sits about 80% down.</p>
-        </fieldset>
         <ul className="seat-list" data-count={count}>
           {seats.map((seat, index) => {
             const aiSeat = debugPreview || seat.kind === 'ai'
@@ -1238,10 +1195,64 @@ function Lobby({
           <summary>
             <span>Match options</span>
             <span className="quiet">
-              AI {thoughtPower}/10{debugMode ? ' · debug' : ''}
+              {deck.heroes}/{deck.items}/{deck.terrains} · AI {thoughtPower}/10{debugMode ? ' · debug' : ''}
             </span>
           </summary>
           <div className="debug-lobby">
+            <fieldset className="deck-limits">
+              <legend>Deck</legend>
+              <label className="deck-hero-count">
+                Heroes
+                <input
+                  data-testid="lobby-deck-heroes"
+                  type="number"
+                  min={0}
+                  max={HERO_DECK_MAX}
+                  value={deck.heroes}
+                  onChange={(event) => setDeckCount('heroes', Number(event.target.value))}
+                />
+                <span className="quiet">0-{PRINTED_HERO_COUNT}, chosen at random. Same seed, same heroes.</span>
+              </label>
+              <div className="deck-step">
+                <div className="deck-step-head">
+                  <span>Items</span>
+                  <span className="quiet">{itemStepLabel(deck.items)}</span>
+                </div>
+                <div className="layout-picks" role="group" aria-label="How many item cards">
+                  {ITEM_DECK_STEPS.map((size) => (
+                    <button
+                      key={size}
+                      type="button"
+                      className={deck.items === size ? 'on' : ''}
+                      data-testid={`lobby-deck-items-${size}`}
+                      onClick={() => setDeckCount('items', size)}
+                    >
+                      {size}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="deck-step">
+                <div className="deck-step-head">
+                  <span>Terrains</span>
+                  <span className="quiet">{deck.terrains / 3} each</span>
+                </div>
+                <div className="layout-picks" role="group" aria-label="How many terrain cards">
+                  {TERRAIN_DECK_STEPS.map((size) => (
+                    <button
+                      key={size}
+                      type="button"
+                      className={deck.terrains === size ? 'on' : ''}
+                      data-testid={`lobby-deck-terrains-${size}`}
+                      onClick={() => setDeckCount('terrains', size)}
+                    >
+                      {size}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <p className="quiet">48 adds a second set of commons, 60 also doubles rares, 72 also doubles uniques. Terrains stay split across River, Jungle, and Lane.</p>
+            </fieldset>
             <label className="thought-power">
               <span>
                 AI thought power {thoughtPower}/10 ({aiThoughtPowerLabel(thoughtPower)})

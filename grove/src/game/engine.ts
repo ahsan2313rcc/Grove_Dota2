@@ -1,6 +1,6 @@
 import { chooseAiPending } from './ai.ts'
 import { ANCIENT_ID, HEROES, ITEMS, REWARDS, TERRAINS, TURN_DRAW, display, firesAbility } from './catalog.ts'
-import { clampDeckLimits, terrainCopies, type DeckLimits } from './deckLimits.ts'
+import { clampDeckLimits, itemCopyCounts, terrainCopies, type DeckLimits } from './deckLimits.ts'
 import { cast, continueRestack, finishIo, finishKunkka, finishTimeLapse, offerInstantWindow } from './casts.ts'
 import { forSeats, getScoreRules } from './scoring.ts'
 import {
@@ -151,16 +151,12 @@ function collectDeck(state: Game, deck: Partial<DeckLimits> | undefined): [Game,
     state = made[0]
     cards.push(made[1])
   }
-  const itemBag: string[] = []
-  for (const item of ITEMS) {
-    for (let copy = 0; copy < item.copies; copy += 1) itemBag.push(item.id)
-  }
-  const items = sampleBag(state, itemBag, limits.items, false)
-  state = items[0]
-  for (const id of items[1]) {
-    const made = makeCard(state, id, 'item')
-    state = made[0]
-    cards.push(made[1])
+  for (const item of itemCopyCounts(limits.items)) {
+    for (let copy = 0; copy < item.copies; copy += 1) {
+      const made = makeCard(state, item.id, 'item')
+      state = made[0]
+      cards.push(made[1])
+    }
   }
   const copies = terrainCopies(limits.terrains)
   TERRAINS.forEach((terrain, index) => {
