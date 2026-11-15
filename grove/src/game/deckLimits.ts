@@ -1,21 +1,27 @@
 import { HEROES, ITEMS, TERRAINS } from './catalog.ts'
 
+/** Random draws an even split from the roster. Set A is a fixed list of 36. */
+export type HeroSource = 'random' | 'set-a'
+
 /** How many cards of each kind go into the shared deck before The Ancient is inserted. */
 export type DeckLimits = {
   heroes: number
   items: number
   terrains: number
+  heroSource: HeroSource
 }
 
 export const PRINTED_HERO_COUNT = HEROES.length
 export const PRINTED_ITEM_COUNT = ITEMS.reduce((sum, item) => sum + item.copies, 0)
 export const PRINTED_TERRAIN_COUNT = TERRAINS.length * 12
+export const HERO_SET_A_SIZE = 36
 
 /** Lobby default: 36 random heroes, the full item set, and 12 of each terrain. */
 export const DEFAULT_DECK_LIMITS: DeckLimits = {
   heroes: 36,
   items: PRINTED_ITEM_COUNT,
   terrains: PRINTED_TERRAIN_COUNT,
+  heroSource: 'random',
 }
 
 /** Full printed main deck. Tests and online leave createGame on this when no limit is passed. */
@@ -23,6 +29,7 @@ export const FULL_DECK_LIMITS: DeckLimits = {
   heroes: PRINTED_HERO_COUNT,
   items: PRINTED_ITEM_COUNT,
   terrains: PRINTED_TERRAIN_COUNT,
+  heroSource: 'random',
 }
 
 export const HERO_DECK_MAX = PRINTED_HERO_COUNT
@@ -79,10 +86,12 @@ export function itemStepLabel(total: number): string {
 }
 
 export function clampDeckLimits(raw: Partial<DeckLimits> | null | undefined): DeckLimits {
+  const heroSource: HeroSource = raw?.heroSource === 'set-a' ? 'set-a' : 'random'
   return {
-    heroes: clampCount(raw?.heroes, HERO_DECK_MAX, DEFAULT_DECK_LIMITS.heroes),
+    heroes: clampCount(raw?.heroes, heroSource === 'set-a' ? HERO_SET_A_SIZE : HERO_DECK_MAX, DEFAULT_DECK_LIMITS.heroes),
     items: snapStep(raw?.items, ITEM_DECK_STEPS, DEFAULT_DECK_LIMITS.items),
     terrains: snapStep(raw?.terrains, TERRAIN_DECK_STEPS, DEFAULT_DECK_LIMITS.terrains),
+    heroSource,
   }
 }
 

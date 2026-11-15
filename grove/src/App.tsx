@@ -42,6 +42,7 @@ import {
   clampDeckLimits,
   DEFAULT_DECK_LIMITS,
   HERO_DECK_MAX,
+  HERO_SET_A_SIZE,
   ITEM_DECK_STEPS,
   itemStepLabel,
   loadDeckLimits,
@@ -49,7 +50,9 @@ import {
   saveDeckLimits,
   TERRAIN_DECK_STEPS,
   type DeckLimits,
+  type HeroSource,
 } from './game/deckLimits.ts'
+import { heroSplitLabel } from './game/heroSets.ts'
 import { log, scoreState } from './game/flow.ts'
 import {
   cloneRules,
@@ -960,9 +963,17 @@ function Lobby({
     })
   }
 
-  function setDeckCount(key: keyof DeckLimits, raw: number) {
+  function setDeckCount(key: 'heroes' | 'items' | 'terrains', raw: number) {
     setDeck((current) => {
       const next = clampDeckLimits({ ...current, [key]: raw })
+      saveDeckLimits(next)
+      return next
+    })
+  }
+
+  function setHeroSource(heroSource: HeroSource) {
+    setDeck((current) => {
+      const next = clampDeckLimits({ ...current, heroSource })
       saveDeckLimits(next)
       return next
     })
@@ -1195,24 +1206,52 @@ function Lobby({
           <summary>
             <span>Match options</span>
             <span className="quiet">
-              {deck.heroes}/{deck.items}/{deck.terrains} · AI {thoughtPower}/10{debugMode ? ' · debug' : ''}
+              {deck.heroSource === 'set-a' ? 'Set A ' : ''}{deck.heroes}/{deck.items}/{deck.terrains} · AI {thoughtPower}/10{debugMode ? ' · debug' : ''}
             </span>
           </summary>
           <div className="debug-lobby">
             <fieldset className="deck-limits">
               <legend>Deck</legend>
-              <label className="deck-hero-count">
-                Heroes
-                <input
-                  data-testid="lobby-deck-heroes"
-                  type="number"
-                  min={0}
-                  max={HERO_DECK_MAX}
-                  value={deck.heroes}
-                  onChange={(event) => setDeckCount('heroes', Number(event.target.value))}
-                />
-                <span className="quiet">0-{PRINTED_HERO_COUNT}, chosen at random. Same seed, same heroes.</span>
-              </label>
+              <div className="deck-step">
+                <div className="deck-step-head">
+                  <span>Heroes</span>
+                  <span className="quiet">{heroSplitLabel(deck)}</span>
+                </div>
+                <div className="layout-picks" role="group" aria-label="Which heroes">
+                  <button
+                    type="button"
+                    className={deck.heroSource === 'random' ? 'on' : ''}
+                    data-testid="lobby-hero-source-random"
+                    onClick={() => setHeroSource('random')}
+                  >
+                    Random
+                  </button>
+                  <button
+                    type="button"
+                    className={deck.heroSource === 'set-a' ? 'on' : ''}
+                    data-testid="lobby-hero-source-set-a"
+                    onClick={() => setHeroSource('set-a')}
+                  >
+                    Set A
+                  </button>
+                </div>
+                <label className="deck-hero-count">
+                  How many
+                  <input
+                    data-testid="lobby-deck-heroes"
+                    type="number"
+                    min={0}
+                    max={deck.heroSource === 'set-a' ? HERO_SET_A_SIZE : HERO_DECK_MAX}
+                    value={deck.heroes}
+                    onChange={(event) => setDeckCount('heroes', Number(event.target.value))}
+                  />
+                  <span className="quiet">
+                    {deck.heroSource === 'set-a'
+                      ? 'Set A, up to ' + HERO_SET_A_SIZE + '. The same heroes every game.'
+                      : '0-' + PRINTED_HERO_COUNT + ', even split. Same seed, same heroes.'}
+                  </span>
+                </label>
+              </div>
               <div className="deck-step">
                 <div className="deck-step-head">
                   <span>Items</span>

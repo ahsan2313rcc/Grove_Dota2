@@ -1,6 +1,7 @@
 import { chooseAiPending } from './ai.ts'
 import { ANCIENT_ID, HEROES, ITEMS, REWARDS, TERRAINS, TURN_DRAW, display, firesAbility } from './catalog.ts'
 import { clampDeckLimits, itemCopyCounts, terrainCopies, type DeckLimits } from './deckLimits.ts'
+import { HERO_ATTRS, heroPools, heroQuotas } from './heroSets.ts'
 import { cast, continueRestack, finishIo, finishKunkka, finishTimeLapse, offerInstantWindow } from './casts.ts'
 import { forSeats, getScoreRules } from './scoring.ts'
 import {
@@ -144,9 +145,9 @@ function collectDeck(state: Game, deck: Partial<DeckLimits> | undefined): [Game,
     return [state, cards]
   }
   const limits = clampDeckLimits(deck)
-  const heroes = sampleBag(state, HEROES.map((hero) => hero.id), limits.heroes, true)
-  state = heroes[0]
-  for (const id of heroes[1]) {
+  const picked = pickHeroIds(state, limits)
+  state = picked[0]
+  for (const id of picked[1]) {
     const made = makeCard(state, id, 'hero')
     state = made[0]
     cards.push(made[1])
@@ -168,6 +169,26 @@ function collectDeck(state: Game, deck: Partial<DeckLimits> | undefined): [Game,
     }
   })
   return [state, cards]
+}
+
+function pickHeroIds(state: Game, limits: DeckLimits): [Game, string[]] {
+  const pools = heroPools(limits.heroSource)
+  const quotas = heroQuotas(limits.heroes, pools)
+  const ids: string[] = []
+  let current = state
+  for (const attr of HERO_ATTRS) {
+    const pool = pools[attr]
+    const count = quotas[attr] ?? 0
+    if (count <= 0) continue
+    if (limits.heroSource === 'set-a') {
+      ids.push(...pool.slice(0, count))
+      continue
+    }
+    const sampled = sampleBag(current, [...pool], count, true)
+    current = sampled[0]
+    ids.push(...sampled[1])
+  }
+  return [current, ids]
 }
 
 function sampleBag(state: Game, ids: string[], count: number, unique: boolean): [Game, string[]] {
