@@ -36,7 +36,7 @@ export interface ScoreRules {
   scoreWin: boolean
   /** Target score by seat count, index 0 = 2 players … index 6 = 8 players. */
   winScores: SeatTable
-  /** The Ancient's depth in the deck after the deal (percent, ±5), by seat count. */
+  /** The Ancient's depth in the deck after the deal (percent, ±5), by seat count. Default is ~80%. */
   ancientDepths: SeatTable
 }
 
@@ -60,7 +60,7 @@ export const DEFAULT_SCORE_RULES: ScoreRules = {
   ancientBonus: 10,
   scoreWin: true,
   winScores: [50, 40, 35, 30, 30, 30, 30],
-  ancientDepths: [50, 60, 60, 80, 80, 90, 90],
+  ancientDepths: [80, 80, 80, 80, 80, 80, 80],
 }
 
 let current: ScoreRules = cloneRules(DEFAULT_SCORE_RULES)

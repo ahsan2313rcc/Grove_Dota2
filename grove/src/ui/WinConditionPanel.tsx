@@ -45,7 +45,7 @@ export function WinConditionPanel({ value, onChange }: { value: ScoreRules; onCh
       </label>
       <p className="quiet">
         Drawing The Ancient starts the final round: each player gets one more turn, then the highest score wins.
-        Whoever controls The Ancient on the board gets +{value.ancientBonus} at the end. Depth is how far down the deck it sits after the deal, ±5%.
+        Whoever controls The Ancient on the board gets +{value.ancientBonus} at the end. Depth is how far down the deck it sits after the deal, ±5%. The default is 80%.
       </p>
       <label>
         Ancient points

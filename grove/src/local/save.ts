@@ -2,6 +2,8 @@ import type { MatchReport } from '../game/balance.ts'
 import type { AiStrat, Game } from '../game/types.ts'
 import type { ScoreRules } from '../game/scoring.ts'
 import { cloneRules, DEFAULT_SCORE_RULES } from '../game/scoring.ts'
+import type { DeckLimits } from '../game/deckLimits.ts'
+import { clampDeckLimits } from '../game/deckLimits.ts'
 
 const LOCAL_KEY = 'grove.local.match'
 const DEBUG_KEY = 'grove.local.debug'
@@ -191,6 +193,8 @@ export type SavedDebugSession = {
   thoughtPower: number
   reports: MatchReport[]
   rules: ScoreRules
+  /** Main-deck counts for sims in this session. Missing means the full printed deck. */
+  deck?: DeckLimits
   /** True while a debug session is open, so a reload can return to it. */
   active: boolean
   savedAt: number
@@ -212,6 +216,7 @@ export function loadDebugSession(): SavedDebugSession | null {
       thoughtPower: Math.floor(data.thoughtPower) || 7,
       active: data.active === true,
       rules: data.rules ? cloneRules(data.rules) : cloneRules(DEFAULT_SCORE_RULES),
+      deck: data.deck ? clampDeckLimits(data.deck) : undefined,
     }
   } catch {
     return null
@@ -225,6 +230,7 @@ export function saveDebugSession(session: Omit<SavedDebugSession, 'v' | 'savedAt
     // Keep the on-disk copy small so a long sim cannot blow the storage quota.
     reports: session.reports.slice(-80),
     rules: cloneRules(session.rules),
+    deck: session.deck ? clampDeckLimits(session.deck) : undefined,
     savedAt: Date.now(),
   }
   storeSet(DEBUG_KEY, JSON.stringify(payload))

@@ -1,5 +1,6 @@
 import { chooseAiAction, chooseAiPendingForSeat, cycleStrat, DEFAULT_STRAT, searchModeForStrat } from './ai.ts'
 import { display, firesAbility, HERO_BY_ID } from './catalog.ts'
+import type { DeckLimits } from './deckLimits.ts'
 import { apply, comboShape, createGame, type SeatSpec } from './engine.ts'
 import {
   DEFAULT_CALIBRATION,
@@ -1904,8 +1905,14 @@ export function aiRoster(count: number, strats?: AiStrat[], offset = 0): SeatSpe
   })
 }
 
-export function runMatchFast(seed: number, seats: number, strats?: AiStrat[], guard = 2500): MatchReport {
-  let game = createGame({ seed, seats: aiRoster(seats, strats, seed) })
+export function runMatchFast(
+  seed: number,
+  seats: number,
+  strats?: AiStrat[],
+  guard = 2500,
+  deck?: DeckLimits,
+): MatchReport {
+  let game = createGame({ seed, seats: aiRoster(seats, strats, seed), deck })
   const tracker = new BalanceTracker(seed, { lite: true })
   tracker.start(game)
   let steps = 0

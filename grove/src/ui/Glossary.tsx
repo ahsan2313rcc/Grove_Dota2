@@ -33,7 +33,7 @@ const TIMING_LABEL = {
 } as const
 
 const ANCIENT_PLACEMENT =
-  'After the opening deal, The Ancient is placed by seat count (mid for 2–4, deep for 5–6, last for 7–8), ±5%. Depth can also be set in Win condition.'
+  'After the opening deal, The Ancient is placed about 80% of the way through the remaining deck (±5%). Depth can also be set in Win condition.'
 
 export function Glossary({ onClose }: { onClose: () => void }) {
   const [tab, setTab] = useState<Tab>('heroes')

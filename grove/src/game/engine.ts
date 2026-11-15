@@ -1,5 +1,6 @@
 import { chooseAiPending } from './ai.ts'
 import { ANCIENT_ID, HEROES, ITEMS, REWARDS, TERRAINS, TURN_DRAW, display, firesAbility } from './catalog.ts'
+import { clampDeckLimits, terrainCopies, type DeckLimits } from './deckLimits.ts'
 import { cast, continueRestack, finishIo, finishKunkka, finishTimeLapse, offerInstantWindow } from './casts.ts'
 import { forSeats, getScoreRules } from './scoring.ts'
 import {
@@ -77,6 +78,7 @@ export function createGame(opts: {
   winScore?: number | null
   /** The Ancient's depth in percent (±5); defaults to the score rules for this seat count. */
   ancientDepth?: number
+  deck?: Partial<DeckLimits>
 }): Game {
   const seats = opts.seats ?? legacySeats(opts.mode ?? 'hotseat', opts.names)
   if (seats.length < 2 || seats.length > 8) throw new Error('Grove seats 2 to 8 players.')
@@ -89,27 +91,9 @@ export function createGame(opts: {
   const ancientDepth = opts.ancientDepth ?? forSeats(rules.ancientDepths, seats.length)
   let state = blank(opts.seed ?? (Date.now() % 100000), mode, seats, ancientEnabled)
   state = { ...state, winScore, holds: [] }
-  const cards: CardInst[] = []
-  for (const hero of HEROES) {
-    const made = makeCard(state, hero.id, 'hero')
-    state = made[0]
-    cards.push(made[1])
-  }
-  for (const item of ITEMS) {
-    for (let copy = 0; copy < item.copies; copy += 1) {
-      const made = makeCard(state, item.id, 'item')
-      state = made[0]
-      cards.push(made[1])
-    }
-  }
-  for (const terrain of TERRAINS) {
-    for (let copy = 0; copy < 12; copy += 1) {
-      const made = makeCard(state, terrain.id, 'terrain')
-      state = made[0]
-      cards.push(made[1])
-    }
-  }
-  const shuffled = shuffle(state, cards)
+  const built = collectDeck(state, opts.deck)
+  state = built[0]
+  const shuffled = shuffle(state, built[1])
   state = { ...shuffled[0], deck: shuffled[1] }
   state = fillPile(state, 'runes')
   state = fillPile(state, 'neutrals')
@@ -133,6 +117,78 @@ export function createGame(opts: {
   }
   // Seat 0 starts turn 1 with the usual turn draw + 2 actions.
   return startTurn(state, 0)
+}
+
+function collectDeck(state: Game, deck: Partial<DeckLimits> | undefined): [Game, CardInst[]] {
+  const cards: CardInst[] = []
+  if (!deck) {
+    for (const hero of HEROES) {
+      const made = makeCard(state, hero.id, 'hero')
+      state = made[0]
+      cards.push(made[1])
+    }
+    for (const item of ITEMS) {
+      for (let copy = 0; copy < item.copies; copy += 1) {
+        const made = makeCard(state, item.id, 'item')
+        state = made[0]
+        cards.push(made[1])
+      }
+    }
+    for (const terrain of TERRAINS) {
+      for (let copy = 0; copy < 12; copy += 1) {
+        const made = makeCard(state, terrain.id, 'terrain')
+        state = made[0]
+        cards.push(made[1])
+      }
+    }
+    return [state, cards]
+  }
+  const limits = clampDeckLimits(deck)
+  const heroes = sampleBag(state, HEROES.map((hero) => hero.id), limits.heroes, true)
+  state = heroes[0]
+  for (const id of heroes[1]) {
+    const made = makeCard(state, id, 'hero')
+    state = made[0]
+    cards.push(made[1])
+  }
+  const itemBag: string[] = []
+  for (const item of ITEMS) {
+    for (let copy = 0; copy < item.copies; copy += 1) itemBag.push(item.id)
+  }
+  const items = sampleBag(state, itemBag, limits.items, false)
+  state = items[0]
+  for (const id of items[1]) {
+    const made = makeCard(state, id, 'item')
+    state = made[0]
+    cards.push(made[1])
+  }
+  const copies = terrainCopies(limits.terrains)
+  TERRAINS.forEach((terrain, index) => {
+    const count = copies[index] ?? 0
+    for (let copy = 0; copy < count; copy += 1) {
+      const made = makeCard(state, terrain.id, 'terrain')
+      state = made[0]
+      cards.push(made[1])
+    }
+  })
+  return [state, cards]
+}
+
+function sampleBag(state: Game, ids: string[], count: number, unique: boolean): [Game, string[]] {
+  if (count <= 0 || ids.length === 0) return [state, []]
+  const cap = unique ? Math.min(count, ids.length) : count
+  if (cap <= ids.length) {
+    const shuffled = shuffle(state, ids)
+    return [shuffled[0], shuffled[1].slice(0, cap)]
+  }
+  const out: string[] = []
+  let current = state
+  while (out.length < cap) {
+    const shuffled = shuffle(current, ids)
+    current = shuffled[0]
+    out.push(...shuffled[1].slice(0, cap - out.length))
+  }
+  return [current, out]
 }
 
 function legacySeats(mode: 'hotseat' | 'ai' | 'online', names?: [string, string]): SeatSpec[] {

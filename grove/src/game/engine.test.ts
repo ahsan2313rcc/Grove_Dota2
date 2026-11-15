@@ -232,7 +232,7 @@ describe('turn', () => {
     expect(raw.ancient).toBeNull()
   })
 
-  it('places The Ancient at 50/60/60/80/80/90/90% (±5) by seat count', () => {
+  it('places The Ancient at about 80% (±5) for every seat count', () => {
     const depth = (seats: number, seed: number) => {
       const names = Array.from({ length: seats }, (_, index) => `P${index + 1}`)
       const game = createGame({
@@ -249,7 +249,7 @@ describe('turn', () => {
       return { insertIndex, preInsertLen, postInsertLen }
     }
 
-    const expected = [50, 60, 60, 80, 80, 90, 90]
+    const expected = [80, 80, 80, 80, 80, 80, 80]
     for (const seed of [2, 7, 19, 58, 91]) {
       for (let seats = 2; seats <= 8; seats += 1) {
         const at = depth(seats, seed)

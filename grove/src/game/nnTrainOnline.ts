@@ -18,6 +18,7 @@
  */
 import { chooseAiAction, chooseAiPendingForSeat, searchModeForStrat } from './ai.ts'
 import { BalanceTracker, type MatchReport } from './balance.ts'
+import type { DeckLimits } from './deckLimits.ts'
 import { apply, createGame, type SeatSpec } from './engine.ts'
 import { scoreState } from './flow.ts'
 import { getNnMemory, saveNnMemory } from './nnMemory.ts'
@@ -200,6 +201,8 @@ export type TrainRunOptions = {
   train: boolean
   /** Heuristic seats use the batch-fast brain (≈50× quicker, weaker play). */
   fast?: boolean
+  /** Same deck counts the lobby chose. Omitted keeps the full printed deck. */
+  deck?: DeckLimits
 }
 
 /**
@@ -212,7 +215,7 @@ export function runMatchWithOptionalTrain(
   train: boolean | TrainRunOptions,
 ): { game: Game; samples: number; report: MatchReport } {
   const opts: TrainRunOptions = typeof train === 'boolean' ? { train } : train
-  let game = createGame({ seed, seats })
+  let game = createGame({ seed, seats, deck: opts.deck })
   const tracker = new BalanceTracker(seed, { lite: false })
   tracker.start(game)
   const recorder = opts.train ? new NnGameRecorder() : null
