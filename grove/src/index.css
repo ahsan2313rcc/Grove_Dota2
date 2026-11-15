@@ -1883,6 +1883,27 @@ button.debug-mode-cycle:hover {
 .lobby-opt-row > button {
   flex: 1 1 8rem;
 }
+.lobby-opt-row > button.deck-open {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+}
+.sheet.deck-sheet {
+  width: min(440px, 100%);
+}
+.deck-sheet label {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  color: var(--cream-dim);
+  font-size: 0.85rem;
+}
+.sheet .deck-limits {
+  border-bottom: 0;
+  padding-bottom: 0;
+}
 .lobby-opt-inline {
   display: flex !important;
   flex-direction: row !important;

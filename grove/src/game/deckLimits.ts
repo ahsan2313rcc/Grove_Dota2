@@ -1,6 +1,6 @@
 import { HEROES, ITEMS, TERRAINS } from './catalog.ts'
 
-/** Random draws an even split from the roster. Set A is a fixed list of 36. */
+/** Random draws an even split from the roster. Set A is a fixed list of 48. */
 export type HeroSource = 'random' | 'set-a'
 
 /** How many cards of each kind go into the shared deck before The Ancient is inserted. */
@@ -14,11 +14,12 @@ export type DeckLimits = {
 export const PRINTED_HERO_COUNT = HEROES.length
 export const PRINTED_ITEM_COUNT = ITEMS.reduce((sum, item) => sum + item.copies, 0)
 export const PRINTED_TERRAIN_COUNT = TERRAINS.length * 12
-export const HERO_SET_A_SIZE = 36
+/** Set A is 12 heroes from each attribute. */
+export const HERO_SET_A_SIZE = 48
 
-/** Lobby default: 36 random heroes, the full item set, and 12 of each terrain. */
+/** Lobby default: 48 heroes, the full item set, and 12 of each terrain. */
 export const DEFAULT_DECK_LIMITS: DeckLimits = {
-  heroes: 36,
+  heroes: 48,
   items: PRINTED_ITEM_COUNT,
   terrains: PRINTED_TERRAIN_COUNT,
   heroSource: 'random',

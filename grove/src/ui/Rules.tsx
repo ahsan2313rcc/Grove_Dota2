@@ -47,7 +47,7 @@ const BASICS: Block[] = [
     summary: 'Shared deck, shared grave, shared exile. Separate face-down piles for runes, neutrals, and towers.',
     detail: [
       'Everyone is dealt 3. Seat 0 starts.',
-      'The shared deck starts at 36 heroes, split evenly across Strength, Agility, Intelligence, and Universal. Match options can draw them at random, or use Set A, the same 36 every game. Random can run from 0 to 127 heroes. Set A stops at 36. Items and terrains start at 36 and can be 48, 60, or 72. Extra items add another set of commons, then rares, then uniques.',
+      'The shared deck starts at 48 heroes, split evenly across Strength, Agility, Intelligence, and Universal. Match options can draw them at random, or use Set A, the same 48 every game. Random can run from 0 to 127 heroes. Set A stops at 48. Items and terrains start at 36 and can be 48, 60, or 72. Extra items add another set of commons, then rares, then uniques.',
       'The Ancient is placed about 80% of the way through the remaining deck (±5%). Win condition can set a different depth for each table size.',
       'Reward piles: River → runes, Jungle → neutrals, Lane → towers. Three-of-a-kind terrain combos take the top of the matching pile.',
     ],

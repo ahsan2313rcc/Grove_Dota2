@@ -6,7 +6,7 @@ export const HERO_ATTRS: Attr[] = ['STR', 'AGI', 'INT', 'UNI']
 
 /**
  * Set A, strongest first within each attribute.
- * Full list: 10 instants, 7 auras, 2 traps, with destroy, save, and exile.
+ * 12 each. Instants, auras, and at most 3 traps, with destroy, save, and exile.
  */
 export const HERO_SET_A: Record<Attr, readonly string[]> = {
   STR: [
@@ -19,6 +19,9 @@ export const HERO_SET_A: Record<Attr, readonly string[]> = {
     'wraith_king',
     'earth_spirit',
     'ogre_magi',
+    'phoenix',
+    'tiny',
+    'earthshaker',
   ],
   AGI: [
     'faceless_void',
@@ -30,6 +33,9 @@ export const HERO_SET_A: Record<Attr, readonly string[]> = {
     'nyx_assassin',
     'viper',
     'monkey_king',
+    'morphling',
+    'vengeful_spirit',
+    'meepo',
   ],
   INT: [
     'lina',
@@ -38,7 +44,10 @@ export const HERO_SET_A: Record<Attr, readonly string[]> = {
     'silencer',
     'rubick',
     'oracle',
-    'dazzle',
+    'keeper_of_the_light',
+    'techies',
+    'enchantress',
+    'death_prophet',
     'puck',
     'ancient_apparition',
   ],
@@ -52,6 +61,9 @@ export const HERO_SET_A: Record<Attr, readonly string[]> = {
     'windranger',
     'brewmaster',
     'snapfire',
+    'arc_warden',
+    'venomancer',
+    'underlord',
   ],
 }
 

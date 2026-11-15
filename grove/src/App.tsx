@@ -948,6 +948,7 @@ function Lobby({
   const [rules, setRules] = useState(false)
   const [scoreOpen, setScoreOpen] = useState(false)
   const [winOpen, setWinOpen] = useState(false)
+  const [deckOpen, setDeckOpen] = useState(false)
   const [lobbyRules, setLobbyRules] = useState<ScoreRules>(() => cloneRules(getScoreRules()))
   const [deck, setDeck] = useState<DeckLimits>(() => loadDeckLimits())
   const [savedLocal, setSavedLocal] = useState<SavedLocalMatch | null>(() => loadLocalMatch())
@@ -1206,12 +1207,106 @@ function Lobby({
           <summary>
             <span>Match options</span>
             <span className="quiet">
-              {deck.heroSource === 'set-a' ? 'Set A ' : ''}{deck.heroes}/{deck.items}/{deck.terrains} · AI {thoughtPower}/10{debugMode ? ' · debug' : ''}
+              Ancient +{lobbyRules.ancientBonus} · AI {thoughtPower}{debugMode ? ' · debug' : ''}
             </span>
           </summary>
           <div className="debug-lobby">
+            <label className="thought-power">
+              <span>
+                AI thought power {thoughtPower} ({aiThoughtPowerLabel(thoughtPower)})
+              </span>
+              <input
+                data-testid="lobby-thought-power"
+                type="range"
+                min={AI_POWER_MIN}
+                max={AI_POWER_MAX}
+                step={1}
+                value={thoughtPower}
+                onChange={(event) => setThoughtPower(setAiThoughtPower(Number(event.target.value)))}
+              />
+            </label>
+            <div className="lobby-opt-row">
+              <label className="check-row">
+                <input
+                  data-testid="lobby-debug"
+                  type="checkbox"
+                  checked={debugMode}
+                  onChange={(event) => setDebugMode(event.target.checked)}
+                />
+                Debug balance
+              </label>
+              {debugPreview ? (
+                <label className="lobby-opt-inline">
+                  Seq games
+                  <input
+                    data-testid="lobby-parallel"
+                    type="number"
+                    min={1}
+                    max={MAX_QUEUE}
+                    value={queue}
+                    onChange={(event) => setQueue(Math.max(1, Math.min(MAX_QUEUE, Number(event.target.value) || 1)))}
+                  />
+                </label>
+              ) : null}
+            </div>
+            {debugPreview ? (
+              <label className="check-row">
+                <input
+                  data-testid="lobby-train-neural"
+                  type="checkbox"
+                  checked={trainNeural}
+                  onChange={(event) => setTrainNeural(event.target.checked)}
+                />
+                Train Neural
+              </label>
+            ) : null}
+            <div className="lobby-opt-row">
+              <button type="button" className="deck-open" data-testid="lobby-deck" onClick={() => setDeckOpen(true)}>
+                <span>Deck</span>
+                <span className="quiet">{deck.heroSource === 'set-a' ? 'Set A ' : ''}{deck.heroes}/{deck.items}/{deck.terrains}</span>
+              </button>
+              {debugPreview ? (
+                <button type="button" data-testid="lobby-scoring" onClick={() => setScoreOpen(true)}>
+                  Scoring…
+                </button>
+              ) : null}
+              <button type="button" data-testid="lobby-win" onClick={() => setWinOpen(true)}>
+                Win condition…
+              </button>
+            </div>
+            <label>
+              Seed
+              <input
+                data-testid="seed"
+                placeholder="Random"
+                value={seedText}
+                onChange={(event) => setSeedText(event.target.value)}
+              />
+            </label>
+          </div>
+        </details>
+        <div className="lobby-links">
+          <button type="button" data-testid="rules-open" onClick={() => setRules(true)}>Rules</button>
+          <button type="button" data-testid="glossary-open" onClick={() => setGlossary(true)}>Glossary</button>
+          <button type="button" data-testid="lab-open" onClick={() => setLab(true)}>Ability Lab</button>
+        </div>
+        {fault ? <p className="warn">{fault}</p> : null}
+      </form>
+      {glossary ? <Glossary onClose={() => setGlossary(false)} /> : null}
+      {rules ? <Rules onClose={() => setRules(false)} /> : null}
+      {lab ? <Lab onClose={() => setLab(false)} onPlay={onLab} /> : null}
+      {deckOpen ? (
+        <div className="scrim" onClick={() => setDeckOpen(false)}>
+          <section
+            className="sheet score-sheet deck-sheet"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="deck-title"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <p className="eyebrow">Match options</p>
+            <h2 id="deck-title">Deck</h2>
             <fieldset className="deck-limits">
-              <legend>Deck</legend>
               <div className="deck-step">
                 <div className="deck-step-head">
                   <span>Heroes</span>
@@ -1292,86 +1387,12 @@ function Lobby({
               </div>
               <p className="quiet">48 adds a second set of commons, 60 also doubles rares, 72 also doubles uniques. Terrains stay split across River, Jungle, and Lane.</p>
             </fieldset>
-            <label className="thought-power">
-              <span>
-                AI thought power {thoughtPower}/10 ({aiThoughtPowerLabel(thoughtPower)})
-              </span>
-              <input
-                data-testid="lobby-thought-power"
-                type="range"
-                min={AI_POWER_MIN}
-                max={AI_POWER_MAX}
-                step={1}
-                value={thoughtPower}
-                onChange={(event) => setThoughtPower(setAiThoughtPower(Number(event.target.value)))}
-              />
-            </label>
-            <div className="lobby-opt-row">
-              <label className="check-row">
-                <input
-                  data-testid="lobby-debug"
-                  type="checkbox"
-                  checked={debugMode}
-                  onChange={(event) => setDebugMode(event.target.checked)}
-                />
-                Debug balance
-              </label>
-              {debugPreview ? (
-                <label className="lobby-opt-inline">
-                  Seq games
-                  <input
-                    data-testid="lobby-parallel"
-                    type="number"
-                    min={1}
-                    max={MAX_QUEUE}
-                    value={queue}
-                    onChange={(event) => setQueue(Math.max(1, Math.min(MAX_QUEUE, Number(event.target.value) || 1)))}
-                  />
-                </label>
-              ) : null}
-            </div>
-            {debugPreview ? (
-              <label className="check-row">
-                <input
-                  data-testid="lobby-train-neural"
-                  type="checkbox"
-                  checked={trainNeural}
-                  onChange={(event) => setTrainNeural(event.target.checked)}
-                />
-                Train Neural
-              </label>
-            ) : null}
-            <div className="lobby-opt-row">
-              {debugPreview ? (
-                <button type="button" data-testid="lobby-scoring" onClick={() => setScoreOpen(true)}>
-                  Scoring…
-                </button>
-              ) : null}
-              <button type="button" data-testid="lobby-win" onClick={() => setWinOpen(true)}>
-                Win condition…
-              </button>
-            </div>
-            <label>
-              Seed
-              <input
-                data-testid="seed"
-                placeholder="Random"
-                value={seedText}
-                onChange={(event) => setSeedText(event.target.value)}
-              />
-            </label>
-          </div>
-        </details>
-        <div className="lobby-links">
-          <button type="button" data-testid="rules-open" onClick={() => setRules(true)}>Rules</button>
-          <button type="button" data-testid="glossary-open" onClick={() => setGlossary(true)}>Glossary</button>
-          <button type="button" data-testid="lab-open" onClick={() => setLab(true)}>Ability Lab</button>
+            <button type="button" className="primary block" data-testid="deck-done" onClick={() => setDeckOpen(false)}>
+              Done
+            </button>
+          </section>
         </div>
-        {fault ? <p className="warn">{fault}</p> : null}
-      </form>
-      {glossary ? <Glossary onClose={() => setGlossary(false)} /> : null}
-      {rules ? <Rules onClose={() => setRules(false)} /> : null}
-      {lab ? <Lab onClose={() => setLab(false)} onPlay={onLab} /> : null}
+      ) : null}
       {winOpen ? (
         <div className="scrim" onClick={() => setWinOpen(false)}>
           <section

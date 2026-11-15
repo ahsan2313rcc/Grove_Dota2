@@ -31,14 +31,14 @@ function zone(game: Game, kind: CardInst['kind']): CardInst[] {
 }
 
 describe('deck limits', () => {
-  it('deals the lobby default of 36 heroes, 36 items, and 36 terrains', () => {
+  it('deals the lobby default of 48 heroes, 36 items, and 36 terrains', () => {
     const game = createGame({ seed: 11, seats, deck: DEFAULT_DECK_LIMITS })
     const heroes = zone(game, 'hero')
-    expect(heroes).toHaveLength(36)
-    expect(new Set(heroes.map((card) => card.defId)).size).toBe(36)
+    expect(heroes).toHaveLength(48)
+    expect(new Set(heroes.map((card) => card.defId)).size).toBe(48)
     for (const attr of HERO_ATTRS) {
       const ids = new Set(HEROES.filter((hero) => hero.attr === attr).map((hero) => hero.id))
-      expect(heroes.filter((card) => ids.has(card.defId))).toHaveLength(9)
+      expect(heroes.filter((card) => ids.has(card.defId))).toHaveLength(12)
     }
     expect(zone(game, 'item')).toHaveLength(36)
     const terrains = zone(game, 'terrain')
@@ -48,11 +48,14 @@ describe('deck limits', () => {
     }
   })
 
-  it('deals Set A as the same nine from each attribute', () => {
+  it('deals Set A as the same twelve from each attribute', () => {
     const ids = HERO_ATTRS.flatMap((attr) => [...HERO_SET_A[attr]])
-    expect(new Set(ids).size).toBe(36)
+    expect(new Set(ids).size).toBe(48)
     expect(ids.every((id) => HEROES.some((hero) => hero.id === id))).toBe(true)
-    for (const attr of HERO_ATTRS) expect(HERO_SET_A[attr]).toHaveLength(9)
+    for (const attr of HERO_ATTRS) expect(HERO_SET_A[attr]).toHaveLength(12)
+    for (const id of ['keeper_of_the_light', 'techies', 'phoenix', 'tiny', 'enchantress', 'arc_warden', 'morphling', 'vengeful_spirit', 'meepo', 'death_prophet']) {
+      expect(ids).toContain(id)
+    }
     const defs = ids.map((id) => HEROES.find((hero) => hero.id === id)!)
     expect(defs.filter((hero) => hero.timing === 'instant').length).toBeGreaterThanOrEqual(9)
     expect(defs.filter((hero) => hero.timing === 'aura').length).toBeGreaterThanOrEqual(6)
@@ -71,7 +74,7 @@ describe('deck limits', () => {
       .sort()
     expect(eight).toEqual(HERO_ATTRS.flatMap((attr) => HERO_SET_A[attr].slice(0, 2)).sort())
     expect(clampDeckLimits({ heroes: 90, heroSource: 'set-a' }).heroes).toBe(HERO_SET_A_SIZE)
-    expect(heroSplitLabel({ heroes: 36, heroSource: 'set-a' })).toBe('9 STR · 9 AGI · 9 INT · 9 UNI')
+    expect(heroSplitLabel({ heroes: 48, heroSource: 'set-a' })).toBe('12 STR · 12 AGI · 12 INT · 12 UNI')
     expect(heroQuotas(5, HERO_SET_A)).toEqual({ STR: 2, AGI: 1, INT: 1, UNI: 1 })
   })
 
