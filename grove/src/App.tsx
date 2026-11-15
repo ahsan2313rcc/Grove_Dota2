@@ -38,6 +38,19 @@ import {
   type StratFilter,
 } from './game/balance.ts'
 import { apply, createGame, type SeatSpec } from './game/engine.ts'
+import {
+  clampDeckLimits,
+  DEFAULT_DECK_LIMITS,
+  HERO_DECK_MAX,
+  ITEM_DECK_MAX,
+  loadDeckLimits,
+  PRINTED_HERO_COUNT,
+  saveDeckLimits,
+  TERRAIN_DECK_MAX,
+  terrainCopies,
+  terrainSplitLabel,
+  type DeckLimits,
+} from './game/deckLimits.ts'
 import { log, scoreState } from './game/flow.ts'
 import {
   cloneRules,
@@ -64,7 +77,6 @@ import {
   type SavedDebugSession,
   type SavedLocalMatch,
 } from './local/save.ts'
-import { HEROES, ITEMS, TERRAINS } from './game/catalog.ts'
 import { CardArt } from './ui/CardArt.tsx'
 import { Glossary } from './ui/Glossary.tsx'
 import { Lab } from './ui/Lab.tsx'
@@ -124,11 +136,12 @@ function parseSeedInput(raw: string): number | null {
   return null
 }
 
-function makeRun(seed: number, seats: number, strats?: AiStrat[]): LiveRun {
+function makeRun(seed: number, seats: number, strats?: AiStrat[], deck?: DeckLimits): LiveRun {
   const game = createGame({
     seed,
     seats: aiRoster(seats, strats, seed),
     ancientEndgame: getScoreRules().ancientEndgame,
+    deck,
   })
   const tracker = new BalanceTracker(seed)
   tracker.start(game)
@@ -278,7 +291,7 @@ function readStart(): { debug: boolean; seed: number; seats: SeatCount; runs: Li
         name: index === 0 ? 'You' : index === 1 ? 'The Grove' : `Player ${index + 1}`,
         ai: index !== 0,
       }))
-    const game = createGame({ seed, seats })
+    const game = createGame({ seed, seats, deck: DEFAULT_DECK_LIMITS })
     const tracker = new BalanceTracker(seed)
     tracker.start(game)
     return {
@@ -349,6 +362,8 @@ export default function App() {
   const seatCountRef = useRef(seatCount)
   const debugStratsRef = useRef(debugStrats)
   const trainNeuralRef = useRef(trainNeural)
+  /** Deck counts for debug sims. Undefined keeps the full printed deck (older sessions). */
+  const deckRef = useRef<DeckLimits | undefined>(restored.debug?.deck)
   seatCountRef.current = seatCount
   debugStratsRef.current = debugStrats
   trainNeuralRef.current = trainNeural
@@ -423,7 +438,7 @@ export default function App() {
       setSeed(nextSeed)
       setQueueLeft((left) => Math.max(0, left - 1))
       setMatch((value) => value + 1)
-      setRuns([makeRun(nextSeed, seatCountRef.current, debugStratsRef.current)])
+      setRuns([makeRun(nextSeed, seatCountRef.current, debugStratsRef.current, deckRef.current)])
     }, 120)
     return () => window.clearTimeout(timer)
   }, [debug, debugView, live, queueLeft, runningFast])
@@ -498,6 +513,7 @@ export default function App() {
       thoughtPower,
       reports,
       rules: getScoreRules(),
+      deck: deckRef.current,
       active: true,
       ...extra,
     })
@@ -568,6 +584,7 @@ export default function App() {
     liveTrainNeural = saved.trainNeural
     setThoughtPower(saved.thoughtPower)
     setAiThoughtPower(saved.thoughtPower)
+    deckRef.current = saved.deck
     watchRef.current = false
   }
 
@@ -600,7 +617,7 @@ export default function App() {
       setRuns([])
       return
     }
-    setRuns([makeRun(seed, seatCount, debugStrats)])
+    setRuns([makeRun(seed, seatCount, debugStrats, deckRef.current)])
   }
 
   /** Run N matches in the background at full speed; paint stats in batches so the rail doesn't thrash. */
@@ -628,23 +645,23 @@ export default function App() {
         setSeed(nextSeed)
         setQueueLeft(total - index)
         setMatch((value) => value + 1)
-        setRuns([makeRun(nextSeed, seats, strats)])
+        setRuns([makeRun(nextSeed, seats, strats, deckRef.current)])
         setRunningFast(false)
         return
       }
       try {
         if (trainNeuralRef.current) {
           const roster = aiRoster(seats, strats, fromSeed + index)
-          const { report } = runMatchWithOptionalTrain(fromSeed + index, roster, { train: true, fast: true })
+          const { report } = runMatchWithOptionalTrain(fromSeed + index, roster, { train: true, fast: true, deck: deckRef.current })
           chunk.push(report)
           setNnInfo(nnMemoryInfo())
         } else {
-          chunk.push(runMatchFast(fromSeed + index, seats, strats))
+          chunk.push(runMatchFast(fromSeed + index, seats, strats, 2500, deckRef.current))
         }
       } catch (error) {
         // runMatchFast soft-finishes internally; this is a last-resort stub so the queue never stalls.
         const reason = error instanceof Error ? error.message : 'sim error'
-        const stub = makeRun(fromSeed + index, seats, strats)
+        const stub = makeRun(fromSeed + index, seats, strats, deckRef.current)
         const finished = softFinishLive(stub.game, `Match halted (${reason}).`)
         chunk.push(stub.tracker.finish(finished))
       }
@@ -677,7 +694,7 @@ export default function App() {
         const jump = live?.game.over ? live.seed + 1 : seed
         setSeed(jump)
         setMatch((value) => value + 1)
-        setRuns([makeRun(jump, seatCount, debugStrats)])
+        setRuns([makeRun(jump, seatCount, debugStrats, deckRef.current)])
         setQueueLeft((left) => Math.min(MAX_QUEUE, left + Math.max(0, extra - 1)))
       } else {
         setQueueLeft((left) => Math.min(MAX_QUEUE, left + extra))
@@ -699,14 +716,14 @@ export default function App() {
     const jump = (live?.seed ?? seed) + 1
     setSeed(jump)
     setMatch((value) => value + 1)
-    setRuns([makeRun(jump, seatCount, debugStrats)])
+    setRuns([makeRun(jump, seatCount, debugStrats, deckRef.current)])
     setDebugView('watch')
     if (debugSpeed === 0) setDebugSpeed(1)
   }
 
   function startWatchFromStats() {
     watchRef.current = true
-    const created = [makeRun(seed, seatCount, debugStrats)]
+    const created = [makeRun(seed, seatCount, debugStrats, deckRef.current)]
     setRuns(created)
     setFocus(0)
     setDebugView('watch')
@@ -763,6 +780,7 @@ export default function App() {
       thoughtPower,
       reports: [],
       rules,
+      deck: deckRef.current,
       active: true,
     })
     window.setTimeout(() => {
@@ -802,7 +820,8 @@ export default function App() {
           setRuns([{ seed: nextSeed, game: next, tracker, stuck: false, stall: 0 }])
           setFocus(0)
         }}
-        onStart={(next, nextSeed, nextDebug, seats, queue, strats, rules, train) => {
+        onStart={(next, nextSeed, nextDebug, seats, queue, strats, rules, train, deck) => {
+          deckRef.current = deck
           setTrainNeural(train)
           trainNeuralRef.current = train
           liveTrainNeural = train
@@ -883,9 +902,6 @@ export default function App() {
 }
 
 const LOBBY_FAN = ['crystal_maiden', 'juggernaut', 'axe', 'io', 'techies']
-const ITEM_COUNT = ITEMS.reduce((sum, item) => sum + item.copies, 0)
-const TERRAIN_COUNT = TERRAINS.length * 12
-
 function Lobby({
   onStart,
   onOnline,
@@ -910,6 +926,7 @@ function Lobby({
     strats: AiStrat[],
     rules: ScoreRules,
     trainNeural: boolean,
+    deck: DeckLimits,
   ) => void
 }) {
   const [seedText, setSeedText] = useState('')
@@ -930,6 +947,7 @@ function Lobby({
   const [scoreOpen, setScoreOpen] = useState(false)
   const [winOpen, setWinOpen] = useState(false)
   const [lobbyRules, setLobbyRules] = useState<ScoreRules>(() => cloneRules(getScoreRules()))
+  const [deck, setDeck] = useState<DeckLimits>(() => loadDeckLimits())
   const [savedLocal, setSavedLocal] = useState<SavedLocalMatch | null>(() => loadLocalMatch())
   const [savedDebug, setSavedDebug] = useState<SavedDebugSession | null>(() => loadDebugSession())
   const [trainNeural, setTrainNeural] = useState(false)
@@ -940,6 +958,14 @@ function Lobby({
     setSeats((current) => {
       const defaults = defaultSeats(next)
       return defaults.map((seat, index) => current[index] ?? seat)
+    })
+  }
+
+  function setDeckCount(key: keyof DeckLimits, raw: number) {
+    setDeck((current) => {
+      const next = clampDeckLimits({ ...current, [key]: raw })
+      saveDeckLimits(next)
+      return next
     })
   }
 
@@ -979,6 +1005,7 @@ function Lobby({
           ancientEndgame: rules.ancientEndgame,
           winScore: rules.scoreWin ? forSeats(rules.winScores, roster.length) : null,
           ancientDepth: forSeats(rules.ancientDepths, roster.length),
+          deck,
         }),
         seed,
         debug,
@@ -987,6 +1014,7 @@ function Lobby({
         strats,
         rules,
         debug && trainNeural,
+        deck,
       )
     } catch (error) {
       setFault(error instanceof Error ? error.message : 'The deck could not be dealt.')
@@ -1022,9 +1050,9 @@ function Lobby({
           </li>
         </ol>
         <dl className="lobby-facts">
-          <div><dt>Heroes</dt><dd>{HEROES.length}</dd></div>
-          <div><dt>Items</dt><dd>{ITEM_COUNT}</dd></div>
-          <div><dt>Terrains</dt><dd>{TERRAIN_COUNT}</dd></div>
+          <div><dt>Heroes</dt><dd>{deck.heroes}</dd></div>
+          <div><dt>Items</dt><dd>{deck.items}</dd></div>
+          <div><dt>Terrains</dt><dd>{deck.terrains}</dd></div>
           <div><dt>Hand limit</dt><dd>7</dd></div>
         </dl>
       </div>
@@ -1042,6 +1070,48 @@ function Lobby({
               </button>
             ))}
           </div>
+        </fieldset>
+        <fieldset className="deck-limits">
+          <legend>Deck</legend>
+          <div className="deck-limit-grid">
+            <label>
+              Heroes
+              <input
+                data-testid="lobby-deck-heroes"
+                type="number"
+                min={0}
+                max={HERO_DECK_MAX}
+                value={deck.heroes}
+                onChange={(event) => setDeckCount('heroes', Number(event.target.value))}
+              />
+              <span className="quiet">of {PRINTED_HERO_COUNT}, random</span>
+            </label>
+            <label>
+              Items
+              <input
+                data-testid="lobby-deck-items"
+                type="number"
+                min={0}
+                max={ITEM_DECK_MAX}
+                value={deck.items}
+                onChange={(event) => setDeckCount('items', Number(event.target.value))}
+              />
+              <span className="quiet">of {DEFAULT_DECK_LIMITS.items} printed</span>
+            </label>
+            <label>
+              Terrains
+              <input
+                data-testid="lobby-deck-terrains"
+                type="number"
+                min={0}
+                max={TERRAIN_DECK_MAX}
+                value={deck.terrains}
+                onChange={(event) => setDeckCount('terrains', Number(event.target.value))}
+              />
+              <span className="quiet">{deck.terrains % 3 === 0 ? `${deck.terrains / 3} each` : terrainCopies(deck.terrains).join(' / ')}</span>
+            </label>
+          </div>
+          <p className="quiet">{terrainSplitLabel(deck.terrains)}. Same seed, same heroes. The Ancient sits about 80% down.</p>
         </fieldset>
         <ul className="seat-list" data-count={count}>
           {seats.map((seat, index) => {
